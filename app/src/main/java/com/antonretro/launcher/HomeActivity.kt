@@ -66,6 +66,7 @@ class HomeActivity : Activity() {
         val t0 = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
         Perf.file = getExternalFilesDir(null)?.let { java.io.File(it, "perf.log") }
+        Kit.init(this)
         repo = AppRepo(this); store = Store(this)
         val dm = resources.displayMetrics
         Backdrop.build(store.wallpaper, maxOf(dm.widthPixels, dm.heightPixels), minOf(dm.widthPixels, dm.heightPixels))
@@ -481,7 +482,7 @@ class HomeActivity : Activity() {
             bgSharp.animate().scaleX(1f).scaleY(1f).setStartDelay(300 * d).setDuration(1100 * d).setInterpolator(Kit.DECEL).start()
             shelf.animate().alpha(1f).setStartDelay(760 * d).setDuration(500 * d).start()
             for ((i, v) in parts.withIndex()) v.animate().alpha(1f).translationY(0f).setStartDelay((620 + i * 60L) * d).setDuration(420 * d).setInterpolator(Kit.EASE).start()
-            ui.postDelayed({ endIntro(black, mark, parts) }, (620 + parts.size * 60L + 450) * d)
+            ui.postDelayed({ endIntro(black, mark, parts) }, ((620 + parts.size * 60L + 450) * Kit.motion).toLong())   // timers are not scaled by Android, animations are
         }.start()
         introSkip = { endIntro(black, mark, parts) }
     }
@@ -766,6 +767,7 @@ class HomeActivity : Activity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        Kit.init(this)
         tickClock()
         if (returning) {   // gentle scale-down from 1.05 and fade back in, focus on the same card
             returning = false

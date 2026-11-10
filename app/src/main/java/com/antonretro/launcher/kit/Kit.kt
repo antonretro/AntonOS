@@ -54,7 +54,14 @@ object Kit {
 
     /** Reduce motion switch (Settings); every animation multiplies its duration by this. */
     @JvmStatic var motion = 1f
-    fun t(ms: Long) = (ms * motion).toLong()
+    /** Android's "animator duration scale" (the box tuning sets 0.5 to speed up other apps); our own
+     *  timings divide it back out so Retro Launcher always moves exactly as designed. */
+    @JvmStatic var systemScale = 1f
+    fun init(ctx: Context) {
+        systemScale = try { android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }
+        if (systemScale <= 0f) systemScale = 1f
+    }
+    fun t(ms: Long) = (ms * motion / systemScale).toLong()
 
     private var cachedFont: Typeface? = null
     fun font(ctx: Context, bold: Boolean = false): Typeface {
