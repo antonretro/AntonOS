@@ -25,6 +25,8 @@ import com.antonretro.launcher.data.Item
 import com.antonretro.launcher.data.Store
 import com.antonretro.launcher.data.Channel
 import com.antonretro.launcher.data.ChannelRepo
+import com.antonretro.launcher.data.GameRepo
+import com.antonretro.launcher.data.Rom
 import com.antonretro.launcher.data.VideoRepo
 import com.antonretro.launcher.data.LocalVideo
 import com.antonretro.launcher.data.Video
@@ -77,6 +79,11 @@ class HomeActivity : Activity() {
         yt = YouTubeRepo(filesDir)
         keyboard = Keyboard(this); root.addView(keyboard, -1, -1)
         rebuildYouTube()
+        dialog = Dialog(this); root.addView(dialog, -1, -1)
+        (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(inputListener, ui)
+        for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.let { inputNames[id] = it.name }
+        registerReceiver(deviceReceiver, IntentFilter().apply { addAction(Intent.ACTION_MEDIA_MOUNTED); addAction(Intent.ACTION_MEDIA_EJECT); addAction(Intent.ACTION_MEDIA_REMOVED); addDataScheme("file") })
+        registerReceiver(deviceReceiver, IntentFilter(android.net.ConnectivityManager.CONNECTIVITY_ACTION))
         ui.postDelayed({ rebuildVideos() }, 1200)
         loadApps { if (wantIntro()) playIntro() }
         loadChannels()
@@ -238,6 +245,97 @@ class HomeActivity : Activity() {
             store.save(); rebuildVideos()
         }
     }
+
+    // ---------------------------------------------------------------- Games (the launcher is the library, RetroArch the hidden engine)
+    private lateinit var dialog: Dialog
+    private var roms: List<Rom> = emptyList()
+    private var androidGames: List<Item.App> = emptyList()
+
+    private fun rebuildGames() {
+        bg.execute {
+            val found = try { GameRepo.scan() } catch (e: Exception) { emptyList() }
+            ui.post {
+                roms = found
+                val byKey: Map<String, Item> = found.associate { it.key to Item.Game(it) } + androidGames.associateBy { it.key }
+                val rows = ArrayList<Row>()
+                val keep = store.recentGames.mapNotNull { byKey[it] }
+                if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true, poster = keep.all { it is Item.Game }))
+                if (androidGames.isNotEmpty()) rows.add(Row("Android games", androidGames, alwaysLabel = true))
+                for ((shelf, list) in found.groupBy { it.system.shelf }) rows.add(Row(shelf, list.map { Item.Game(it) }, alwaysLabel = true, poster = true))
+                rows.add(Row("Add more", listOf(Item.AddGames()), alwaysLabel = true))
+                (screens["Games"] as RowsScreen).setRows(rows)
+            }
+        }
+    }
+
+    private fun playGame(rom: Rom, cell: CardCell) {
+        val i = GameRepo.launchIntent(this, rom)
+        if (i == null) {
+            dialog.show("Games need one more piece", "The game engine (RetroArch) isn't installed on this box yet. It runs hidden: you'll only ever see your games.", "OK" to {})
+            return
+        }
+        val opts = ActivityOptions.makeScaleUpAnimation(cell.card, 0, 0, cell.card.width, cell.card.height)
+        if (safeStart(i, opts.toBundle())) { store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
+    }
+
+    /** Looks on USB drives for games and offers to copy them into the library in one press. */
+    private fun offerGamesFrom(roots: List<java.io.File>, quietIfNone: Boolean) {
+        bg.execute {
+            val have = roms.map { it.file.name }.toSet()
+            val found = roots.flatMap { try { GameRepo.scan(it) } catch (e: Exception) { emptyList() } }.filter { it.file.name !in have }
+            ui.post {
+                if (found.isEmpty()) { if (!quietIfNone) notice("No new games found", "Plug in a USB drive with game files on it"); return@post }
+                val kinds = found.groupBy { it.system.shelf }.entries.joinToString(", ") { "${it.value.size} ${it.key}" }
+                dialog.show("Found ${found.size} game" + (if (found.size == 1) "" else "s"), "On the USB drive: $kinds. Add them to Games?",
+                    "Add ${found.size} game" + (if (found.size == 1) "" else "s") to {
+                        notice("Adding games…", "This takes a moment")
+                        bg.execute { val n = GameRepo.copyIn(found); ui.post { notice("$n games added", "Find them in Games"); rebuildGames() } }
+                    },
+                    "Not now" to {})
+            }
+        }
+    }
+
+    private fun usbRoots(): List<java.io.File> = java.io.File("/storage").listFiles()?.filter { it.isDirectory && it.canRead() && it.name != "emulated" && it.name != "self" } ?: emptyList()
+
+    // ---------------------------------------------------------------- friendly notices: devices, drives, network
+    private val inputNames = HashMap<Int, String>()
+    private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(id: Int) {
+            val d = InputDevice.getDevice(id) ?: return
+            if (d.isVirtual) return
+            inputNames[id] = d.name
+            val s = d.sources
+            when {
+                s and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || s and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK -> notice("Controller connected", d.name)
+                s and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE -> notice("Mouse connected", d.name)
+                d.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC -> notice("Keyboard connected", d.name)
+            }
+        }
+        override fun onInputDeviceRemoved(id: Int) { inputNames.remove(id)?.let { notice("Disconnected", it) } }
+        override fun onInputDeviceChanged(id: Int) {}
+    }
+
+    private val deviceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            when (i.action) {
+                Intent.ACTION_MEDIA_MOUNTED -> {
+                    val path = i.data?.path?.let { java.io.File(it) }
+                    notice("USB drive connected", path?.name ?: "")
+                    rebuildVideos()
+                    if (path != null) offerGamesFrom(listOf(path), quietIfNone = true)
+                }
+                Intent.ACTION_MEDIA_EJECT, Intent.ACTION_MEDIA_REMOVED -> { notice("USB drive removed", ""); ui.postDelayed({ rebuildVideos() }, 800) }
+                android.net.ConnectivityManager.CONNECTIVITY_ACTION -> {
+                    val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                    @Suppress("DEPRECATION") val up = cm.activeNetworkInfo?.isConnected == true
+                    if (lastOnline != null && lastOnline != up) notice(if (up) "Back online" else "No internet connection", if (up) "Everything works again" else "TV and YouTube need the internet")
+                    lastOnline = up
+                }
+            }
+        }
+    }
+    private var lastOnline: Boolean? = null
 
     // ---------------------------------------------------------------- TV and radio
     private lateinit var player: PlayerOverlay
@@ -411,7 +509,8 @@ class HomeActivity : Activity() {
         homeDock = dock; homeRecent = recent; rebuildHome()
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
-        (screens["Games"] as RowsScreen).setRows(listOf(Row("Android games", visible.filter { it.isGame }, alwaysLabel = true)))
+        androidGames = visible.filter { it.isGame }
+        rebuildGames()
         smartTube = all.firstOrNull { it.component.packageName in AppRepo.YOUTUBE_APPS }?.component?.packageName
         updateShelf()
     }
@@ -429,6 +528,14 @@ class HomeActivity : Activity() {
             bg.execute { val b = VideoRepo.thumb(item.v, cacheDir, w, h); ui.post { if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), badge = badge, badgeColor = 0xFF4F8CFF.toInt()) } }
             return
         }
+        if (item is Item.Game) {
+            val s = item.rom.system
+            val dark = Color.rgb(Color.red(s.colour) / 4, Color.green(s.colour) / 4, Color.blue(s.colour) / 4)
+            cell.card.art = Art(null, s.colour, dark, null, null, bigText = item.rom.title, badge = s.badge, badgeColor = 0x99000000.toInt())
+            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt()) }
+            return
+        }
+        if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
         if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
         if (item is Item.YtAdd) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add a channel"); return }
         if (item is Item.Yt) {
@@ -525,6 +632,7 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
+        if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
@@ -608,7 +716,7 @@ class HomeActivity : Activity() {
                 val i = Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 // the card zooms into the app: no dead black pause
                 val opts = ActivityOptions.makeScaleUpAnimation(cell.card, 0, 0, cell.card.width, cell.card.height)
-                if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); returning = true }
+                if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); if (item.isGame) store.noteGame(item.key); returning = true }
             }
             is Item.Action -> item.run(this)
             is Item.Ch -> {
@@ -620,6 +728,8 @@ class HomeActivity : Activity() {
             is Item.Yt -> if (openInSmartTube(item.v.url, cell)) { yt.noteWatched(item.v); ui.postDelayed({ rebuildYouTube() }, 800) }
             is Item.YtSearch -> youtubeSearch()
             is Item.Vid -> playVideo(item.v)
+            is Item.Game -> playGame(item.rom, cell)
+            is Item.AddGames -> offerGamesFrom(usbRoots(), quietIfNone = false)
             is Item.YtAdd -> youtubeAdd()
         }
     }
@@ -691,7 +801,10 @@ class HomeActivity : Activity() {
 
     override fun onStop() { super.onStop(); if (::player.isInitialized && player.showing && player.current?.radio != true) player.close(keepRadio = false) }
 
-    override fun onDestroy() { if (::player.isInitialized) player.release(); try { unregisterReceiver(receiver) } catch (_: Exception) {}; bg.shutdown(); super.onDestroy() }
+    override fun onDestroy() {
+        try { unregisterReceiver(deviceReceiver) } catch (_: Exception) {}
+        try { (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).unregisterInputDeviceListener(inputListener) } catch (_: Exception) {}
+        if (::player.isInitialized) player.release(); try { unregisterReceiver(receiver) } catch (_: Exception) {}; bg.shutdown(); super.onDestroy() }
 }
 
 /** Speed numbers for launcher/tools/speedcheck.py (logcat tag RLPerf). */

@@ -67,7 +67,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
         content.removeAllViews(); glassViews.clear(); rowViews.clear(); tracks.clear(); cells.clear(); tops.clear(); windows.clear(); steps.clear()
         var top = Kit.dp(ctx, startTop)
         for ((ri, row) in rows.withIndex()) {
-            val w = if (row.poster) Kit.POSTER_W else Kit.CARD_W
+            val w = if (row.poster) Kit.POSTER_W else Kit.CARD_W   // posters: box art
             val h = if (row.poster) Kit.POSTER_H else Kit.CARD_H
             val rv = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
             if (row.glass) {

@@ -17,6 +17,8 @@ sealed class Item(val key: String, val title: String) {
     class Ch(val ch: Channel) : Item(ch.key, ch.name)
     class Yt(val v: Video) : Item("yt:" + v.id, v.title)
     class Vid(val v: LocalVideo) : Item(v.key, v.title)
+    class Game(val rom: Rom) : Item(rom.key, rom.title)
+    class AddGames : Item("games:add", "Add games")
     class YtSearch : Item("yt:search", "Search YouTube")
     class YtAdd : Item("yt:add", "Add a channel")
     /** "All 1,341 channels": opens the whole group. */
@@ -70,7 +72,8 @@ class AppRepo(private val ctx: Context) {
             "com.antonretro.subwaysurfersde", "com.antonretro.multiverse", "com.android.vending", "org.fdroid.fdroid", "com.droidlogic.FileBrower")
         /** Hidden from Apps by default (Retro Launcher replaces them). */
         val HIDDEN_DEFAULTS = setOf("com.android.settings", "com.droidlogic.mboxsettings", "com.spocky.projengmenu",
-            "com.droidlogic.mboxlauncher", "com.android.launcher", "com.android.tv.settings")
+            "com.droidlogic.mboxlauncher", "com.android.launcher", "com.android.tv.settings",
+            "com.retroarch.ra32", "com.retroarch", "com.retroarch.aarch64")   // RetroArch is the hidden game engine
     }
 }
 
@@ -85,6 +88,7 @@ class Store(ctx: Context) {
     var favourites = mutableListOf<String>()      // channel urls, in the order starred
     var recentChannels = mutableListOf<String>()  // newest first
     var lastTv: String? = null
+    var recentGames = mutableListOf<String>()
     var positions = mutableMapOf<String, Long>()   // video path -> where you stopped (ms); duration in durations
     var durations = mutableMapOf<String, Long>()
     var firstRun = true
@@ -103,6 +107,7 @@ class Store(ctx: Context) {
             favourites = o.optJSONArray("favourites").strings().toMutableList()
             recentChannels = o.optJSONArray("recentChannels").strings().toMutableList()
             lastTv = o.optString("lastTv").ifEmpty { null }
+            recentGames = o.optJSONArray("recentGames").strings().toMutableList()
             o.optJSONObject("positions")?.let { l -> l.keys().forEach { positions[it] = l.optLong(it) } }
             o.optJSONObject("durations")?.let { l -> l.keys().forEach { durations[it] = l.optLong(it) } }
             firstRun = false
@@ -114,7 +119,7 @@ class Store(ctx: Context) {
             .put("version", 1)
             .put("dock", JSONArray(dock)).put("hidden", JSONArray(hidden.toList())).put("recent", JSONArray(recent))
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
-            .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "")
+            .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
             .put("positions", JSONObject(positions as Map<*, *>)).put("durations", JSONObject(durations as Map<*, *>))
         Thread { try { val tmp = File(file.path + ".tmp"); tmp.writeText(o.toString(1)); tmp.renameTo(file) } catch (_: Exception) {} }.start()
     }
@@ -130,6 +135,7 @@ class Store(ctx: Context) {
         if (!c.radio) lastTv = c.url
         save()
     }
+    fun noteGame(key: String) { recentGames.remove(key); recentGames.add(0, key); while (recentGames.size > 10) recentGames.removeAt(recentGames.size - 1); save() }
     fun toggleFavourite(c: Channel): Boolean {
         val on = !favourites.remove(c.url); if (on) favourites.add(c.url); save(); return on
     }
