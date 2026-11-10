@@ -63,6 +63,7 @@ class HomeActivity : Activity() {
         Backdrop.build(store.wallpaper, maxOf(dm.widthPixels, dm.heightPixels), minOf(dm.widthPixels, dm.heightPixels))
         buildViews()
         setContentView(root)
+        window.setBackgroundDrawable(null)   // the wallpaper covers everything: skip one full-screen fill
         hideSystemBars()
         buildScreens()
         showTab("Home", animate = false)
@@ -77,7 +78,7 @@ class HomeActivity : Activity() {
     private fun buildViews() {
         root = FrameLayout(this).apply { clipChildren = false }
         bgSharp = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageBitmap(Backdrop.sharp) }
-        bgBlur = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; setImageBitmap(Backdrop.blurred); alpha = 0f }
+        bgBlur = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; setImageBitmap(Backdrop.blurredDim); alpha = 0f }
         dim = View(this).apply { setBackgroundColor(Kit.DIM_SCROLLED); alpha = 0f }
         shelf = FrameLayout(this)
         stage = FrameLayout(this).apply { clipChildren = false }
@@ -250,15 +251,7 @@ class HomeActivity : Activity() {
         for (i in 0 until shelf.childCount) { val old = shelf.getChildAt(i); old.animate().alpha(0f).setDuration(Kit.t(Kit.T_FADE)).withEndAction { shelf.removeView(old) }.start() }
         if (item == null) return
         val layer = FrameLayout(this).apply { alpha = 0f }
-        val art = artCache[item.key]
-        if (art != null) {
-            val glow = View(this)
-            val w = Kit.dp(this, 1280f); val h = Kit.dp(this, 400f)
-            glow.background = ShapeDrawable(RectShape()).apply {
-                paint.shader = RadialGradient(w * .75f, h * .3f, w * .6f, intArrayOf(art.top and 0x00FFFFFF or 0xB0000000.toInt(), 0x00000000), null, Shader.TileMode.CLAMP)
-            }
-            layer.addView(glow, -1, -1)
-        }
+        // (no full-screen glow: on the Mali-450 every full-screen shader costs ~2 ms a frame)
         val title = Kit.text(this, Kit.SHELF_TITLE, true).apply { text = item.title; Kit.shadowText(this) }
         val sub = Kit.text(this, Kit.SHELF_SUB, false, 0xD9FFFFFF.toInt()).apply { text = "Press OK to open"; Kit.shadowText(this) }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(title, LinearLayout.LayoutParams(-1, -2)); addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 9f) }) }
@@ -272,8 +265,9 @@ class HomeActivity : Activity() {
         if (want == scrolledShown) return
         scrolledShown = want
         val d = Kit.t(350)
-        bgBlur.animate().alpha(if (want) 1f else 0f).setDuration(d).start()
-        dim.animate().alpha(if (want) 1f else 0f).setDuration(d).start()
+        // only one full-screen picture is drawn once the fade ends (the GPU's biggest cost)
+        if (!want) { bgSharp.visibility = View.VISIBLE }
+        bgBlur.animate().alpha(if (want) 1f else 0f).setDuration(d).withEndAction { if (scrolledShown) bgSharp.visibility = View.INVISIBLE }.start()
         shelf.animate().alpha(if (want) 0f else 1f).setDuration(d).start()
     }
 
@@ -284,12 +278,12 @@ class HomeActivity : Activity() {
         val dir = if (tabs.indexOf(name) >= tabs.indexOf(current)) 1 else -1
         if (old != null && old !== new) {
             old.leave()
-            if (animate) old.view.animate().alpha(0f).translationX(-dir * Kit.dp(this, 40f)).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withLayer().withEndAction { old.view.visibility = View.GONE }.start()
+            if (animate) old.view.animate().alpha(0f).translationX(-dir * Kit.dp(this, 40f)).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withEndAction { old.view.visibility = View.GONE }.start()
             else old.view.visibility = View.GONE
         }
         current = name; tabIdx = tabs.indexOf(name)
         new.view.visibility = View.VISIBLE
-        if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withLayer().start() }
+        if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).start() }
         else { new.view.alpha = 1f; new.view.translationX = 0f }
         if (!inTabBar) new.enter()
         drawTabs(); updateShelf(); updateScrolled()
@@ -408,7 +402,7 @@ class HomeActivity : Activity() {
     private fun nextWallpaper() {
         store.wallpaper = (store.wallpaper + 1) % Backdrop.SCENES.size; store.save()
         Backdrop.build(store.wallpaper, Backdrop.screenW, Backdrop.screenH)
-        bgSharp.setImageBitmap(Backdrop.sharp); bgBlur.setImageBitmap(Backdrop.blurred)
+        bgSharp.setImageBitmap(Backdrop.sharp); bgBlur.setImageBitmap(Backdrop.blurredDim)
         root.invalidate(); invalidateAll(root)
     }
     private fun invalidateAll(v: View) { v.invalidate(); if (v is ViewGroup) for (i in 0 until v.childCount) invalidateAll(v.getChildAt(i)) }

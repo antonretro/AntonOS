@@ -20,6 +20,8 @@ object Backdrop {
 
     var sharp: Bitmap? = null; private set
     var blurred: Bitmap? = null; private set
+    /** Blurred and darkened: the whole backdrop when a grid or list is showing (one full-screen layer). */
+    var blurredDim: Bitmap? = null; private set
     var screenW = 1280; private set
     var screenH = 720; private set
 
@@ -32,6 +34,7 @@ object Backdrop {
         val sw = w / 8; val sh = h / 8
         val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
         blurred = boxBlur(boxBlur(boxBlur(small, 3), 3), 3)
+        blurredDim = blurred!!.copy(Bitmap.Config.ARGB_8888, true).also { Canvas(it).drawColor(Kit.DIM_SCROLLED) }
     }
 
     private fun draw(c: Canvas, s: Scene, w: Float, h: Float) {

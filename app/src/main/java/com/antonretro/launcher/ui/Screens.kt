@@ -166,6 +166,8 @@ class ListScreen(ctx: Context, private val title: String, private val entries: L
     private val rowViews = ArrayList<TextView>()
     private var idx = 0; private var active = false
     private val panel = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    private val bgOn = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(Kit.FOCUS_FILL) }
+    private val bgOff = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(0x0DFFFFFF) }
 
     init {
         val h = Kit.text(ctx, 32f, true).apply { text = title }
@@ -191,7 +193,8 @@ class ListScreen(ctx: Context, private val title: String, private val entries: L
     private fun draw() {
         for ((i, tv) in rowViews.withIndex()) {
             val on = active && i == idx
-            tv.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(if (on) Kit.FOCUS_FILL else 0x0DFFFFFF) }
+            val want = if (on) bgOn.constantState!!.newDrawable() else bgOff.constantState!!.newDrawable()
+            if ((tv.tag as? Boolean) != on) { tv.background = want; tv.tag = on }
             tv.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
             tv.animate().scaleX(if (on) 1.03f else 1f).scaleY(if (on) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
