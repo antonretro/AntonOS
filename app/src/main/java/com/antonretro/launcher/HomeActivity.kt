@@ -260,9 +260,10 @@ class HomeActivity : Activity() {
                 val byKey: Map<String, Item> = found.associate { it.key to Item.Game(it) } + androidGames.associateBy { it.key }
                 val rows = ArrayList<Row>()
                 val keep = store.recentGames.mapNotNull { byKey[it] }
-                if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true, poster = keep.all { it is Item.Game }))
+                if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true))
                 if (androidGames.isNotEmpty()) rows.add(Row("Android games", androidGames, alwaysLabel = true))
-                for ((shelf, list) in found.groupBy { it.system.shelf }) rows.add(Row(shelf, list.map { Item.Game(it) }, alwaysLabel = true, poster = true))
+                // one shelf per console, each card the shape of that console's box
+                for ((sys, list) in found.groupBy { it.system }) rows.add(Row(sys.shelf, list.map { Item.Game(it) }, alwaysLabel = true, poster = true, aspect = sys.boxAspect))
                 rows.add(Row("Add more", listOf(Item.AddGames()), alwaysLabel = true))
                 (screens["Games"] as RowsScreen).setRows(rows)
             }

@@ -7,7 +7,8 @@ import android.os.Environment
 import java.io.File
 
 /** A console the S905W runs well. The user never sees "emulator" or "core": only the shelf name. */
-class GameSystem(val id: String, val shelf: String, val badge: String, val ext: Set<String>, val core: String, val thumbs: String, val colour: Int)
+class GameSystem(val id: String, val shelf: String, val badge: String, val ext: Set<String>, val core: String, val thumbs: String, val colour: Int,
+                 /** width / height of the real box, so each card is the shape of its box art */ val boxAspect: Float = .72f)
 
 class Rom(val file: File, val system: GameSystem) {
     val key get() = "rom:" + file.path
@@ -26,16 +27,16 @@ class Rom(val file: File, val system: GameSystem) {
  */
 object GameRepo {
     val SYSTEMS = listOf(
-        GameSystem("nes", "Nintendo", "NES", setOf("nes", "fds", "unf", "unif"), "fceumm_libretro_android.so", "Nintendo - Nintendo Entertainment System", 0xFFE63946.toInt()),
-        GameSystem("snes", "Nintendo", "SNES", setOf("sfc", "smc"), "snes9x2010_libretro_android.so", "Nintendo - Super Nintendo Entertainment System", 0xFF7B2CBF.toInt()),
-        GameSystem("gb", "Nintendo", "GAME BOY", setOf("gb"), "gambatte_libretro_android.so", "Nintendo - Game Boy", 0xFF8BAC0F.toInt()),
-        GameSystem("gbc", "Nintendo", "GAME BOY COLOR", setOf("gbc"), "gambatte_libretro_android.so", "Nintendo - Game Boy Color", 0xFF2A9D8F.toInt()),
-        GameSystem("gba", "Nintendo", "GAME BOY ADVANCE", setOf("gba"), "gpsp_libretro_android.so", "Nintendo - Game Boy Advance", 0xFF3A0CA3.toInt()),
-        GameSystem("md", "Sega", "MEGA DRIVE", setOf("md", "gen", "smd"), "genesis_plus_gx_libretro_android.so", "Sega - Mega Drive - Genesis", 0xFF1D3557.toInt()),
-        GameSystem("sms", "Sega", "MASTER SYSTEM", setOf("sms"), "genesis_plus_gx_libretro_android.so", "Sega - Master System - Mark III", 0xFFC1121F.toInt()),
-        GameSystem("gg", "Sega", "GAME GEAR", setOf("gg"), "genesis_plus_gx_libretro_android.so", "Sega - Game Gear", 0xFF264653.toInt()),
-        GameSystem("pce", "PC Engine", "PC ENGINE", setOf("pce"), "mednafen_pce_fast_libretro_android.so", "NEC - PC Engine - TurboGrafx 16", 0xFFF77F00.toInt()),
-        GameSystem("ps1", "PlayStation", "PLAYSTATION", setOf("cue", "chd", "pbp", "m3u"), "pcsx_rearmed_libretro_android.so", "Sony - PlayStation", 0xFF495057.toInt()),
+        GameSystem("nes", "Nintendo (NES)", "NES", setOf("nes", "fds", "unf", "unif"), "fceumm_libretro_android.so", "Nintendo - Nintendo Entertainment System", 0xFFE63946.toInt(), .72f),
+        GameSystem("snes", "Super Nintendo", "SNES", setOf("sfc", "smc"), "snes9x2010_libretro_android.so", "Nintendo - Super Nintendo Entertainment System", 0xFF7B2CBF.toInt(), 1.38f),
+        GameSystem("gb", "Game Boy", "GAME BOY", setOf("gb"), "gambatte_libretro_android.so", "Nintendo - Game Boy", 0xFF8BAC0F.toInt(), 1f),
+        GameSystem("gbc", "Game Boy Color", "GAME BOY COLOR", setOf("gbc"), "gambatte_libretro_android.so", "Nintendo - Game Boy Color", 0xFF2A9D8F.toInt(), 1f),
+        GameSystem("gba", "Game Boy Advance", "GAME BOY ADVANCE", setOf("gba"), "gpsp_libretro_android.so", "Nintendo - Game Boy Advance", 0xFF3A0CA3.toInt(), 1f),
+        GameSystem("md", "Mega Drive", "MEGA DRIVE", setOf("md", "gen", "smd"), "genesis_plus_gx_libretro_android.so", "Sega - Mega Drive - Genesis", 0xFF1D3557.toInt(), .71f),
+        GameSystem("sms", "Master System", "MASTER SYSTEM", setOf("sms"), "genesis_plus_gx_libretro_android.so", "Sega - Master System - Mark III", 0xFFC1121F.toInt(), .71f),
+        GameSystem("gg", "Game Gear", "GAME GEAR", setOf("gg"), "genesis_plus_gx_libretro_android.so", "Sega - Game Gear", 0xFF264653.toInt(), .8f),
+        GameSystem("pce", "PC Engine", "PC ENGINE", setOf("pce"), "mednafen_pce_fast_libretro_android.so", "NEC - PC Engine - TurboGrafx 16", 0xFFF77F00.toInt(), .72f),
+        GameSystem("ps1", "PlayStation", "PLAYSTATION", setOf("cue", "chd", "pbp", "m3u"), "pcsx_rearmed_libretro_android.so", "Sony - PlayStation", 0xFF495057.toInt(), 1f),
     )
     private val byFolder = SYSTEMS.associateBy { it.id } + mapOf("genesis" to SYSTEMS[5], "megadrive" to SYSTEMS[5], "mastersystem" to SYSTEMS[6],
         "gamegear" to SYSTEMS[7], "psx" to SYSTEMS[9], "playstation" to SYSTEMS[9], "pcengine" to SYSTEMS[8], "tg16" to SYSTEMS[8])

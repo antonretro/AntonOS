@@ -30,7 +30,8 @@ abstract class Screen(val ctx: Context) {
     var onHoverFocus: (() -> Unit)? = null
 }
 
-class Row(val title: String?, val items: List<Item>, val glass: Boolean = false, val alwaysLabel: Boolean = false, val poster: Boolean = false)
+class Row(val title: String?, val items: List<Item>, val glass: Boolean = false, val alwaysLabel: Boolean = false, val poster: Boolean = false,
+          /** card width / height for this row (box art shapes); null = the standard card */ val aspect: Float? = null)
 
 /**
  * Rows of cards. Rules from the plan: rows are never faded or shrunk, scrolling moves one
@@ -69,8 +70,8 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
         content.removeAllViews(); glassViews.clear(); rowViews.clear(); tracks.clear(); cells.clear(); tops.clear(); windows.clear(); steps.clear()
         var top = Kit.dp(ctx, startTop)
         for ((ri, row) in rows.withIndex()) {
-            val w = if (row.poster) Kit.POSTER_W else Kit.CARD_W   // posters: box art
             val h = if (row.poster) Kit.POSTER_H else Kit.CARD_H
+            val w = row.aspect?.let { h * it } ?: if (row.poster) Kit.POSTER_W else Kit.CARD_W   // box art keeps its real shape
             val rv = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
             if (row.glass) {
                 val g = View(ctx); g.background = GlassDrawable(g, Kit.dp(ctx, 27f)); glassViews.add(g)

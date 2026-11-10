@@ -161,7 +161,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         // start on a modest stream quality so the first picture comes fast, then step up
         val meter = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context).setInitialBitrateEstimate(1_500_000).build()
         player = ExoPlayer.Builder(context).setLoadControl(load).setTrackSelector(tracks).setBandwidthMeter(meter)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context, http)))   // web streams and files on the box
             .build().apply {
                 setVideoSurfaceView(surface)
                 setWakeMode(C.WAKE_MODE_NETWORK)
