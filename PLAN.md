@@ -197,6 +197,28 @@ What we control, and what we don't, stated honestly:
 - **System:** animation scales 0.5x, background process limit of 2, vendor junk disabled from auto-starting (with Anthony's OK, disable not uninstall), launcher set as the only home app at boot.
 - **Not fixable from an app:** how fast a heavy app like Kodi loads on this chip, and boot time. Going further means different firmware, which is out of scope here. Say this plainly rather than promising it.
 
+### Speed budget (a stage fails if it misses these on the real box)
+
+| Action | Budget |
+|---|---|
+| Key press to focus starting to move | under 50 ms (next frame or the one after) |
+| Any animation | 60 fps, no more than 1 slow frame in 100 (`dumpsys gfxinfo`) |
+| Home key to Home usable | under 300 ms |
+| Tab switch | under 250 ms, content already there (no loading spinners between tabs) |
+| Press a channel to picture | under 2 s on a good stream; channel up/down under 1.5 s |
+| Launcher cold start after boot | under 1.5 s to first frame |
+| Launcher memory, idle | under 80 MB |
+
+How to get there:
+
+- **Compile everything ahead of time.** Android 7 normally compiles apps lazily. Run `cmd package compile -m speed -f <package>` over ADB for Retro Launcher and for the apps people open most (SmartTube, RetroArch, Kodi); this makes those apps themselves start and run faster, which is the "going from the system into an app" slowness Anthony noticed. Measure start time before and after (`am start -W`) and put the command in the skill.
+- **Never wait on the main thread.** Disk, network, image decoding and playlist parsing all happen in the background; the screen draws from what is already in memory. Parse the channel list once and keep a compact cached copy so TV opens instantly.
+- **Preload the next thing.** Neighbouring tabs are built before you reach them; card images are decoded just ahead of scrolling; the player is created at start-up so the first channel doesn't pay for it.
+- **Small and plain.** R8 shrinking on, no dependency-injection frameworks, no reflection, flat view layouts, images at exactly the size shown.
+- **Stay alive.** Keep memory low so Android doesn't kill the launcher behind a game and have to restart it on Home.
+- **System side** (with Anthony's OK, all reversible, record each in `AGENTS.md`): animation scales, background process limit, disable vendor auto-start junk, check whether compressed swap (zram) is on and whether storage trim has run (`sm fstrim`), since full, untrimmed flash is a common cause of old boxes feeling slow.
+- **Measure, don't guess.** A small script in `launcher/tools/` that runs the table above over ADB and prints pass or fail; run it at the end of every stage and paste the numbers in the stage report.
+
 ## Hard limits of the box
 
 | | |
