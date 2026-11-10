@@ -58,6 +58,8 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
 
     init {
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        // rows scroll out of sight under the tab bar instead of sliding behind it
+        root.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ -> v.clipBounds = android.graphics.Rect(0, Kit.dpi(ctx, 92f), r - l, b - t) }
         empty?.let { root.addView(it, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, startTop) }) }
     }
 
@@ -86,7 +88,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             val poolSize = minOf(row.items.size, visible + 1)
             for (pi in 0 until poolSize) {
                 val cell = CardCell(ctx, w, h, row.alwaysLabel)
-                cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, windows[ri] + pi); onHoverFocus?.invoke() }; false }
+                cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, windows[ri] + pi, mouse = true); onHoverFocus?.invoke() }; false }
                 cell.setOnClickListener { focusAt(ri, windows[ri] + pi); ok() }
                 cell.setOnLongClickListener { focusAt(ri, windows[ri] + pi); longOk(); true }
                 track.addView(cell, LinearLayout.LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { if (pi > 0) leftMargin = Kit.dpi(ctx, Kit.GAP) })
@@ -123,9 +125,10 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
 
     fun jumpTo(r: Int, c: Int) { active = true; fr = r.coerceIn(0, (rows.size - 1).coerceAtLeast(0)); fc = c; applyFocus(false) }
 
-    private fun focusAt(r: Int, c: Int) { if (!active) { active = true }; fr = r; fc = c; applyFocus(true) }
+    /** Mouse: hovering only highlights the card; the page never moves under the pointer (the wheel scrolls). */
+    private fun focusAt(r: Int, c: Int, mouse: Boolean = false) { if (!active) { active = true }; fr = r; fc = c; applyFocus(true, mouse) }
 
-    private fun applyFocus(animate: Boolean) {
+    private fun applyFocus(animate: Boolean, mouse: Boolean = false) {
         // horizontal: the pool slides one card at a time and is re-bound, so a row can hold thousands
         for ((ri, tr) in tracks.withIndex()) {
             val list = cells[ri]; if (list.isEmpty()) continue
@@ -133,7 +136,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             val c = if (ri == fr) fc else 0
             val want = (c - (visible - 1)).coerceIn(0, (rows[ri].items.size - visible).coerceAtLeast(0))
             val ws = windows[ri]
-            if (want != ws) {
+            if (want != ws && !mouse) {
                 windows[ri] = want; bind(ri)
                 for (cell in list) cell.setFocus(false, false)
                 if (animate && Math.abs(want - ws) <= 2) { tr.translationX = (want - ws) * steps[ri]; tr.animate().translationX(0f).setDuration(Kit.t(260)).setInterpolator(Kit.EASE).start() }
@@ -148,7 +151,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             if (usesShelf) tops[fr - 1] - Kit.dp(ctx, if (rows[fr - 1].title != null) 193f else 167f)
             else if (fr >= 2) tops[fr - 1] - firstVisible else 0f
         }
-        if (target != scrollY) {
+        if (target != scrollY && !mouse) {
             scrollAnim?.cancel()
             val from = content.translationY
             scrollY = target

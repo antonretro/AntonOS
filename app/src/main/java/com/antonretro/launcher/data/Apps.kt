@@ -89,6 +89,7 @@ class Store(ctx: Context) {
     var recentChannels = mutableListOf<String>()  // newest first
     var lastTv: String? = null
     var recentGames = mutableListOf<String>()
+    var clock24 = false
     var positions = mutableMapOf<String, Long>()   // video path -> where you stopped (ms); duration in durations
     var durations = mutableMapOf<String, Long>()
     var firstRun = true

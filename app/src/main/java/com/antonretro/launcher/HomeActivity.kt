@@ -689,8 +689,12 @@ class HomeActivity : Activity() {
 
     override fun onGenericMotionEvent(e: MotionEvent): Boolean {
         if (e.action == MotionEvent.ACTION_SCROLL) {
-            val v = e.getAxisValue(MotionEvent.AXIS_VSCROLL)
-            if (v != 0f && !inTabBar) { screens[current]?.move(if (v < 0) 1 else -1, 0); return true }
+            // mouse wheel: up/down scrolls rows, sideways (or Shift+wheel) scrolls along a row
+            val v = e.getAxisValue(MotionEvent.AXIS_VSCROLL); val h = e.getAxisValue(MotionEvent.AXIS_HSCROLL)
+            val shift = e.metaState and KeyEvent.META_SHIFT_ON != 0
+            if (inTabBar && v != 0f) { inTabBar = false; screens[current]?.enter(); drawTabs() }
+            if (h != 0f || (shift && v != 0f)) { screens[current]?.move(0, if ((if (h != 0f) h else v) < 0) 1 else -1); return true }
+            if (v != 0f) { screens[current]?.move(if (v < 0) 1 else -1, 0); return true }
         }
         // controller hat / left stick act like the D-pad (with repeat handled by the stick timer)
         if (e.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
@@ -712,6 +716,7 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- opening things
     private fun open(item: Item, cell: CardCell) {
+        Perf.log("open_" + item.javaClass.simpleName, 0)
         when (item) {
             is Item.App -> {
                 val i = Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
@@ -782,7 +787,7 @@ class HomeActivity : Activity() {
     override fun onBackPressed() { /* handled in dispatchKeyEvent; never leave Home */ }
 
     // ---------------------------------------------------------------- clock + app changes
-    private val timeFmt get() = SimpleDateFormat(if (android.text.format.DateFormat.is24HourFormat(this)) "H:mm" else "h:mm", Locale.getDefault())
+    private val timeFmt get() = SimpleDateFormat(if (store.clock24) "H:mm" else "h:mm a", Locale.getDefault())   // 12-hour "5:33 PM" unless 24-hour is chosen
     private fun tickClock() { clock.text = timeFmt.format(Date()) }
 
     private val receiver = object : BroadcastReceiver() {
@@ -819,6 +824,7 @@ object Perf {
         while (true) { val l = lines.take(); try { file?.appendText(l + "\n") } catch (_: Exception) {} }
     }.apply { isDaemon = true; start() }
     fun log(what: String, ms: Long) { Log.i("RLPerf", "$what=$ms"); lines.offer("RLPerf $what=$ms") }
+    fun note(t: String) { lines.offer("RLNote $t") }
     /** Time from an input (uptime ms) to the start of the next drawn frame. */
     fun afterFrame(what: String, since: Long) {
         Choreographer.getInstance().postFrameCallback { frameNanos -> log(what, frameNanos / 1_000_000 - since) }

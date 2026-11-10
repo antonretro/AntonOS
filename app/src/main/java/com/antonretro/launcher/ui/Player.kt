@@ -68,6 +68,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private fun progressText(p: ExoPlayer) = (if (p.playWhenReady) "" else "Paused  ·  ") + fmt(p.currentPosition) + " of " + fmt(p.duration.coerceAtLeast(0)) + "   ·   OK pause   ◀ back 10 s   ▶ ahead 30 s"
 
     fun playVideo(path: String, title: String, startMs: Long, onExit: (Long, Long) -> Unit) {
+        Perf.log("playVideo", 0)
         prepare()
         video = VideoSession(path, title, onExit); list = emptyList()
         visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(Kit.t(220)).start()
@@ -86,6 +87,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     private fun endVideo(finished: Boolean) {
         val v = video ?: return; val p = player
+        Perf.note("endVideo finished=$finished state=${p?.playbackState} vis=$visibility alpha=$alpha")
         val pos = if (finished) 0L else p?.currentPosition ?: 0L; val dur = p?.duration?.coerceAtLeast(0) ?: 0L
         video = null; ui.removeCallbacks(tick); ui.removeCallbacks(fadeBanner)
         p?.stop()
@@ -164,7 +166,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                 setVideoSurfaceView(surface)
                 setWakeMode(C.WAKE_MODE_NETWORK)
                 addListener(object : Player.Listener {
-                    override fun onPlayerError(error: PlaybackException) = fail()
+                    override fun onPlayerError(error: PlaybackException) { Perf.note("error " + error.errorCodeName + " " + (error.cause?.toString() ?: "")); fail() }
                     override fun onRenderedFirstFrame() = started()
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_ENDED && video != null) endVideo(finished = true)
