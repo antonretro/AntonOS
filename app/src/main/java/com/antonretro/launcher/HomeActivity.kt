@@ -75,6 +75,8 @@ class HomeActivity : Activity() {
         window.setBackgroundDrawable(null)   // the wallpaper covers everything: skip one full-screen fill
         hideSystemBars()
         buildScreens()
+        Kit.motion = if (store.reduceMotion) 0.01f else 1f
+        applyHiddenTabs()
         showTab("Home", animate = false)
         Images.init(this)
         yt = YouTubeRepo(filesDir)
@@ -148,7 +150,7 @@ class HomeActivity : Activity() {
         screens["Videos"] = RowsScreen(this, 150f, false, art, open, "Your videos and films will show up here.")
         screens["Games"] = RowsScreen(this, 150f, false, art, open)
         screens["Apps"] = RowsScreen(this, 150f, false, art, open, "Looking for apps…")
-        screens["Settings"] = ListScreen(this, "Settings", settingsEntries())
+        screens["Settings"] = SettingsScreen(this, settingsPages())
         player = PlayerOverlay(this, art).apply {
             onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
@@ -161,6 +163,149 @@ class HomeActivity : Activity() {
             s.onHoverFocus = { if (name == current) { inTabBar = false; drawTabs() } }
         }
     }
+
+    // ---------------------------------------------------------------- Settings: one menu, not three
+    private fun go(action: String) = { safeStart(Intent(action)); Unit }
+    private val settingsScreen get() = screens["Settings"] as SettingsScreen
+
+    private fun settingsPages(): List<SPage> = listOf(
+        SPage("wifi", "Wi-Fi & Internet") { wifiRows() },
+        SPage("image", "Picture") { listOf(
+            SRow("Wallpaper", value = { Backdrop.SCENES[store.wallpaper % Backdrop.SCENES.size].name }, onClick = { nextWallpaper() }),
+            SRow("Reduce motion", { "Fewer animations, everything appears at once" }, toggle = { store.reduceMotion }, onClick = { store.reduceMotion = !store.reduceMotion; Kit.motion = if (store.reduceMotion) 0.01f else 1f; store.save() }),
+            SRow("Screen size and position", { "Fit the picture to your TV" }, onClick = go(Settings.ACTION_DISPLAY_SETTINGS)),
+        ) },
+        SPage("power", "Power & TV") { listOf(
+            SRow("Keep the box on when the TV turns off", { "When on, the TV remote can't control the box over HDMI" }, toggle = { hdmiControl() == 0 }, onClick = { setHdmiControl(if (hdmiControl() == 0) 1 else 0) }),
+            SRow("Show the start-up animation", onClick = { playIntro() }),
+        ) },
+        SPage("sound", "Sound") { listOf(
+            SRow("Start-up sound", { "The chime when the box starts" }, toggle = { store.startupSound }, onClick = { store.startupSound = !store.startupSound; store.save() }),
+            SRow("Volume and sound output", onClick = go(Settings.ACTION_SOUND_SETTINGS)),
+        ) },
+        SPage("pad", "Controllers & Remotes") { controllerRows() },
+        SPage("home", "Home screen") { listOf(
+            SRow("Clock", value = { if (store.clock24) "24-hour (17:30)" else "12-hour (5:30 PM)" }, onClick = { store.clock24 = !store.clock24; store.save(); tickClock() }),
+        ) + listOf("TV", "Radio", "YouTube", "Videos", "Games").map { t ->
+            SRow("Show the $t tab", toggle = { t !in store.hiddenTabs }, onClick = { if (!store.hiddenTabs.remove(t)) store.hiddenTabs.add(t); store.save(); applyHiddenTabs() })
+        } + listOf(
+            SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your dock, hidden apps and tabs go back to how they started. Your channels and games stay.",
+                "Reset" to { store.dock.clear(); store.hidden.clear(); store.hiddenTabs.clear(); store.save(); applyHiddenTabs(); loadApps(); notice("Home screen reset", "") }, "Cancel" to {}) }),
+        ) },
+        SPage("apps", "Apps") { appRows() },
+        SPage("usb", "Storage") { storageRows() },
+        SPage("info", "About") { listOf(
+            SRow("This box", value = { android.os.Build.MODEL + " · Android " + android.os.Build.VERSION.RELEASE }),
+            SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
+            SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
+            SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
+        ) },
+    )
+
+    private fun hdmiControl(): Int = try { Settings.Global.getInt(contentResolver, "hdmi_control_enabled", 1) } catch (e: Exception) { 1 }
+    private fun setHdmiControl(v: Int) {
+        try { Settings.Global.putInt(contentResolver, "hdmi_control_enabled", v); notice(if (v == 0) "The box stays on" else "The box follows the TV", if (v == 0) "when the TV turns off" else "and sleeps when the TV turns off") }
+        catch (e: SecurityException) { notice("Can't change this yet", "Needs a one-time permission over ADB") }
+    }
+
+    private fun wifiRows(): List<SRow> {
+        @Suppress("DEPRECATION") val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        @Suppress("DEPRECATION") val now = wm.connectionInfo?.ssid?.trim('"')?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+        val out = ArrayList<SRow>()
+        out.add(SRow(if (now != null) "Connected to $now" else "Not connected", { if (now != null) "Signal: " + bars(wm.connectionInfo.rssi) else "Pick a network below" }))
+        val seen = HashSet<String>()
+        val saved = try { @Suppress("DEPRECATION") wm.configuredNetworks?.map { it.SSID.trim('"') }?.toSet() } catch (e: Exception) { null } ?: emptySet()
+        val results = try { wm.scanResults } catch (e: Exception) { null } ?: emptyList()
+        for (r in results.sortedByDescending { it.level }) {
+            val ssid = r.SSID; if (ssid.isNullOrEmpty() || ssid == now || !seen.add(ssid)) continue
+            val open = !(r.capabilities.contains("WPA") || r.capabilities.contains("WEP"))
+            out.add(SRow(ssid, { if (ssid in saved) "Saved" else if (open) "Open" else "Locked" }, value = { bars(r.level) }, onClick = { joinWifi(wm, ssid, open, ssid in saved) }))
+            if (out.size > 12) break
+        }
+        if (results.isEmpty()) out.add(SRow("Looking for networks…", { "If nothing shows, Retro Launcher needs location permission for Wi-Fi" }))
+        out.add(SRow("Look again", onClick = { wm.startScan(); ui.postDelayed({ if (current == "Settings") settingsScreen.refresh() }, 3000) }))
+        out.add(SRow("Advanced Wi-Fi settings", onClick = go(Settings.ACTION_WIFI_SETTINGS)))
+        return out
+    }
+
+    private fun bars(rssi: Int) = when { rssi > -55 -> "●●●●"; rssi > -67 -> "●●●○"; rssi > -78 -> "●●○○"; else -> "●○○○" }
+
+    @Suppress("DEPRECATION")
+    private fun joinWifi(wm: android.net.wifi.WifiManager, ssid: String, open: Boolean, saved: Boolean) {
+        fun connect(pass: String?) {
+            try {
+                val existing = wm.configuredNetworks?.firstOrNull { it.SSID.trim('"') == ssid }
+                val id = if (existing != null && pass == null) existing.networkId else {
+                    val c = android.net.wifi.WifiConfiguration().apply {
+                        SSID = "\"$ssid\""
+                        if (pass == null) allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.NONE) else preSharedKey = "\"$pass\""
+                    }
+                    wm.addNetwork(c)
+                }
+                if (id < 0) { notice("Couldn't add that network", ssid); return }
+                wm.disconnect(); wm.enableNetwork(id, true); wm.reconnect()
+                notice("Connecting…", ssid)
+                ui.postDelayed({ if (current == "Settings") settingsScreen.refresh() }, 6000)
+            } catch (e: Exception) { notice("Couldn't connect", ssid) }
+        }
+        if (open || saved) connect(null)
+        else keyboard.open("Password for $ssid", password = true, doneText = "Connect") { pw -> if (pw.isNotEmpty()) connect(pw) }
+    }
+
+    private fun controllerRows(): List<SRow> {
+        val out = ArrayList<SRow>()
+        for (id in InputDevice.getDeviceIds()) {
+            val d = InputDevice.getDevice(id) ?: continue
+            if (d.isVirtual) continue
+            val s = d.sources
+            val kind = when {
+                s and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || s and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK -> "Controller"
+                s and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE -> "Mouse"
+                d.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC -> "Keyboard"
+                d.name.contains("cec", true) -> "TV remote (HDMI)"
+                d.name.contains("keypad", true) || d.name.contains("ir", true) -> "Remote"
+                else -> null
+            } ?: continue
+            out.add(SRow(d.name.trim(), { kind }))
+        }
+        out.add(SRow("Pair a Bluetooth controller", onClick = go(Settings.ACTION_BLUETOOTH_SETTINGS)))
+        out.add(SRow("Use your phone as a remote", { "Coming soon" }))
+        return out
+    }
+
+    private fun appRows(): List<SRow> = repo.apps.map { a ->
+        val pkg = a.component.packageName
+        SRow(a.title, { if (pkg in store.hidden || pkg in AppRepo.HIDDEN_DEFAULTS) "Hidden from Apps" else null }, onClick = { appActions(a) })
+    }
+
+    private fun appActions(a: Item.App) {
+        val pkg = a.component.packageName
+        val hidden = pkg in store.hidden || pkg in AppRepo.HIDDEN_DEFAULTS
+        dialog.show(a.title, "What would you like to do?",
+            "Open" to { safeStart(Intent(Intent.ACTION_MAIN).setComponent(a.component)) },
+            (if (hidden) "Show in Apps" else "Hide") to { if (!store.hidden.remove(pkg)) store.hidden.add(pkg); store.save(); loadApps(); ui.postDelayed({ settingsScreen.refresh() }, 600) },
+            "Uninstall" to { safeStart(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:$pkg"))) },
+            "Cancel" to {})
+    }
+
+    private fun storageRows(): List<SRow> {
+        fun gb(b: Long) = String.format(Locale.getDefault(), "%.1f GB", b / 1e9)
+        val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        val out = ArrayList<SRow>()
+        out.add(SRow("Box storage", { gb(st.availableBytes) + " free of " + gb(st.totalBytes) }))
+        for (u in usbRoots()) { val s = try { android.os.StatFs(u.path) } catch (e: Exception) { null }; out.add(SRow("USB drive ${u.name}", { s?.let { gb(it.availableBytes) + " free" } }, onClick = { offerGamesFrom(listOf(u), quietIfNone = false) })) }
+        out.add(SRow("Add games from a USB drive", onClick = { offerGamesFrom(usbRoots(), quietIfNone = false) }))
+        out.add(SRow("Storage details", onClick = go(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)))
+        return out
+    }
+
+    /** Hidden tabs disappear from the bar (Home, Apps and Settings always stay). */
+    private fun applyHiddenTabs() {
+        for ((i, t) in tabs.withIndex()) tabViews[i].visibility = if (t in store.hiddenTabs) View.GONE else View.VISIBLE
+        if (current in store.hiddenTabs) showTab("Home")
+        tabBar.post { drawTabs(animate = false) }
+    }
+    private fun nextVisibleTab(from: Int, d: Int): Int { var n = from + d; while (n in tabs.indices && tabs[n] in store.hiddenTabs) n += d; return if (n in tabs.indices) n else from }
 
     private fun settingsEntries(): List<Item.Action> {
         fun intent(a: String): (Context) -> Unit = { _ -> safeStart(Intent(a)) }
@@ -459,7 +604,7 @@ class HomeActivity : Activity() {
      *  tab bar, clock and dock cards slide up into place one after another. Any key skips. */
     private fun playIntro() {
         introRunning = true
-        if (getSharedPreferences("intro", MODE_PRIVATE).getBoolean("sound", true)) try {
+        if (store.startupSound) try {
             android.media.MediaPlayer.create(this, R.raw.startup_chime)?.apply { setVolume(.8f, .8f); setOnCompletionListener { it.release() }; start() }
         } catch (_: Exception) {}
         val home = screens["Home"] as RowsScreen
@@ -668,7 +813,7 @@ class HomeActivity : Activity() {
 
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
-            if (dc != 0) { val n = (tabIdx + dc).coerceIn(0, tabs.size - 1); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]) } }
+            if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]) } }
             if (dr > 0) { inTabBar = false; screens[current]?.enter(); drawTabs() }
             return
         }
@@ -676,7 +821,7 @@ class HomeActivity : Activity() {
         if (!s.move(dr, dc) && dr < 0) { inTabBar = true; tabIdx = tabs.indexOf(current); s.leave(); drawTabs(); updateShelf() }
     }
 
-    private fun switchTab(d: Int) { val n = (tabs.indexOf(current) + d).coerceIn(0, tabs.size - 1); showTab(tabs[n]) }
+    private fun switchTab(d: Int) { val n = nextVisibleTab(tabs.indexOf(current), d); showTab(tabs[n]) }
 
     private fun onOk() {
         if (inTabBar) { inTabBar = false; screens[current]?.enter(); drawTabs(); return }

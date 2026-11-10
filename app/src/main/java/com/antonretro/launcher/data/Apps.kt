@@ -90,6 +90,9 @@ class Store(ctx: Context) {
     var lastTv: String? = null
     var recentGames = mutableListOf<String>()
     var clock24 = false
+    var hiddenTabs = mutableSetOf<String>()
+    var startupSound = true
+    var reduceMotion = false
     var positions = mutableMapOf<String, Long>()   // video path -> where you stopped (ms); duration in durations
     var durations = mutableMapOf<String, Long>()
     var firstRun = true
@@ -109,6 +112,8 @@ class Store(ctx: Context) {
             recentChannels = o.optJSONArray("recentChannels").strings().toMutableList()
             lastTv = o.optString("lastTv").ifEmpty { null }
             recentGames = o.optJSONArray("recentGames").strings().toMutableList()
+            hiddenTabs = o.optJSONArray("hiddenTabs").strings().toMutableSet()
+            clock24 = o.optBoolean("clock24", false); startupSound = o.optBoolean("startupSound", true); reduceMotion = o.optBoolean("reduceMotion", false)
             o.optJSONObject("positions")?.let { l -> l.keys().forEach { positions[it] = l.optLong(it) } }
             o.optJSONObject("durations")?.let { l -> l.keys().forEach { durations[it] = l.optLong(it) } }
             firstRun = false
@@ -121,6 +126,7 @@ class Store(ctx: Context) {
             .put("dock", JSONArray(dock)).put("hidden", JSONArray(hidden.toList())).put("recent", JSONArray(recent))
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
             .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
+            .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion)
             .put("positions", JSONObject(positions as Map<*, *>)).put("durations", JSONObject(durations as Map<*, *>))
         Thread { try { val tmp = File(file.path + ".tmp"); tmp.writeText(o.toString(1)); tmp.renameTo(file) } catch (_: Exception) {} }.start()
     }

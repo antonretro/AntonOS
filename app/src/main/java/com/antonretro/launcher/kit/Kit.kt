@@ -20,7 +20,8 @@ object Kit {
     val GLASS_TINT = Color.argb(118, 28, 30, 38)
     val GLASS_STRONG = Color.argb(170, 24, 26, 34)
     val GLASS_EDGE = Color.argb(36, 255, 255, 255)
-    val FOCUS_FILL = Color.WHITE
+    // 99.6% white: a fully solid fill makes Android 7 draw rounded backgrounds with square corners
+    val FOCUS_FILL = Color.argb(254, 255, 255, 255)
     val FOCUS_TEXT = Color.rgb(17, 17, 17)
     val ACCENT = Color.rgb(79, 140, 255)
     val DIM_SCROLLED = Color.argb(140, 6, 8, 14)
