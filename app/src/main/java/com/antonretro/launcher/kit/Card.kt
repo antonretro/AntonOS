@@ -14,7 +14,8 @@ import android.widget.TextView
 
 /** What a card shows. Built once (in the background) and cached. */
 class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap? = null, val caption: String? = null,
-          val bigText: String? = null, val badge: String? = null, val badgeColor: Int = 0xFFE5383B.toInt(), val star: Boolean = false)
+          val bigText: String? = null, val badge: String? = null, val badgeColor: Int = 0xFFE5383B.toInt(), val star: Boolean = false,
+          /** show the whole picture (box art) instead of cropping it to fill the card */ val fit: Boolean = false)
 
 /**
  * The one card: 16:9 (or poster) rounded rectangle with art, a soft pre-rendered shadow,
@@ -117,7 +118,13 @@ class CardFace(ctx: Context) : View(ctx) {
         val a = art
         paint.shader = LinearGradient(0f, 0f, w, h, a?.top ?: 0xFF2A2E38.toInt(), a?.bottom ?: 0xFF15171F.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(r, paint); paint.shader = null
-        a?.bitmap?.let { b ->   // banner: centre-crop to fill
+        a?.bitmap?.let { b ->   // banner: centre-crop to fill; box art: whole box, centred
+            if (a.fit) {
+                val fs = minOf((w - 8f) / b.width, (h - 8f) / b.height)
+                val bw = b.width * fs; val bh = b.height * fs
+                c.drawBitmap(b, null, RectF((w - bw) / 2, (h - bh) / 2, (w + bw) / 2, (h + bh) / 2), paint)
+                return@let
+            }
             val bs = maxOf(w / b.width, h / b.height)
             val sw = (w / bs).toInt(); val sh = (h / bs).toInt()
             src.set((b.width - sw) / 2, (b.height - sh) / 2, (b.width + sw) / 2, (b.height + sh) / 2)

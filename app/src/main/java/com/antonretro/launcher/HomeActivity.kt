@@ -533,7 +533,7 @@ class HomeActivity : Activity() {
             val s = item.rom.system
             val dark = Color.rgb(Color.red(s.colour) / 4, Color.green(s.colour) / 4, Color.blue(s.colour) / 4)
             cell.card.art = Art(null, s.colour, dark, null, null, bigText = item.rom.title, badge = s.badge, badgeColor = 0x99000000.toInt())
-            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt()) }
+            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp) * 2, Kit.dpi(this, cell.hDp) * 2) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
             return
         }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
