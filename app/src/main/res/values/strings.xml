@@ -1,0 +1,4 @@
+<resources>
+    <!-- The one place the display name lives. -->
+    <string name="app_name">Retro Launcher</string>
+</resources>

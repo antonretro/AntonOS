@@ -1,0 +1,177 @@
+package com.antonretro.launcher.kit
+
+import android.animation.ValueAnimator
+import android.content.Context
+import android.graphics.*
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.view.Gravity
+import android.view.View
+import android.view.ViewOutlineProvider
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.TextView
+
+/** What a card shows. Built once (in the background) and cached. */
+class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap? = null, val caption: String? = null)
+
+/**
+ * The one card: 16:9 (or poster) rounded rectangle with art, a soft pre-rendered shadow,
+ * and a name that fades in underneath. Focus = scale 1.12 + lift + light edge, 200 ms.
+ * Only scale, position and alpha are animated; the card itself never redraws per frame.
+ */
+class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Boolean) : FrameLayout(ctx) {
+    val card = CardFace(ctx)
+    private val shadow = ImageView(ctx)
+    val label: TextView = Kit.text(ctx, Kit.LABEL_TEXT, bold = true)
+    private val cw = Kit.dpi(ctx, wDp); private val ch = Kit.dpi(ctx, hDp)
+    var focused = false; private set
+
+    init {
+        clipChildren = false; clipToPadding = false
+        val pad = Kit.dpi(ctx, 22f)
+        shadow.setImageBitmap(Shadows.get(ctx, cw, ch))
+        shadow.alpha = 0f
+        addView(shadow, LayoutParams(cw + pad * 2, ch + pad * 2).apply { leftMargin = -pad; topMargin = -pad + Kit.dpi(ctx, 8f) })
+        addView(card, LayoutParams(cw, ch))
+        label.gravity = Gravity.CENTER_HORIZONTAL
+        label.alpha = if (alwaysLabel) .62f else 0f
+        Kit.shadowText(label)
+        addView(label, LayoutParams(cw + Kit.dpi(ctx, 24f), LayoutParams.WRAP_CONTENT).apply { leftMargin = -Kit.dpi(ctx, 12f); topMargin = ch + Kit.dpi(ctx, 11f) })
+        card.pivotX = cw / 2f; card.pivotY = ch / 2f
+        shadow.pivotX = (cw + pad * 2) / 2f; shadow.pivotY = (ch + pad * 2) / 2f
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        setMeasuredDimension(cw, ch)   // the grid spaces by card size; label and shadow overflow
+    }
+
+    fun setFocus(on: Boolean, animate: Boolean = true) {
+        if (on == focused) return
+        focused = on
+        val d = if (animate) Kit.t(Kit.T_FOCUS) else 0L
+        val s = if (on) Kit.FOCUS_SCALE else 1f
+        val lift = if (on) -Kit.dp(context, 4f) else 0f
+        card.animate().scaleX(s).scaleY(s).translationY(lift).setDuration(d).setInterpolator(Kit.EASE).start()
+        shadow.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
+        label.animate().alpha(if (on) 1f else if (alwaysLabel) .62f else 0f).translationY(if (on) Kit.dp(context, 4f) else 0f).setDuration(d).start()
+        card.focusLook = on
+        translationZ = if (on) 2f else 0f   // draw above neighbours without reordering the row
+    }
+
+    /** The little dip when OK is pressed. */
+    fun press(then: () -> Unit) {
+        card.animate().scaleX(1.04f).scaleY(1.04f).setDuration(Kit.t(Kit.T_PRESS)).withEndAction {
+            card.animate().scaleX(Kit.FOCUS_SCALE).scaleY(Kit.FOCUS_SCALE).setDuration(Kit.t(Kit.T_PRESS)).start()
+            then()
+        }.start()
+    }
+}
+
+class CardFace(ctx: Context) : View(ctx) {
+    var art: Art? = null; set(v) { field = v; invalidate() }
+    var focusLook = false; set(v) { field = v; invalidate() }
+    private val radius = Kit.dp(ctx, Kit.CARD_RADIUS)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Kit.font(ctx, true); textSize = Kit.dp(ctx, 17f) }
+    private val r = RectF(); private val src = Rect()
+
+    init {
+        outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, radius)
+        }
+        clipToOutline = true
+        setLayerType(LAYER_TYPE_HARDWARE, null)   // drawn once, then only transformed
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat(); r.set(0f, 0f, w, h)
+        val a = art
+        paint.shader = LinearGradient(0f, 0f, w, h, a?.top ?: 0xFF2A2E38.toInt(), a?.bottom ?: 0xFF15171F.toInt(), Shader.TileMode.CLAMP)
+        c.drawRect(r, paint); paint.shader = null
+        a?.bitmap?.let { b ->   // banner: centre-crop to fill
+            val bs = maxOf(w / b.width, h / b.height)
+            val sw = (w / bs).toInt(); val sh = (h / bs).toInt()
+            src.set((b.width - sw) / 2, (b.height - sh) / 2, (b.width + sw) / 2, (b.height + sh) / 2)
+            c.drawBitmap(b, src, r, paint)
+        }
+        a?.glyph?.let { g ->
+            val gs = h * .46f / g.height
+            val gw = g.width * gs; val gh = g.height * gs
+            val top = if (a.caption != null) h * .2f else (h - gh) / 2
+            c.drawBitmap(g, null, RectF((w - gw) / 2, top, (w + gw) / 2, top + gh), paint)
+        }
+        a?.caption?.let { cap ->
+            var t = cap; while (text.measureText(t) > w - 24 && t.length > 4) t = t.dropLast(2) + "…"
+            c.drawText(t, (w - text.measureText(t)) / 2, h - Kit.dp(context, 14f), text)
+        }
+        if (focusLook) {
+            paint.shader = LinearGradient(0f, 0f, w * .6f, h * .6f, Color.argb(70, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP)
+            c.drawRect(r, paint); paint.shader = null
+        }
+        edge.strokeWidth = if (focusLook) 2.5f else 1f
+        edge.color = if (focusLook) Color.argb(150, 255, 255, 255) else Color.argb(28, 255, 255, 255)
+        r.inset(edge.strokeWidth / 2, edge.strokeWidth / 2)
+        c.drawRoundRect(r, radius, radius, edge)
+    }
+}
+
+/** Soft shadows are rendered once per card size and reused (never drawn per frame). */
+object Shadows {
+    private val cache = HashMap<Long, Bitmap>()
+    fun get(ctx: Context, w: Int, h: Int): Bitmap = cache.getOrPut(w.toLong() shl 32 or h.toLong()) {
+        val pad = Kit.dpi(ctx, 22f)
+        val b = Bitmap.createBitmap(w + pad * 2, h + pad * 2, Bitmap.Config.ARGB_8888)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 0, 0, 0); maskFilter = BlurMaskFilter(pad * .7f, BlurMaskFilter.Blur.NORMAL) }
+        Canvas(b).drawRoundRect(RectF(pad.toFloat(), pad.toFloat(), (w + pad).toFloat(), (h + pad).toFloat()), Kit.dp(ctx, Kit.CARD_RADIUS), Kit.dp(ctx, Kit.CARD_RADIUS), p)
+        b
+    }
+}
+
+/** Turns an app's banner or icon into card art: banner if sharp enough, else icon on its own colours. */
+object ArtMaker {
+    fun fromBanner(d: Drawable, wPx: Int, hPx: Int): Art? {
+        val iw = d.intrinsicWidth; val ih = d.intrinsicHeight
+        if (iw < wPx * 0.7f || ih <= 0) return null   // too small: would look blurry
+        val b = toBitmap(d, wPx * 2, hPx * 2)
+        return Art(b, 0xFF222222.toInt(), 0xFF111111.toInt())
+    }
+
+    fun fromIcon(d: Drawable?, caption: String?, hPx: Int): Art {
+        if (d == null) return Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, caption)
+        val size = (hPx * 1.2f).toInt().coerceAtLeast(96)
+        val g = toBitmap(d, size, size)
+        val (top, bottom) = colours(g)
+        return Art(null, top, bottom, g, caption)
+    }
+
+    private fun toBitmap(d: Drawable, w: Int, h: Int): Bitmap {
+        if (d is BitmapDrawable && d.bitmap != null && d.bitmap.width == w && d.bitmap.height == h) return d.bitmap
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b); val old = d.copyBounds(); d.setBounds(0, 0, w, h); d.draw(c); d.bounds = old
+        return b
+    }
+
+    /** Main colours of an icon: most common saturated hue, made deep enough for white text. */
+    private fun colours(b: Bitmap): Pair<Int, Int> {
+        val s = Bitmap.createScaledBitmap(b, 24, 24, true)
+        val buckets = IntArray(12); val sat = FloatArray(12); val hsv = FloatArray(3)
+        for (y in 0 until 24) for (x in 0 until 24) {
+            val px = s.getPixel(x, y); if (Color.alpha(px) < 128) continue
+            Color.colorToHSV(px, hsv); if (hsv[1] < .25f || hsv[2] < .2f) continue
+            val i = (hsv[0] / 30f).toInt().coerceIn(0, 11); buckets[i]++; sat[i] += hsv[1]
+        }
+        val best = buckets.indices.maxByOrNull { buckets[it] } ?: 0
+        if (buckets[best] < 6) return 0xFF4A5060.toInt() to 0xFF1C1F27.toInt()
+        val hue = best * 30f + 15f
+        val top = Color.HSVToColor(floatArrayOf(hue, (sat[best] / buckets[best]).coerceIn(.45f, .8f), .62f))
+        val bottom = Color.HSVToColor(floatArrayOf((hue + 18f) % 360f, .75f, .26f))
+        return top to bottom
+    }
+}
+
+/** Animates a float with the kit's curve; used for scroll and crossfades. */
+fun animateFloat(from: Float, to: Float, ms: Long, update: (Float) -> Unit): ValueAnimator =
+    ValueAnimator.ofFloat(from, to).apply { duration = Kit.t(ms); interpolator = Kit.EASE; addUpdateListener { update(it.animatedValue as Float) }; start() }

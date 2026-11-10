@@ -1,0 +1,206 @@
+package com.antonretro.launcher.ui
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.view.MotionEvent
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.antonretro.launcher.data.Item
+import com.antonretro.launcher.kit.*
+
+/** One tab's content. Built once at start-up and kept in memory, so tab switches never load. */
+abstract class Screen(val ctx: Context) {
+    abstract val view: View
+    /** Moves focus; returns false when the move leaves the top edge (focus goes to the tab bar). */
+    abstract fun move(dRow: Int, dCol: Int): Boolean
+    abstract fun ok()
+    open fun longOk() {}
+    /** Back inside the screen; returns false if there was nothing to go back to. */
+    open fun back(): Boolean = false
+    abstract fun enter()     // focus comes in from the tab bar
+    abstract fun leave()     // focus goes up to the tab bar
+    open fun reset() {}      // Home pressed: first row, first card
+    open val usesShelf = false
+    open fun shelfItem(): Item? = null
+    /** true when the screen wants the dimmed, blurred backdrop (grid views, lists). */
+    open fun scrolled(): Boolean = false
+    var onFocusChanged: (() -> Unit)? = null
+    var onHoverFocus: (() -> Unit)? = null
+}
+
+class Row(val title: String?, val items: List<Item>, val glass: Boolean = false, val alwaysLabel: Boolean = false, val poster: Boolean = false)
+
+/**
+ * Rows of cards. Rules from the plan: rows are never faded or shrunk, scrolling moves one
+ * row at a time and keeps the row above the focused one on screen, focus is remembered.
+ */
+@SuppressLint("ViewConstructor")
+class RowsScreen(ctx: Context, private val startTop: Float, override val usesShelf: Boolean,
+                 private val artFor: (Item, CardCell) -> Unit, private val open: (Item, CardCell) -> Unit,
+                 private val emptyText: String? = null) : Screen(ctx) {
+
+    private val root = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
+    private val content = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
+    override val view: View get() = root
+    private var rows: List<Row> = emptyList()
+    private val rowViews = ArrayList<FrameLayout>()
+    private val tracks = ArrayList<LinearLayout>()
+    private val cells = ArrayList<List<CardCell>>()
+    private val tops = ArrayList<Float>()
+    private val glassViews = ArrayList<View>()
+    private var fr = 0; private var fc = 0; private var active = false
+    private var scrollY = 0f; private var scrollAnim: android.animation.ValueAnimator? = null
+    private val empty: TextView? = emptyText?.let { Kit.text(ctx, Kit.TITLE_TEXT, false, Kit.TEXT_DIM).apply { isSingleLine = false; text = it } }
+
+    init {
+        root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        empty?.let { root.addView(it, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, startTop) }) }
+    }
+
+    fun setRows(newRows: List<Row>) {
+        val keepKey = rows.getOrNull(fr)?.items?.getOrNull(fc)?.key
+        rows = newRows.filter { it.items.isNotEmpty() }
+        content.removeAllViews(); glassViews.clear(); rowViews.clear(); tracks.clear(); cells.clear(); tops.clear()
+        var top = Kit.dp(ctx, startTop)
+        for ((ri, row) in rows.withIndex()) {
+            val w = if (row.poster) Kit.POSTER_W else Kit.CARD_W
+            val h = if (row.poster) Kit.POSTER_H else Kit.CARD_H
+            val rv = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
+            if (row.glass) {
+                val g = View(ctx); g.background = GlassDrawable(g, Kit.dp(ctx, 27f)); glassViews.add(g)
+                rv.addView(g, FrameLayout.LayoutParams(-1, Kit.dpi(ctx, h + 58f)).apply { leftMargin = Kit.dpi(ctx, 29f); rightMargin = Kit.dpi(ctx, 29f); topMargin = -Kit.dpi(ctx, 23f) })
+            }
+            row.title?.let {
+                val t = Kit.text(ctx, Kit.TITLE_TEXT, true).apply { text = it; alpha = .9f }
+                Kit.shadowText(t)
+                rv.addView(t, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = -Kit.dpi(ctx, 37f) })
+            }
+            val track = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false; clipToPadding = false }
+            val list = ArrayList<CardCell>()
+            for ((ci, item) in row.items.withIndex()) {
+                val cell = CardCell(ctx, w, h, row.alwaysLabel)
+                cell.label.text = item.title
+                artFor(item, cell)
+                cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, ci); onHoverFocus?.invoke() }; false }
+                cell.setOnClickListener { focusAt(ri, ci); ok() }
+                cell.setOnLongClickListener { focusAt(ri, ci); longOk(); true }
+                track.addView(cell, LinearLayout.LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { if (ci > 0) leftMargin = Kit.dpi(ctx, Kit.GAP) })
+                list.add(cell)
+            }
+            rv.addView(track, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X) })
+            content.addView(rv, FrameLayout.LayoutParams(-1, -2).apply { topMargin = top.toInt() })
+            rowViews.add(rv); tracks.add(track); cells.add(list); tops.add(top)
+            val labelSpace = if (row.alwaysLabel) 70f else 50f
+            top += Kit.dp(ctx, h + labelSpace + (if (rows.getOrNull(ri + 1)?.title != null) 37f else 20f) + if (row.glass) 18f else 0f)
+        }
+        empty?.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        // keep focus on the same item if it still exists
+        var found = false
+        if (keepKey != null) for ((ri, r) in rows.withIndex()) { val ci = r.items.indexOfFirst { it.key == keepKey }; if (ci >= 0) { fr = ri; fc = ci; found = true; break } }
+        if (!found) { fr = fr.coerceIn(0, (rows.size - 1).coerceAtLeast(0)); fc = fc.coerceIn(0, ((rows.getOrNull(fr)?.items?.size ?: 1) - 1).coerceAtLeast(0)) }
+        applyFocus(false)
+    }
+
+    private fun focusAt(r: Int, c: Int) { if (!active) { active = true }; fr = r; fc = c; applyFocus(true) }
+
+    private fun applyFocus(animate: Boolean) {
+        for ((ri, list) in cells.withIndex()) for ((ci, cell) in list.withIndex()) cell.setFocus(active && ri == fr && ci == fc, animate)
+        for ((ri, rv) in rowViews.withIndex()) rv.translationZ = if (ri == fr) 1f else 0f
+        // vertical: keep the row above the focused one visible
+        val target = if (fr <= 0 || !active) 0f else {
+            val firstVisible = tops[0]
+            if (usesShelf) tops[fr - 1] - Kit.dp(ctx, if (rows[fr - 1].title != null) 193f else 167f)
+            else if (fr >= 2) tops[fr - 1] - firstVisible else 0f
+        }
+        if (target != scrollY) {
+            scrollAnim?.cancel()
+            val from = content.translationY
+            scrollY = target
+            if (animate) scrollAnim = animateFloat(from, -target, Kit.T_SCROLL) { content.translationY = it; glassViews.forEach(View::invalidate) }
+            else content.translationY = -target
+        }
+        // horizontal: slide the row only when the focused card would leave the safe area
+        for ((ri, tr) in tracks.withIndex()) {
+            val list = cells[ri]; if (list.isEmpty()) continue
+            val step = list[0].layoutParams.width + Kit.dp(ctx, Kit.GAP)
+            val visible = ((Kit.dp(ctx, 1280f - 2 * Kit.SAFE_X) + Kit.dp(ctx, Kit.GAP)) / step).toInt().coerceAtLeast(1)
+            val c = if (ri == fr) fc else 0
+            val tx = -(c - (visible - 1)).coerceAtLeast(0) * step
+            if (tr.translationX != tx) { if (animate) tr.animate().translationX(tx).setDuration(Kit.t(300)).setInterpolator(Kit.EASE).start() else tr.translationX = tx }
+        }
+        onFocusChanged?.invoke()
+    }
+
+    override fun move(dRow: Int, dCol: Int): Boolean {
+        if (rows.isEmpty()) return dRow >= 0
+        if (dRow != 0) {
+            val nr = fr + dRow
+            if (nr < 0) return false
+            if (nr < rows.size) { fr = nr; fc = fc.coerceAtMost(rows[nr].items.size - 1) }
+        }
+        if (dCol != 0) { val n = fc + dCol; if (n >= 0 && n < rows[fr].items.size) fc = n }
+        applyFocus(true); return true
+    }
+
+    fun currentCell(): CardCell? = cells.getOrNull(fr)?.getOrNull(fc)
+    override fun shelfItem(): Item? = if (!active || fr == 0) rows.getOrNull(0)?.items?.getOrNull(fc) else null
+    override fun scrolled() = !usesShelf || (active && fr > 0)
+    override fun ok() { val c = currentCell() ?: return; val item = rows[fr].items[fc]; c.press { open(item, c) } }
+    override fun back(): Boolean { if (fr > 0) { fr = 0; applyFocus(true); return true }; return false }
+    override fun enter() { active = true; if (rows.isNotEmpty()) applyFocus(true) }
+    override fun leave() { active = false; applyFocus(true) }
+    override fun reset() { fr = 0; fc = 0; applyFocus(true) }
+    fun hasItems() = rows.isNotEmpty()
+    /** For the start-up intro: the views that rise into place, in order. */
+    fun introViews(): List<View> = (cells.getOrNull(0) ?: emptyList<View>()) + rowViews.drop(1)
+    /** Wheel / page scrolling for mice. */
+    fun scrollBy(dRow: Int) = move(dRow, 0)
+}
+
+/** A plain vertical list (Settings, for now): big rows, focus = white fill. */
+class ListScreen(ctx: Context, private val title: String, private val entries: List<Item.Action>) : Screen(ctx) {
+    private val root = FrameLayout(ctx)
+    override val view: View get() = root
+    private val rowViews = ArrayList<TextView>()
+    private var idx = 0; private var active = false
+    private val panel = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+
+    init {
+        val h = Kit.text(ctx, 32f, true).apply { text = title }
+        root.addView(h, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 118f) })
+        val box = FrameLayout(ctx)
+        box.background = GlassDrawable(box, Kit.dp(ctx, 24f))
+        box.setPadding(Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f))
+        box.addView(panel)
+        root.addView(box, FrameLayout.LayoutParams(Kit.dpi(ctx, 760f), -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 170f) })
+        for ((i, e) in entries.withIndex()) {
+            val tv = Kit.text(ctx, Kit.BODY_TEXT, true)
+            tv.text = if (e.subtitle.isNotEmpty()) "${e.title}    ·    ${e.subtitle}" else e.title
+            tv.setPadding(Kit.dpi(ctx, 20f), 0, Kit.dpi(ctx, 20f), 0)
+            tv.gravity = android.view.Gravity.CENTER_VERTICAL
+            tv.setOnHoverListener { _, ev -> if (ev.action == MotionEvent.ACTION_HOVER_ENTER) { idx = i; active = true; draw(); onHoverFocus?.invoke() }; false }
+            tv.setOnClickListener { idx = i; ok() }
+            panel.addView(tv, LinearLayout.LayoutParams(-1, Kit.dpi(ctx, 58f)).apply { bottomMargin = Kit.dpi(ctx, 5f) })
+            rowViews.add(tv)
+        }
+        draw()
+    }
+
+    private fun draw() {
+        for ((i, tv) in rowViews.withIndex()) {
+            val on = active && i == idx
+            tv.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(if (on) Kit.FOCUS_FILL else 0x0DFFFFFF) }
+            tv.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
+            tv.animate().scaleX(if (on) 1.03f else 1f).scaleY(if (on) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
+        }
+        onFocusChanged?.invoke()
+    }
+    override fun move(dRow: Int, dCol: Int): Boolean { val n = idx + dRow; if (n < 0) return false; if (n < entries.size) idx = n; draw(); return true }
+    override fun ok() { entries[idx].run(ctx) }
+    override fun enter() { active = true; draw() }
+    override fun leave() { active = false; draw() }
+    override fun reset() { idx = 0; draw() }
+    override fun scrolled() = true
+}
