@@ -56,7 +56,12 @@ The dock of favourites (anything can be pinned: a channel, a game, an app), then
 - Browsing: channel cards with logos, grouped by country, plus Favourites and Recent at the top. A star on long press.
 - While watching: Up/Down changes channel straight away with a small name banner that fades; OK shows the channel strip along the bottom; Back returns to the list. Opening TV resumes the last channel.
 - A dead stream shows "This channel isn't working right now" for two seconds and moves on. Never a spinner forever, never a freeze (the Kodi failure in the skill notes).
-- No programme guide in the first version (free guide data for these lists is patchy). Leave room for it.
+- **TV Guide.** Anthony wants a real guide: what's on now and what's coming up.
+  - *Now and next everywhere:* each channel card shows the current programme with a thin progress bar; the banner while watching shows "Now: ... / Next: ... at 8:00".
+  - *Guide screen:* a "Guide" button at the top of the TV tab, and the Menu key while watching. Channels down the side, time across (now to +24 h), programmes as blocks in our card style, current time as a vertical line. Focusing a block shows its title, time and description; OK on something on now plays it; OK on something later offers "Remind me" (a notice a minute before it starts). Favourites first, then by country. Scrolling must hold 60 fps: draw only visible blocks.
+  - *Data:* guide data is XMLTV, matched to channels by the `tvg-id` already in the playlist. Free sources are per provider and coverage is partial, so support a short list of guide URLs in `/sdcard/RetroLauncher/guide-sources.txt`, filled by the skill for the chosen countries (candidates to evaluate: the iptv-org/epg project's site list, and public XMLTV feeds for the free ad-supported services whose channels are in the list). Check each source's terms before shipping it as a default.
+  - *On a 1 GB box:* never load a whole guide file into memory. Download gzip, stream-parse, keep only channels that are in the playlist and only the next 48 hours, store compactly in SQLite. Refresh once a day in the background and when the TV tab opens with data older than 12 hours; never while a video is starting.
+  - *Honesty in the UI:* channels with no data show "No guide information" and sit below the ones that have it. Report to Anthony what share of his channels actually get a guide.
 - Same rule as the skill: some iptv-org entries are unofficial rebroadcasts. Use the list as built; don't hand-pick, test or promote those, and add no other sources.
 - Kodi stays installed and shows up under Apps for anyone who wants it. It's just no longer needed for TV, which also frees roughly 300 MB of RAM.
 
