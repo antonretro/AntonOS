@@ -25,6 +25,10 @@ import com.antonretro.launcher.data.Item
 import com.antonretro.launcher.data.Store
 import com.antonretro.launcher.data.Channel
 import com.antonretro.launcher.data.ChannelRepo
+import com.antonretro.launcher.data.VideoRepo
+import com.antonretro.launcher.data.LocalVideo
+import com.antonretro.launcher.data.Video
+import com.antonretro.launcher.data.YouTubeRepo
 import com.antonretro.launcher.kit.*
 import com.antonretro.launcher.ui.*
 import java.text.SimpleDateFormat
@@ -70,6 +74,10 @@ class HomeActivity : Activity() {
         buildScreens()
         showTab("Home", animate = false)
         Images.init(this)
+        yt = YouTubeRepo(filesDir)
+        keyboard = Keyboard(this); root.addView(keyboard, -1, -1)
+        rebuildYouTube()
+        ui.postDelayed({ rebuildVideos() }, 1200)
         loadApps { if (wantIntro()) playIntro() }
         loadChannels()
         ui.postDelayed({ player.prepare() }, 1500)   // the first channel doesn't pay for creating the player
@@ -159,6 +167,76 @@ class HomeActivity : Activity() {
             Item.Action("set:classic", "Classic launcher", "the box's original menu", "grid") { _ -> openClassic() },
             Item.Action("set:android", "Advanced Android settings", "", "gear", intent(Settings.ACTION_SETTINGS)),
         )
+    }
+
+    // ---------------------------------------------------------------- YouTube (our tab, SmartTube plays)
+    private lateinit var yt: YouTubeRepo
+    private lateinit var keyboard: Keyboard
+    private var smartTube: String? = null
+
+    private fun rebuildYouTube(force: Boolean = false) {
+        bg.execute {
+            val shelves = yt.pinned.map { p -> p to (yt.feed(p.id, force) ?: emptyList()) }
+            ui.post {
+                val rows = ArrayList<Row>()
+                rows.add(Row(null, listOf(Item.YtSearch()), alwaysLabel = false))
+                if (yt.watched.isNotEmpty()) rows.add(Row("Keep watching", yt.watched.map { Item.Yt(it) }, alwaysLabel = true))
+                for ((p, vids) in shelves) if (vids.isNotEmpty()) rows.add(Row(p.name, vids.map { Item.Yt(it) }, alwaysLabel = true))
+                rows.add(Row("More", listOf(Item.YtAdd()), alwaysLabel = true))
+                (screens["YouTube"] as RowsScreen).setRows(rows)
+            }
+        }
+    }
+
+    private fun openInSmartTube(uri: String, cell: CardCell?): Boolean {
+        val pkg = smartTube ?: return false.also { notice("SmartTube isn't installed", "Install it to watch YouTube") }
+        val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri)).setPackage(pkg)
+        val opts = cell?.let { ActivityOptions.makeScaleUpAnimation(it.card, 0, 0, it.card.width, it.card.height).toBundle() }
+        return safeStart(i, opts).also { if (it) returning = true }
+    }
+
+    private fun youtubeSearch() {
+        keyboard.open("Search YouTube", doneText = "Search") { q ->
+            if (q.isBlank()) return@open
+            if (!openInSmartTube("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(q.trim()), null)) return@open
+        }
+    }
+
+    private fun youtubeAdd() {
+        keyboard.open("Add a channel: type or paste its link (youtube.com/channel/UC…)", doneText = "Add") { link ->
+            if (link.isBlank()) return@open
+            bg.execute { val name = yt.pin(link); ui.post { if (name != null) { notice("Channel added", name); rebuildYouTube() } else notice("Couldn't find that channel", "Use a link with /channel/UC…") } }
+        }
+    }
+
+    // ---------------------------------------------------------------- Videos (your own, built-in player)
+    private var videoGroups: List<Pair<String, List<LocalVideo>>> = emptyList()
+    private fun rebuildVideos() {
+        bg.execute {
+            val groups = try { VideoRepo.scan() } catch (e: Exception) { emptyList() }
+            ui.post {
+                videoGroups = groups
+                val all = groups.flatMap { it.second }.associateBy { it.file.path }
+                val keep = store.positions.keys.mapNotNull { all[it] }.map { Item.Vid(it) }
+                val rows = ArrayList<Row>()
+                if (keep.isNotEmpty()) rows.add(Row("Keep watching", keep, alwaysLabel = true))
+                for ((name, vids) in groups) rows.add(Row(name, vids.map { Item.Vid(it) }, alwaysLabel = true))
+                val vs = screens["Videos"] as RowsScreen
+                vs.setEmptyText("No videos yet. Put them in RetroLauncher/Videos, or plug in a USB drive.")
+                vs.setRows(rows)
+            }
+        }
+    }
+
+    private fun playVideo(v: LocalVideo) {
+        if (player.parent == null) root.addView(player, -1, -1)
+        player.bringToFront()
+        player.playVideo(v.file.path, v.title, store.positions[v.file.path] ?: 0L) { pos, dur ->
+            // remember where you stopped; forget it near the end
+            if (pos > 10_000 && (dur <= 0 || pos < dur - 60_000)) { store.positions[v.file.path] = pos; store.durations[v.file.path] = dur }
+            else { store.positions.remove(v.file.path); store.durations.remove(v.file.path) }
+            store.save(); rebuildVideos()
+        }
     }
 
     // ---------------------------------------------------------------- TV and radio
@@ -334,8 +412,7 @@ class HomeActivity : Activity() {
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
         (screens["Games"] as RowsScreen).setRows(listOf(Row("Android games", visible.filter { it.isGame }, alwaysLabel = true)))
-        val yt = all.filter { it.component.packageName in AppRepo.YOUTUBE_APPS }
-        (screens["YouTube"] as RowsScreen).setRows(listOf(Row("YouTube (search and your channels come in the next stage)", yt, alwaysLabel = true)))
+        smartTube = all.firstOrNull { it.component.packageName in AppRepo.YOUTUBE_APPS }?.component?.packageName
         updateShelf()
     }
 
@@ -344,6 +421,21 @@ class HomeActivity : Activity() {
         artCache[item.key]?.let { cell.card.art = it; return }
         cell.tag = item.key
         if (item is Item.Ch) { bindChannelArt(item.ch, cell); return }
+        if (item is Item.Vid) {
+            val pos = store.positions[item.v.file.path]; val dur = store.durations[item.v.file.path]
+            val badge = if (pos != null && dur != null && dur > 0) "${(pos * 100 / dur)}% WATCHED" else null
+            cell.card.art = Art(null, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), null, null, bigText = item.v.title, badge = badge, badgeColor = 0xFF4F8CFF.toInt())
+            val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
+            bg.execute { val b = VideoRepo.thumb(item.v, cacheDir, w, h); ui.post { if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), badge = badge, badgeColor = 0xFF4F8CFF.toInt()) } }
+            return
+        }
+        if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
+        if (item is Item.YtAdd) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add a channel"); return }
+        if (item is Item.Yt) {
+            cell.card.art = Art(null, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), null, null, bigText = item.v.title)
+            Images.load(item.v.thumb, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt()) }
+            return
+        }
         if (item !is Item.App) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, item.title); return }
         val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
         bg.execute {
@@ -433,6 +525,7 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
+        if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
             if (e.action == KeyEvent.ACTION_UP) return true
@@ -524,6 +617,10 @@ class HomeActivity : Activity() {
                 openPlayer(row, row.indexOfFirst { it.url == item.ch.url }.coerceAtLeast(0))
             }
             is Item.More -> {}
+            is Item.Yt -> if (openInSmartTube(item.v.url, cell)) { yt.noteWatched(item.v); ui.postDelayed({ rebuildYouTube() }, 800) }
+            is Item.YtSearch -> youtubeSearch()
+            is Item.Vid -> playVideo(item.v)
+            is Item.YtAdd -> youtubeAdd()
         }
     }
 

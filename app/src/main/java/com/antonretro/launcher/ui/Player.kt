@@ -58,6 +58,37 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     var onStar: ((Channel) -> Unit)? = null
 
     private var player: ExoPlayer? = null
+    /** Set while playing one of your own videos (not a channel). */
+    private class VideoSession(val path: String, val title: String, val onExit: (Long, Long) -> Unit)
+    private var video: VideoSession? = null
+    private val tick = object : Runnable { override fun run() { val p = player ?: return; if (video != null) { bSub.text = progressText(p); ui.postDelayed(this, 1000) } } }
+    private fun fmt(ms: Long): String { val s = ms / 1000; return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60) }
+    private fun progressText(p: ExoPlayer) = (if (p.playWhenReady) "" else "Paused  ·  ") + fmt(p.currentPosition) + " of " + fmt(p.duration.coerceAtLeast(0)) + "   ·   OK pause   ◀ back 10 s   ▶ ahead 30 s"
+
+    fun playVideo(path: String, title: String, startMs: Long, onExit: (Long, Long) -> Unit) {
+        prepare()
+        video = VideoSession(path, title, onExit); list = emptyList()
+        visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(Kit.t(220)).start()
+        radioPanel.visibility = View.GONE; error.visibility = View.GONE
+        bNum.text = ""; bName.text = title; bSub.text = "Starting…"
+        banner.animate().cancel(); banner.alpha = 1f; ui.removeCallbacks(fadeBanner)
+        val p = player ?: return
+        p.setMediaItem(MediaItem.fromUri(Uri.fromFile(java.io.File(path)))); p.prepare()
+        if (startMs > 5000) p.seekTo(startMs - 3000)
+        p.playWhenReady = true
+        ui.removeCallbacks(tick); ui.post(tick); ui.postDelayed(fadeBanner, 4000)
+    }
+
+    private fun showVideoBanner() { banner.animate().cancel(); banner.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 3500) }
+
+    private fun endVideo(finished: Boolean) {
+        val v = video ?: return; val p = player
+        val pos = if (finished) 0L else p?.currentPosition ?: 0L; val dur = p?.duration?.coerceAtLeast(0) ?: 0L
+        video = null; ui.removeCallbacks(tick); ui.removeCallbacks(fadeBanner)
+        p?.stop()
+        animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
+        v.onExit(pos, dur)
+    }
     private var list: List<Channel> = emptyList()
     private var idx = 0
     private var zapDir = 1
@@ -126,7 +157,10 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                 addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) = fail()
                     override fun onRenderedFirstFrame() = started()
-                    override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_READY && list.getOrNull(idx)?.radio == true) started() }
+                    override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_ENDED && video != null) endVideo(finished = true)
+                        if (state == Player.STATE_READY && list.getOrNull(idx)?.radio == true) started()
+                    }
                 })
             }
     }
@@ -165,6 +199,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     private fun started() {
         ui.removeCallbacks(watchdog)
+        if (video != null) return
         val c = list.getOrNull(idx) ?: return
         Perf.log(if (firstTune) "channel" else "zap", SystemClock.uptimeMillis() - tunedAt)
         firstTune = false
@@ -174,6 +209,10 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     private fun fail() {
         ui.removeCallbacks(watchdog)
+        if (video != null) {
+            error.text = "This video can't be played on this box"; error.visibility = View.VISIBLE
+            ui.postDelayed({ error.text = "This channel isn't working right now"; endVideo(false) }, 2500); return
+        }
         if (!showing && !playing) return
         player?.stop()
         error.visibility = View.VISIBLE; error.alpha = 0f; error.animate().alpha(1f).setDuration(Kit.t(200)).start()
@@ -197,6 +236,18 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     /** Returns true when the key was used. */
     fun onKey(code: Int): Boolean {
+        video?.let {
+            val p = player ?: return true
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> p.playWhenReady = !p.playWhenReady
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0))
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> p.seekTo(p.currentPosition + 30_000)
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {}
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { endVideo(false); return true }
+                else -> return false
+            }
+            bSub.text = progressText(p); showVideoBanner(); return true
+        }
         if (stripOn) {
             when (code) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> strip.move(0, -1)
@@ -223,6 +274,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     /** Back: TV stops; radio keeps playing in the background. */
     fun close(keepRadio: Boolean) {
+        if (video != null) { endVideo(false); return }
         ui.removeCallbacks(watchdog); ui.removeCallbacks(fadeBanner)
         val c = current
         val keep = keepRadio && c?.radio == true && error.visibility != View.VISIBLE && player?.playWhenReady == true
