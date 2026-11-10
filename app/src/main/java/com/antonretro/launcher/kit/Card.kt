@@ -42,10 +42,11 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         ring.setLayerType(LAYER_TYPE_HARDWARE, null)
         addView(ring, LayoutParams(cw, ch))
         ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
-        label.gravity = Gravity.CENTER_HORIZONTAL
+        label.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
         label.alpha = if (alwaysLabel) .62f else 0f
         Kit.shadowText(label)
-        addView(label, LayoutParams(cw + Kit.dpi(ctx, 24f), LayoutParams.WRAP_CONTENT).apply { leftMargin = -Kit.dpi(ctx, 12f); topMargin = ch + Kit.dpi(ctx, 11f) })
+        // fixed height: a wrap-content label would be squeezed to the card's own height and clipped
+        addView(label, LayoutParams(cw + Kit.dpi(ctx, 24f), Kit.dpi(ctx, 28f)).apply { leftMargin = -Kit.dpi(ctx, 12f); topMargin = ch + Kit.dpi(ctx, 11f) })
         card.pivotX = cw / 2f; card.pivotY = ch / 2f
         shadow.pivotX = (cw + pad * 2) / 2f; shadow.pivotY = (ch + pad * 2) / 2f
     }

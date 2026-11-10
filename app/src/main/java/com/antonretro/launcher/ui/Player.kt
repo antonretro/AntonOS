@@ -41,6 +41,8 @@ import com.antonretro.launcher.kit.*
 class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) : FrameLayout(ctx) {
     private val ui = Handler(Looper.getMainLooper())
     private val surface = SurfaceView(ctx)
+    /** Black cover while a channel tunes, so the last channel's picture never sits frozen on screen. */
+    private val cover = View(ctx).apply { setBackgroundColor(Color.BLACK) }
     private val radioPanel = FrameLayout(ctx)
     private val radioCard = CardCell(ctx, 300f, 169f, false)
     private val radioName = Kit.text(ctx, 30f, true)
@@ -70,9 +72,10 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         video = VideoSession(path, title, onExit); list = emptyList()
         visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(Kit.t(220)).start()
         radioPanel.visibility = View.GONE; error.visibility = View.GONE
-        bNum.text = ""; bName.text = title; bSub.text = "Starting…"
+        cover.alpha = 0f; bNum.text = ""; bName.text = title; bSub.text = "Starting…"
         banner.animate().cancel(); banner.alpha = 1f; ui.removeCallbacks(fadeBanner)
         val p = player ?: return
+        p.volume = if (testMuted()) 0f else 1f
         p.setMediaItem(MediaItem.fromUri(Uri.fromFile(java.io.File(path)))); p.prepare()
         if (startMs > 5000) p.seekTo(startMs - 3000)
         p.playWhenReady = true
@@ -103,6 +106,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         visibility = View.GONE
         setBackgroundColor(Color.BLACK)
         addView(surface, LayoutParams(-1, -1, Gravity.CENTER))
+        addView(cover, LayoutParams(-1, -1))
 
         // radio: logo, name and clock over the blurred wallpaper
         radioPanel.addView(ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; setImageBitmap(Backdrop.blurredDim) }, -1, -1)
@@ -138,6 +142,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         addView(stripBox, LayoutParams(-1, Kit.dpi(ctx, 250f), Gravity.BOTTOM))
     }
 
+    /** Testing over ADB: a file /sdcard/RetroLauncher/.test-mute silences the player. */
+    private fun testMuted() = java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()
+
     /** Created once at start-up so the first channel doesn't pay for it. */
     fun prepare() {
         if (player != null) return
@@ -149,7 +156,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         }
         val http = DefaultHttpDataSource.Factory().setUserAgent("RetroLauncher/1 (Android TV)")
             .setConnectTimeoutMs(6000).setReadTimeoutMs(8000).setAllowCrossProtocolRedirects(true)
-        player = ExoPlayer.Builder(context).setLoadControl(load).setTrackSelector(tracks)
+        // start on a modest stream quality so the first picture comes fast, then step up
+        val meter = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context).setInitialBitrateEstimate(1_500_000).build()
+        player = ExoPlayer.Builder(context).setLoadControl(load).setTrackSelector(tracks).setBandwidthMeter(meter)
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build().apply {
                 setVideoSurfaceView(surface)
@@ -189,10 +198,12 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         bNum.text = c.number.toString(); bName.text = c.name; bSub.text = "${c.country}  ·  Tuning…"
         banner.animate().cancel(); banner.alpha = 1f
         ui.removeCallbacks(fadeBanner); ui.removeCallbacks(watchdog)
-        ui.postDelayed(watchdog, 12000)
+        ui.postDelayed(watchdog, 8000)
+        cover.animate().cancel(); cover.alpha = 1f
         tunedAt = SystemClock.uptimeMillis()
         val p = player ?: return
         val item = MediaItem.Builder().setUri(Uri.parse(c.url)).apply { if (c.url.contains(".m3u8")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
+        p.volume = if (testMuted()) 0f else 1f
         p.setMediaItem(item); p.prepare(); p.playWhenReady = true
         onTuned?.invoke(c)
     }
@@ -201,10 +212,25 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         ui.removeCallbacks(watchdog)
         if (video != null) return
         val c = list.getOrNull(idx) ?: return
+        cover.animate().alpha(0f).setDuration(Kit.t(160)).start()
         Perf.log(if (firstTune) "channel" else "zap", SystemClock.uptimeMillis() - tunedAt)
+        warmNeighbours()
         firstTune = false
         bSub.text = "${c.country}  ·  Up/Down for other channels  ·  OK for the list"
         ui.postDelayed(fadeBanner, 3500)
+    }
+
+    /** Fetch the neighbouring channels' playlists in the background so a channel change skips the DNS,
+     *  TLS and playlist round trips (the slow part of starting an HLS stream on this box). */
+    private fun warmNeighbours() {
+        val near = listOfNotNull(list.getOrNull(idx + zapDir), list.getOrNull(idx - zapDir)).map { it.url }
+        Thread {
+            for (u in near) try {
+                val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 3000; c.readTimeout = 3000; c.setRequestProperty("User-Agent", "RetroLauncher/1 (Android TV)")
+                c.inputStream.use { it.readBytes() }; c.disconnect()
+            } catch (_: Exception) {}
+        }.apply { isDaemon = true }.start()
     }
 
     private fun fail() {

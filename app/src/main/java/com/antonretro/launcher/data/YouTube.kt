@@ -1,9 +1,7 @@
 package com.antonretro.launcher.data
 
-import android.util.Xml
 import org.json.JSONArray
 import org.json.JSONObject
-import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -72,24 +70,19 @@ class YouTubeRepo(private val dir: File) {
         return try { parse(f.readText()).first } catch (e: Exception) { null }
     }
 
+    /** Plain pattern reading of the Atom feed: sturdier than the box's XML parser with the yt: names. */
     private fun parse(xml: String): Pair<List<Video>, String?> {
-        val p = Xml.newPullParser(); p.setInput(xml.reader())
-        val out = ArrayList<Video>(); var channel: String? = null
-        var inEntry = false; var id = ""; var title = ""; var author = ""; var tag = ""
-        while (p.next() != XmlPullParser.END_DOCUMENT) {
-            when (p.eventType) {
-                XmlPullParser.START_TAG -> { tag = p.name; if (tag == "entry") { inEntry = true; id = ""; title = ""; author = "" } }
-                XmlPullParser.TEXT -> {
-                    val t = p.text.trim(); if (t.isEmpty()) continue
-                    when {
-                        inEntry && tag == "yt:videoId" -> id = t
-                        inEntry && tag == "title" -> title = t
-                        inEntry && tag == "name" -> author = t
-                        !inEntry && tag == "title" && channel == null -> channel = t
-                    }
-                }
-                XmlPullParser.END_TAG -> { if (p.name == "entry") { inEntry = false; if (id.isNotEmpty()) out.add(Video(id, title, author.ifEmpty { channel ?: "" })) }; tag = "" }
-            }
+        fun un(t: String) = t.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").trim()
+        val head = xml.substringBefore("<entry>")
+        val channel = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(head)?.groupValues?.get(1)?.let(::un)
+        val out = ArrayList<Video>()
+        for (m in Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL).findAll(xml)) {
+            val e = m.groupValues[1]
+            val id = Regex("<yt:videoId>(.*?)</yt:videoId>").find(e)?.groupValues?.get(1)
+                ?: Regex("""watch\?v=([\w-]{11})""").find(e)?.groupValues?.get(1) ?: continue
+            val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let(::un) ?: ""
+            val author = Regex("<name>(.*?)</name>").find(e)?.groupValues?.get(1)?.let(::un) ?: channel ?: ""
+            out.add(Video(id, title, author))
         }
         return out to channel
     }
