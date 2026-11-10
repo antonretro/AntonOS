@@ -21,6 +21,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     private val btns = ArrayList<TextView>()
     private var actions: List<() -> Unit> = emptyList()
     private var sel = 0
+    private var vertical = false
     val showing get() = visibility == View.VISIBLE
 
     init {
@@ -40,11 +41,14 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {
         title.text = t; body.text = b
         buttons.removeAllViews(); btns.clear(); actions = choices.map { it.second }
+        vertical = choices.size > 3
+        buttons.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         for ((i, c) in choices.withIndex()) {
             val tv = Kit.text(context, 21f, true).apply { text = c.first; gravity = Gravity.CENTER; setPadding(Kit.dpi(context, 28f), 0, Kit.dpi(context, 28f), 0) }
             tv.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { sel = i; paint() }; false }
             tv.setOnClickListener { sel = i; choose() }
-            buttons.addView(tv, LinearLayout.LayoutParams(-2, Kit.dpi(context, 56f)).apply { leftMargin = Kit.dpi(context, 8f); rightMargin = Kit.dpi(context, 8f) })
+            buttons.addView(tv, (if (vertical) LinearLayout.LayoutParams(Kit.dpi(context, 380f), Kit.dpi(context, 52f)).apply { bottomMargin = Kit.dpi(context, 8f) }
+                else LinearLayout.LayoutParams(-2, Kit.dpi(context, 56f)).apply { leftMargin = Kit.dpi(context, 8f); rightMargin = Kit.dpi(context, 8f) }))
             btns.add(tv)
         }
         sel = 0; paint()
@@ -68,9 +72,10 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
 
     fun onKey(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return true
+        if (e.repeatCount > 0 && e.keyCode != KeyEvent.KEYCODE_DPAD_UP && e.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return true   // the held OK that opened this menu must not pick for you
         when (e.keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> { sel = (sel - 1).coerceAtLeast(0); paint() }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { sel = (sel + 1).coerceAtMost(btns.size - 1); paint() }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP -> { sel = (sel - 1).coerceAtLeast(0); paint() }
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN -> { sel = (sel + 1).coerceAtMost(btns.size - 1); paint() }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> choose()
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BUTTON_B -> { sel = btns.size - 1; choose() }
         }

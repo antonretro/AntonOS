@@ -46,6 +46,10 @@ class HomeActivity : Activity() {
 
     private lateinit var root: FrameLayout
     private lateinit var bgSharp: ImageView
+    private lateinit var drift: DriftView
+    private var screenW = 1280; private var screenH = 720
+    private lateinit var saver: Screensaver
+    private var lastInput = SystemClock.uptimeMillis()
     private lateinit var bgBlur: ImageView
     private lateinit var dim: View
     private lateinit var shelf: FrameLayout
@@ -69,7 +73,8 @@ class HomeActivity : Activity() {
         Kit.init(this)
         repo = AppRepo(this); store = Store(this)
         val dm = resources.displayMetrics
-        Backdrop.build(store.wallpaper, maxOf(dm.widthPixels, dm.heightPixels), minOf(dm.widthPixels, dm.heightPixels))
+        screenW = maxOf(dm.widthPixels, dm.heightPixels); screenH = minOf(dm.widthPixels, dm.heightPixels)
+        if (store.wallpaper < Backdrop.SCENES.size) Backdrop.build(store.wallpaper, screenW, screenH)
         buildViews()
         setContentView(root)
         window.setBackgroundDrawable(null)   // the wallpaper covers everything: skip one full-screen fill
@@ -79,6 +84,9 @@ class HomeActivity : Activity() {
         applyHiddenTabs()
         showTab("Home", animate = false)
         Images.init(this)
+        saver = Screensaver(this) { i -> Backdrop.render(i, screenW, screenH) }
+        root.addView(saver, -1, -1)
+        ui.postDelayed(idleCheck, 15_000)
         yt = YouTubeRepo(filesDir)
         keyboard = Keyboard(this); root.addView(keyboard, -1, -1)
         rebuildYouTube()
@@ -105,7 +113,10 @@ class HomeActivity : Activity() {
         dim = View(this).apply { setBackgroundColor(Kit.DIM_SCROLLED); alpha = 0f }
         shelf = FrameLayout(this)
         stage = FrameLayout(this).apply { clipChildren = false }
+        drift = DriftView(this).apply { visibility = View.GONE }
+        root.addView(drift, -1, -1)
         root.addView(bgSharp, -1, -1); root.addView(bgBlur, -1, -1); root.addView(dim, -1, -1)
+        applyWallpaper()
         root.addView(shelf, FrameLayout.LayoutParams(-1, Kit.dpi(this, 400f)))
         // content is clipped under the tab bar with a soft fade (pre-made gradient, no per-frame work)
         root.addView(stage, -1, -1)
@@ -145,7 +156,7 @@ class HomeActivity : Activity() {
         screens["Home"] = RowsScreen(this, 410f, true, art, open)
         screens["TV"] = RowsScreen(this, 150f, false, art, open, "Loading your channels…")
         screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Loading radio stations…")
-        for (n in listOf("TV", "Radio", "Home")) (screens[n] as RowsScreen).onLong = { item, _ -> if (item is Item.Ch) star(item.ch) }
+        for (n in listOf("Home", "TV", "Radio", "Games", "Apps", "YouTube", "Videos")) (screens[n] as RowsScreen).onLong = { item, _ -> cardOptions(n, item) }
         screens["YouTube"] = RowsScreen(this, 150f, false, art, open)
         screens["Videos"] = RowsScreen(this, 150f, false, art, open, "Your videos and films will show up here.")
         screens["Games"] = RowsScreen(this, 150f, false, art, open)
@@ -171,10 +182,16 @@ class HomeActivity : Activity() {
     private fun settingsPages(): List<SPage> = listOf(
         SPage("wifi", "Wi-Fi & Internet") { wifiRows() },
         SPage("image", "Picture") { listOf(
-            SRow("Wallpaper", value = { Backdrop.SCENES[store.wallpaper % Backdrop.SCENES.size].name }, onClick = { nextWallpaper() }),
+            SRow("Screensaver", { "Starts when nobody has pressed anything for a while" }, value = { if (store.saverMinutes == 0) "Off" else "After ${store.saverMinutes} minutes" },
+                onClick = { val opts = listOf(2, 5, 10, 30, 0); store.saverMinutes = opts[(opts.indexOf(store.saverMinutes) + 1) % opts.size]; store.save() }),
+            SRow("Screensaver style", value = { if (store.saverPhotos) "Wallpapers, shuffled" else "Moving colours" }, onClick = { store.saverPhotos = !store.saverPhotos; store.save() }),
+            SRow("Show the screensaver now", onClick = { ui.postDelayed({ startSaver() }, 300) }),
+            SRow("New wallpaper every day", toggle = { store.dailyWallpaper }, onClick = { store.dailyWallpaper = !store.dailyWallpaper; store.save() }),
             SRow("Reduce motion", { "Fewer animations, everything appears at once" }, toggle = { store.reduceMotion }, onClick = { store.reduceMotion = !store.reduceMotion; Kit.motion = if (store.reduceMotion) 0.01f else 1f; store.save() }),
             SRow("Screen size and position", { "Fit the picture to your TV" }, onClick = go(Settings.ACTION_DISPLAY_SETTINGS)),
-        ) },
+        ) + (0 until wallpaperCount).map { i ->
+            SRow("Wallpaper: " + wallpaperName(i), { if (i >= Backdrop.SCENES.size) "Moves slowly" else null }, value = { if (store.wallpaper == i) "✓ In use" else "" }, onClick = { setWallpaper(i) })
+        } },
         SPage("power", "Power & TV") { listOf(
             SRow("Keep the box on when the TV turns off", { "When on, the TV remote can't control the box over HDMI" }, toggle = { hdmiControl() == 0 }, onClick = { setHdmiControl(if (hdmiControl() == 0) 1 else 0) }),
             SRow("Show the start-up animation", onClick = { playIntro() }),
@@ -529,8 +546,46 @@ class HomeActivity : Activity() {
     private var homeExtra: List<Item> = emptyList()
     private var homeDock: List<Item> = emptyList()
     private var homeRecent: List<Item> = emptyList()
+    /** Anything can be pinned to the dock: an app, a channel or a game. */
+    private fun itemFor(key: String): Item? = when {
+        key.startsWith("app:") -> repo.apps.firstOrNull { it.key == key }
+        key.startsWith("ch:") -> (ChannelRepo.tv + ChannelRepo.radio).firstOrNull { it.key == key }?.let { Item.Ch(it) }
+        key.startsWith("rom:") -> roms.firstOrNull { it.key == key }?.let { Item.Game(it) }
+        else -> null
+    }
+
     private fun rebuildHome() {
-        (screens["Home"] as RowsScreen).setRows(listOf(Row(null, homeDock, glass = true), Row("Keep watching", homeExtra, alwaysLabel = true), Row("Recently used", homeRecent, alwaysLabel = true)))
+        val dock = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }
+        val playing = store.recentGames.mapNotNull { itemFor(it) }.take(6)
+        (screens["Home"] as RowsScreen).setRows(listOf(
+            Row(null, dock, glass = true),
+            Row("Keep watching", homeExtra, alwaysLabel = true),
+            Row("Keep playing", playing, alwaysLabel = true),
+            Row("Recently used", homeRecent.filter { r -> dock.none { it.key == r.key } }, alwaysLabel = true)))
+    }
+
+    /** Hold OK (or press Menu) on any card: plain choices in the one dialog. */
+    private fun cardOptions(tab: String, item: Item) {
+        val inDock = tab == "Home" && store.dock.contains(item.key) && (screens["Home"] as RowsScreen).currentRowItems()?.any { it.key == item.key && it === (screens["Home"] as RowsScreen).currentItem() } == true
+        val pinnable = item is Item.App || item is Item.Ch || item is Item.Game
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        if (inDock) {
+            val i = store.dock.indexOf(item.key)
+            if (i > 0) choices.add("Move left" to { store.dock.removeAt(i); store.dock.add(i - 1, item.key); store.save(); rebuildHome(); (screens["Home"] as RowsScreen).jumpTo(0, i - 1) })
+            if (i < store.dock.size - 1) choices.add("Move right" to { store.dock.removeAt(i); store.dock.add(i + 1, item.key); store.save(); rebuildHome(); (screens["Home"] as RowsScreen).jumpTo(0, i + 1) })
+            choices.add("Remove from Home" to { store.dock.remove(item.key); store.save(); rebuildHome(); notice("Removed from Home", item.title) })
+        } else if (pinnable) {
+            if (store.dock.contains(item.key)) choices.add("Already on Home" to {})
+            else choices.add("Pin to Home" to { store.dock.add(item.key); store.save(); rebuildHome(); notice("Pinned to Home", item.title) })
+        }
+        if (item is Item.Ch) choices.add((if (item.ch.url in store.favourites) "Remove from Favourites" else "Add to Favourites") to { star(item.ch) })
+        if (item is Item.App) {
+            choices.add("Hide" to { store.hidden.add(item.component.packageName); store.save(); loadApps(); notice("Hidden from Apps", "Show it again in Settings, Apps") })
+            choices.add("Uninstall" to { safeStart(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + item.component.packageName))) })
+        }
+        if (choices.isEmpty()) return
+        choices.add("Cancel" to {})
+        dialog.show(item.title, if (inDock) "Arrange your Home screen" else "What would you like to do?", *choices.toTypedArray())
     }
 
     private fun star(c: Channel) {
@@ -653,6 +708,7 @@ class HomeActivity : Activity() {
         val byKey = all.associateBy { it.key }
         val dock = store.dock.mapNotNull { byKey[it] }
         val recent = store.recent.mapNotNull { byKey[it] }.filter { it !in dock }.take(8)
+        if (store.dock.isEmpty()) store.dock = dock.map { it.key }.toMutableList()
         homeDock = dock; homeRecent = recent; rebuildHome()
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
@@ -781,6 +837,8 @@ class HomeActivity : Activity() {
     private var downAt = 0L; private var longFired = false
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        lastInput = SystemClock.uptimeMillis()
+        if (::saver.isInitialized && saver.showing) { if (e.action == KeyEvent.ACTION_UP) stopSaver(); return true }   // any key just wakes it
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
@@ -834,6 +892,12 @@ class HomeActivity : Activity() {
         val s = screens[current] ?: return
         if (s.back()) return
         if (current != "Home") { s.leave(); inTabBar = true; tabIdx = tabs.indexOf(current); drawTabs() }
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        lastInput = SystemClock.uptimeMillis()
+        if (::saver.isInitialized && saver.showing && ev.action != MotionEvent.ACTION_HOVER_MOVE) { stopSaver(); return true }
+        return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun onGenericMotionEvent(e: MotionEvent): Boolean {
@@ -897,12 +961,45 @@ class HomeActivity : Activity() {
         safeStart(i)
     }
 
-    private fun nextWallpaper() {
-        store.wallpaper = (store.wallpaper + 1) % Backdrop.SCENES.size; store.save()
-        Backdrop.build(store.wallpaper, Backdrop.screenW, Backdrop.screenH)
-        bgSharp.setImageBitmap(Backdrop.sharp); bgBlur.setImageBitmap(Backdrop.blurredDim)
+    private val wallpaperCount get() = Backdrop.SCENES.size + Drift.PALETTES.size
+    private fun wallpaperName(i: Int) = if (i < Backdrop.SCENES.size) Backdrop.SCENES[i].name else Drift.PALETTES[i - Backdrop.SCENES.size].name
+
+    private fun nextWallpaper() = setWallpaper((store.wallpaper + 1) % wallpaperCount)
+
+    private fun setWallpaper(i: Int) {
+        store.wallpaper = i; store.save()
+        if (i < Backdrop.SCENES.size) Backdrop.build(i, screenW, screenH)
+        applyWallpaper()
         root.invalidate(); invalidateAll(root)
     }
+
+    /** Photo-style scene, or a moving colour wallpaper drawn by DriftView. */
+    private fun applyWallpaper() {
+        val i = store.wallpaper.coerceIn(0, wallpaperCount - 1)
+        if (i < Backdrop.SCENES.size) {
+            drift.stop(); drift.visibility = View.GONE
+            bgSharp.visibility = if (scrolledShown) View.INVISIBLE else View.VISIBLE; bgSharp.setImageBitmap(Backdrop.sharp)
+        } else {
+            drift.palette = Drift.PALETTES[i - Backdrop.SCENES.size]
+            Backdrop.buildFromSmall(drift.snapshot(), screenW, screenH)
+            bgSharp.setImageDrawable(null); bgSharp.visibility = View.GONE
+            drift.visibility = View.VISIBLE; drift.start()
+        }
+        bgBlur.setImageBitmap(Backdrop.blurredDim)
+    }
+
+    // ---------------------------------------------------------------- screensaver (no burn-in)
+    private val idleCheck = object : Runnable {
+        override fun run() {
+            val mins = store.saverMinutes
+            if (mins > 0 && resumed && !saver.showing && !(::player.isInitialized && player.showing) && !dialog.showing && !keyboard.showing &&
+                SystemClock.uptimeMillis() - lastInput > mins * 60_000L) startSaver()
+            ui.postDelayed(this, 15_000)
+        }
+    }
+    private var resumed = false
+    private fun startSaver() { saver.clock24 = store.clock24; saver.bringToFront(); saver.show(store.saverPhotos); drift.stop() }
+    private fun stopSaver() { saver.hide(); if (store.wallpaper >= Backdrop.SCENES.size) drift.start() }
     private fun invalidateAll(v: View) { v.invalidate(); if (v is ViewGroup) for (i in 0 until v.childCount) invalidateAll(v.getChildAt(i)) }
 
     // ---------------------------------------------------------------- Home key, coming back
@@ -918,8 +1015,14 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
+    override fun onPause() { super.onPause(); resumed = false; drift.stop() }
+
     override fun onResume() {
         super.onResume()
+        resumed = true; lastInput = SystemClock.uptimeMillis()
+        if (store.wallpaper >= Backdrop.SCENES.size && !saver.showing) drift.start()
+        val day = (System.currentTimeMillis() / 86_400_000L).toInt()
+        if (store.dailyWallpaper && store.wallpaperDay != day) { store.wallpaperDay = day; setWallpaper((store.wallpaper + 1) % wallpaperCount) }
         hideSystemBars()
         Kit.init(this)
         tickClock()

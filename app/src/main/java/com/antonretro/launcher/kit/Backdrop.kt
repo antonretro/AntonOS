@@ -16,6 +16,12 @@ object Backdrop {
         Scene("Dusk", 0xFF0E1A3A.toInt(), 0xFFC86B5A.toInt(), 0xFFFFB07A.toInt(), 0xFF5A3A5C.toInt(), 0xFF33264A.toInt(), 0xFF1A1530.toInt(), false, 0.70f),
         Scene("Night lake", 0xFF020617.toInt(), 0xFF0F3B57.toInt(), 0xFF9BE7FF.toInt(), 0xFF0F2C40.toInt(), 0xFF0A1F2E.toInt(), 0xFF061219.toInt(), true, 0.31f),
         Scene("Harvest", 0xFF1B2A1F.toInt(), 0xFFD9A35B.toInt(), 0xFFFFE1A0.toInt(), 0xFF5D6B3A.toInt(), 0xFF3B4A2A.toInt(), 0xFF1F2A18.toInt(), false, 0.78f),
+        Scene("Aurora", 0xFF02111B.toInt(), 0xFF0B4F4A.toInt(), 0xFF7CF5C9.toInt(), 0xFF0E3B3C.toInt(), 0xFF082A2C.toInt(), 0xFF03161A.toInt(), true, 0.45f),
+        Scene("Coral sea", 0xFF0A2463.toInt(), 0xFFFF7F6B.toInt(), 0xFFFFD6A5.toInt(), 0xFF1E3A8A.toInt(), 0xFF162B66.toInt(), 0xFF0B1A40.toInt(), false, 0.62f),
+        Scene("Desert", 0xFF2D1B3D.toInt(), 0xFFE07A5F.toInt(), 0xFFFFC971.toInt(), 0xFFB5651D.toInt(), 0xFF8C4A1A.toInt(), 0xFF4A2810.toInt(), false, 0.25f),
+        Scene("Lavender", 0xFF241734.toInt(), 0xFFB57EDC.toInt(), 0xFFFFC6E5.toInt(), 0xFF6D4C8D.toInt(), 0xFF4B3366.toInt(), 0xFF2A1C3D.toInt(), true, 0.8f),
+        Scene("Pine forest", 0xFF0F1A14.toInt(), 0xFF6A8E7F.toInt(), 0xFFE8F1D2.toInt(), 0xFF2F4A3A.toInt(), 0xFF1E3326.toInt(), 0xFF0E1A12.toInt(), false, 0.55f),
+        Scene("Midnight", 0xFF000007.toInt(), 0xFF141E46.toInt(), 0xFFC9D6FF.toInt(), 0xFF101833.toInt(), 0xFF0A1024.toInt(), 0xFF05080F.toInt(), true, 0.2f),
     )
 
     var sharp: Bitmap? = null; private set
@@ -24,6 +30,19 @@ object Backdrop {
     var blurredDim: Bitmap? = null; private set
     var screenW = 1280; private set
     var screenH = 720; private set
+
+    /** A wallpaper picture on its own (screensaver), not kept in memory here. */
+    fun render(index: Int, w: Int, h: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
+        draw(Canvas(bmp), SCENES[index % SCENES.size], w.toFloat(), h.toFloat()); return bmp
+    }
+
+    /** Glass for a moving wallpaper: built from a small snapshot of it. */
+    fun buildFromSmall(small: Bitmap, w: Int, h: Int) {
+        screenW = w; screenH = h; sharp = null
+        blurred = boxBlur(boxBlur(small, 2), 2)
+        blurredDim = blurred!!.copy(Bitmap.Config.ARGB_8888, true).also { Canvas(it).drawColor(Kit.DIM_SCROLLED) }
+    }
 
     fun build(index: Int, w: Int, h: Int) {
         screenW = w; screenH = h

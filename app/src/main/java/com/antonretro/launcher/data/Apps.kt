@@ -93,6 +93,10 @@ class Store(ctx: Context) {
     var hiddenTabs = mutableSetOf<String>()
     var startupSound = true
     var reduceMotion = false
+    var saverMinutes = 5
+    var saverPhotos = true
+    var dailyWallpaper = false
+    var wallpaperDay = 0
     var positions = mutableMapOf<String, Long>()   // video path -> where you stopped (ms); duration in durations
     var durations = mutableMapOf<String, Long>()
     var firstRun = true
@@ -113,6 +117,7 @@ class Store(ctx: Context) {
             lastTv = o.optString("lastTv").ifEmpty { null }
             recentGames = o.optJSONArray("recentGames").strings().toMutableList()
             hiddenTabs = o.optJSONArray("hiddenTabs").strings().toMutableSet()
+            saverMinutes = o.optInt("saverMinutes", 5); saverPhotos = o.optBoolean("saverPhotos", true); dailyWallpaper = o.optBoolean("dailyWallpaper", false); wallpaperDay = o.optInt("wallpaperDay", 0)
             clock24 = o.optBoolean("clock24", false); startupSound = o.optBoolean("startupSound", true); reduceMotion = o.optBoolean("reduceMotion", false)
             o.optJSONObject("positions")?.let { l -> l.keys().forEach { positions[it] = l.optLong(it) } }
             o.optJSONObject("durations")?.let { l -> l.keys().forEach { durations[it] = l.optLong(it) } }
@@ -127,6 +132,7 @@ class Store(ctx: Context) {
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
             .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
             .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion)
+            .put("saverMinutes", saverMinutes).put("saverPhotos", saverPhotos).put("dailyWallpaper", dailyWallpaper).put("wallpaperDay", wallpaperDay)
             .put("positions", JSONObject(positions as Map<*, *>)).put("durations", JSONObject(durations as Map<*, *>))
         Thread { try { val tmp = File(file.path + ".tmp"); tmp.writeText(o.toString(1)); tmp.renameTo(file) } catch (_: Exception) {} }.start()
     }
