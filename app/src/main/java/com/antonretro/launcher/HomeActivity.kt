@@ -608,6 +608,9 @@ class HomeActivity : Activity() {
             old.view.animate().cancel(); old.view.visibility = View.GONE
         }
         current = name; tabIdx = tabs.indexOf(name)
+        // pick up games and videos added since (copied over USB or ADB) every time the tab opens
+        if (name == "Games" && old !== new) rebuildGames()
+        if (name == "Videos" && old !== new) rebuildVideos()
         new.view.visibility = View.VISIBLE
         if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).start() }
         else { new.view.alpha = 1f; new.view.translationX = 0f }
