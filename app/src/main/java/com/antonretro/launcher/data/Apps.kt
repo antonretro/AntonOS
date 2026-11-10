@@ -14,6 +14,9 @@ import java.io.File
 /** Anything that can sit on a card. */
 sealed class Item(val key: String, val title: String) {
     class App(val component: ComponentName, title: String, val isGame: Boolean) : Item("app:" + component.flattenToShortString(), title)
+    class Ch(val ch: Channel) : Item(ch.key, ch.name)
+    /** "All 1,341 channels": opens the whole group. */
+    class More(key: String, title: String, val all: List<Channel>) : Item(key, title)
     class Action(key: String, title: String, val subtitle: String, val icon: String, val run: (Context) -> Unit) : Item(key, title)
 }
 
@@ -75,6 +78,9 @@ class Store(ctx: Context) {
     var launches = mutableMapOf<String, Int>()
     var recent = mutableListOf<String>()
     var wallpaper = 0
+    var favourites = mutableListOf<String>()      // channel urls, in the order starred
+    var recentChannels = mutableListOf<String>()  // newest first
+    var lastTv: String? = null
     var firstRun = true
 
     init { load() }
@@ -88,6 +94,9 @@ class Store(ctx: Context) {
             recent = o.optJSONArray("recent").strings().toMutableList()
             o.optJSONObject("launches")?.let { l -> l.keys().forEach { launches[it] = l.optInt(it) } }
             wallpaper = o.optInt("wallpaper", 0)
+            favourites = o.optJSONArray("favourites").strings().toMutableList()
+            recentChannels = o.optJSONArray("recentChannels").strings().toMutableList()
+            lastTv = o.optString("lastTv").ifEmpty { null }
             firstRun = false
         } catch (e: Exception) { /* a broken file never stops the home screen */ }
     }
@@ -97,6 +106,7 @@ class Store(ctx: Context) {
             .put("version", 1)
             .put("dock", JSONArray(dock)).put("hidden", JSONArray(hidden.toList())).put("recent", JSONArray(recent))
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
+            .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "")
         Thread { try { val tmp = File(file.path + ".tmp"); tmp.writeText(o.toString(1)); tmp.renameTo(file) } catch (_: Exception) {} }.start()
     }
 
@@ -104,6 +114,15 @@ class Store(ctx: Context) {
         launches[key] = (launches[key] ?: 0) + 1
         recent.remove(key); recent.add(0, key); while (recent.size > 10) recent.removeAt(recent.size - 1)
         save()
+    }
+
+    fun noteChannel(c: Channel) {
+        recentChannels.remove(c.url); recentChannels.add(0, c.url); while (recentChannels.size > 12) recentChannels.removeAt(recentChannels.size - 1)
+        if (!c.radio) lastTv = c.url
+        save()
+    }
+    fun toggleFavourite(c: Channel): Boolean {
+        val on = !favourites.remove(c.url); if (on) favourites.add(c.url); save(); return on
     }
 
     private fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).map { getString(it) }

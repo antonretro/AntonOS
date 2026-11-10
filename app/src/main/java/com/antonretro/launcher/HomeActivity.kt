@@ -23,6 +23,8 @@ import android.widget.TextView
 import com.antonretro.launcher.data.AppRepo
 import com.antonretro.launcher.data.Item
 import com.antonretro.launcher.data.Store
+import com.antonretro.launcher.data.Channel
+import com.antonretro.launcher.data.ChannelRepo
 import com.antonretro.launcher.kit.*
 import com.antonretro.launcher.ui.*
 import java.text.SimpleDateFormat
@@ -67,7 +69,10 @@ class HomeActivity : Activity() {
         hideSystemBars()
         buildScreens()
         showTab("Home", animate = false)
+        Images.init(this)
         loadApps { if (wantIntro()) playIntro() }
+        loadChannels()
+        ui.postDelayed({ player.prepare() }, 1500)   // the first channel doesn't pay for creating the player
         registerReceivers()
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean { root.viewTreeObserver.removeOnPreDrawListener(this); Perf.log("cold", SystemClock.uptimeMillis() - t0); return true }
@@ -120,13 +125,19 @@ class HomeActivity : Activity() {
         val art: (Item, CardCell) -> Unit = { item, cell -> bindArt(item, cell) }
         val open: (Item, CardCell) -> Unit = { item, cell -> open(item, cell) }
         screens["Home"] = RowsScreen(this, 410f, true, art, open)
-        screens["TV"] = RowsScreen(this, 150f, false, art, open, "Live TV comes in the next stage. Your channel list will play right here, no Kodi needed.")
-        screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Radio stations come in the next stage.")
+        screens["TV"] = RowsScreen(this, 150f, false, art, open, "Loading your channels…")
+        screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Loading radio stations…")
+        for (n in listOf("TV", "Radio", "Home")) (screens[n] as RowsScreen).onLong = { item, _ -> if (item is Item.Ch) star(item.ch) }
         screens["YouTube"] = RowsScreen(this, 150f, false, art, open)
         screens["Videos"] = RowsScreen(this, 150f, false, art, open, "Your videos and films will show up here.")
         screens["Games"] = RowsScreen(this, 150f, false, art, open)
         screens["Apps"] = RowsScreen(this, 150f, false, art, open, "Looking for apps…")
         screens["Settings"] = ListScreen(this, "Settings", settingsEntries())
+        player = PlayerOverlay(this, art).apply {
+            onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
+            onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
+            onStar = { c -> star(c) }
+        }
         for ((name, s) in screens) {
             s.view.visibility = View.GONE
             stage.addView(s.view, -1, -1)
@@ -148,6 +159,105 @@ class HomeActivity : Activity() {
             Item.Action("set:classic", "Classic launcher", "the box's original menu", "grid") { _ -> openClassic() },
             Item.Action("set:android", "Advanced Android settings", "", "gear", intent(Settings.ACTION_SETTINGS)),
         )
+    }
+
+    // ---------------------------------------------------------------- TV and radio
+    private lateinit var player: PlayerOverlay
+    private var channelsAsked = false
+
+    private fun loadChannels() {
+        bg.execute {
+            val ok = ChannelRepo.load()
+            ui.post {
+                if (!ok) {
+                    val denied = android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (denied && !channelsAsked) { channelsAsked = true; requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 7) }
+                    val msg = if (denied) "Retro Launcher needs permission to read your channel list." else "No channel list yet. Put one at /sdcard/RetroLauncher/channels.m3u"
+                    (screens["TV"] as RowsScreen).setEmptyText(msg); (screens["Radio"] as RowsScreen).setEmptyText(msg)
+                }
+                rebuildChannelRows()
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == 7 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) loadChannels()
+    }
+
+    private fun rebuildChannelRows() {
+        val tv = ChannelRepo.tv; val radio = ChannelRepo.radio
+        val byUrl = (tv + radio).associateBy { it.url }
+        fun rows(list: List<Channel>, radioTab: Boolean): List<Row> {
+            val favs = store.favourites.mapNotNull { byUrl[it] }.filter { it.radio == radioTab }
+            val recent = store.recentChannels.mapNotNull { byUrl[it] }.filter { it.radio == radioTab }
+            val out = ArrayList<Row>()
+            if (!radioTab) store.lastTv?.let { byUrl[it] }?.let { out.add(Row("Keep watching", listOf(Item.Ch(it)), alwaysLabel = true)) }
+            if (favs.isNotEmpty()) out.add(Row("Favourites", favs.map { Item.Ch(it) }, alwaysLabel = true))
+            if (recent.isNotEmpty()) out.add(Row("Recent", recent.map { Item.Ch(it) }, alwaysLabel = true))
+            for ((g, chans) in ChannelRepo.groups(list)) out.add(Row("$g  ·  ${chans.size}", chans.map { Item.Ch(it) }, alwaysLabel = true))
+            return out
+        }
+        (screens["TV"] as RowsScreen).setRows(rows(tv, false))
+        (screens["Radio"] as RowsScreen).setRows(rows(radio, true))
+        homeExtra = store.recentChannels.mapNotNull { byUrl[it] }.filter { !it.radio }.take(6).map { Item.Ch(it) }
+        rebuildHome()
+    }
+
+    private var homeExtra: List<Item> = emptyList()
+    private var homeDock: List<Item> = emptyList()
+    private var homeRecent: List<Item> = emptyList()
+    private fun rebuildHome() {
+        (screens["Home"] as RowsScreen).setRows(listOf(Row(null, homeDock, glass = true), Row("Keep watching", homeExtra, alwaysLabel = true), Row("Recently used", homeRecent, alwaysLabel = true)))
+    }
+
+    private fun star(c: Channel) {
+        val on = store.toggleFavourite(c)
+        notice(if (on) "Added to Favourites" else "Removed from Favourites", c.name)
+        rebuildChannelRows()
+    }
+
+    /** The small "Now playing" chip next to the clock while radio plays in the background. */
+    private var nowChip: TextView? = null
+    private fun nowPlaying(c: Channel?) {
+        if (c == null) { nowChip?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
+        val chip = nowChip ?: Kit.text(this, 16f, true).also { t ->
+            t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
+            t.background = GlassDrawable(t, Kit.dp(this, 16f))
+            t.setOnClickListener { player.current?.let { openPlayer(listOf(it), 0) } }
+            t.setOnLongClickListener { player.stopBackground(); nowPlaying(null); true }
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, 130f); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            nowChip = t
+        }
+        chip.text = "♪  ${c.name}"; chip.alpha = 0f; chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
+    }
+
+    private fun openPlayer(list: List<Channel>, index: Int) {
+        if (player.parent == null) root.addView(player, -1, -1)
+        player.bringToFront()
+        player.play(list, index)
+    }
+
+    // ---------------------------------------------------------------- notices
+    private var noticeView: TextView? = null
+    private val hideNotice = Runnable { noticeView?.animate()?.translationX(Kit.dp(this, 420f))?.alpha(0f)?.setDuration(Kit.t(350))?.start() }
+    /** A small glass pill top right for three seconds; never takes focus. */
+    fun notice(title: String, sub: String) {
+        val n = noticeView ?: Kit.text(this, 17f, true).also { t ->
+            t.isSingleLine = false; t.maxLines = 2
+            t.setPadding(Kit.dpi(this, 22f), Kit.dpi(this, 12f), Kit.dpi(this, 22f), Kit.dpi(this, 12f))
+            t.background = GlassDrawable(t, Kit.dp(this, 22f), Kit.GLASS_STRONG)
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 88f) })
+            noticeView = t
+        }
+        n.text = android.text.SpannableStringBuilder(title).apply {
+            append("\n"); val st = length; append(sub)
+            setSpan(android.text.style.ForegroundColorSpan(Kit.TEXT_DIM), st, length, 0)
+            setSpan(android.text.style.RelativeSizeSpan(.85f), st, length, 0)
+        }
+        n.bringToFront()
+        n.translationX = Kit.dp(this, 420f); n.alpha = 0f
+        n.animate().translationX(0f).alpha(1f).setDuration(Kit.t(420)).setInterpolator(Kit.EASE).start()
+        ui.removeCallbacks(hideNotice); ui.postDelayed(hideNotice, 3000)
     }
 
     private fun loadApps(then: (() -> Unit)? = null) {
@@ -220,7 +330,7 @@ class HomeActivity : Activity() {
         val byKey = all.associateBy { it.key }
         val dock = store.dock.mapNotNull { byKey[it] }
         val recent = store.recent.mapNotNull { byKey[it] }.filter { it !in dock }.take(8)
-        (screens["Home"] as RowsScreen).setRows(listOf(Row(null, dock, glass = true), Row("Recently used", recent, alwaysLabel = true)))
+        homeDock = dock; homeRecent = recent; rebuildHome()
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
         (screens["Games"] as RowsScreen).setRows(listOf(Row("Android games", visible.filter { it.isGame }, alwaysLabel = true)))
@@ -232,12 +342,28 @@ class HomeActivity : Activity() {
     // ---------------------------------------------------------------- art
     private fun bindArt(item: Item, cell: CardCell) {
         artCache[item.key]?.let { cell.card.art = it; return }
+        cell.tag = item.key
+        if (item is Item.Ch) { bindChannelArt(item.ch, cell); return }
         if (item !is Item.App) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, item.title); return }
         val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
         bg.execute {
             val art = repo.banner(item)?.let { ArtMaker.fromBanner(it, w, h) }
                 ?: ArtMaker.fromIcon(repo.icon(item), if (item.isGame) item.title else null, h)
-            ui.post { artCache[item.key] = art; cell.card.art = art; if (screens[current]?.shelfItem()?.key == item.key) updateShelf(force = true) }
+            ui.post { artCache[item.key] = art; if (cell.tag == item.key) cell.card.art = art; if (screens[current]?.shelfItem()?.key == item.key) updateShelf(force = true) }
+        }
+    }
+
+    /** Channel card: the name on its own colour straight away, the logo when it arrives. */
+    private fun bindChannelArt(c: Channel, cell: CardCell) {
+        val star = c.url in store.favourites
+        val hue = ((c.name.hashCode() and 0x7fffffff) % 360).toFloat()
+        val top = Color.HSVToColor(floatArrayOf(hue, .55f, .48f)); val bottom = Color.HSVToColor(floatArrayOf((hue + 20) % 360, .7f, .18f))
+        val badge = if (c.radio) "RADIO" else "LIVE"; val bc = if (c.radio) 0xFF5E60CE.toInt() else 0xFFE5383B.toInt()
+        cell.card.art = Art(null, top, bottom, null, null, bigText = c.name, badge = badge, badgeColor = bc, star = star)
+        val logo = c.logo ?: return
+        val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
+        Images.load(logo, w, h) { b ->
+            if (b != null && cell.tag == c.key) cell.card.art = Art(null, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), b, null, badge = badge, badgeColor = bc, star = star)
         }
     }
 
@@ -307,6 +433,10 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
+        if (::player.isInitialized && player.showing && player.alpha > 0f) {
+            if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
+            if (e.action == KeyEvent.ACTION_UP) return true
+        }
         val code = e.keyCode
         val isOk = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_NUMPAD_ENTER
         if (isOk) {
@@ -388,6 +518,12 @@ class HomeActivity : Activity() {
                 if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); returning = true }
             }
             is Item.Action -> item.run(this)
+            is Item.Ch -> {
+                val s = screens[current] as? RowsScreen
+                val row = s?.currentRowItems()?.filterIsInstance<Item.Ch>()?.map { it.ch } ?: listOf(item.ch)
+                openPlayer(row, row.indexOfFirst { it.url == item.ch.url }.coerceAtLeast(0))
+            }
+            is Item.More -> {}
         }
     }
 
@@ -412,6 +548,7 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
+        if (::player.isInitialized && player.showing) player.close(keepRadio = true)
         if (Intent.ACTION_MAIN == intent.action && hasWindowFocus()) {
             // Home pressed while already home: go to the first card of Home
             inTabBar = false; if (current != "Home") showTab("Home"); screens["Home"]?.reset()
@@ -455,7 +592,9 @@ class HomeActivity : Activity() {
         })
     }
 
-    override fun onDestroy() { try { unregisterReceiver(receiver) } catch (_: Exception) {}; bg.shutdown(); super.onDestroy() }
+    override fun onStop() { super.onStop(); if (::player.isInitialized && player.showing && player.current?.radio != true) player.close(keepRadio = false) }
+
+    override fun onDestroy() { if (::player.isInitialized) player.release(); try { unregisterReceiver(receiver) } catch (_: Exception) {}; bg.shutdown(); super.onDestroy() }
 }
 
 /** Speed numbers for launcher/tools/speedcheck.py (logcat tag RLPerf). */

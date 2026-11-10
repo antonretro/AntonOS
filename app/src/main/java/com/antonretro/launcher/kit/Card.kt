@@ -13,7 +13,8 @@ import android.widget.ImageView
 import android.widget.TextView
 
 /** What a card shows. Built once (in the background) and cached. */
-class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap? = null, val caption: String? = null)
+class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap? = null, val caption: String? = null,
+          val bigText: String? = null, val badge: String? = null, val badgeColor: Int = 0xFFE5383B.toInt(), val star: Boolean = false)
 
 /**
  * The one card: 16:9 (or poster) rounded rectangle with art, a soft pre-rendered shadow,
@@ -86,6 +87,21 @@ class CardFace(ctx: Context) : View(ctx) {
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Kit.font(ctx, true); textSize = Kit.dp(ctx, 17f) }
     private val r = RectF(); private val src = Rect()
+    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Kit.font(ctx, true) }
+    private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Kit.font(ctx, true) }
+
+    /** Channel name as the picture when there's no logo: up to two centred lines. */
+    private fun drawBig(c: Canvas, t: String, w: Float, h: Float) {
+        big.textSize = Kit.dp(context, 22f)
+        val words = t.split(' '); val lines = ArrayList<String>(); var cur = ""
+        for (wd in words) { val n = if (cur.isEmpty()) wd else "$cur $wd"; if (big.measureText(n) > w - 28 && cur.isNotEmpty()) { lines.add(cur); cur = wd } else cur = n }
+        if (cur.isNotEmpty()) lines.add(cur)
+        val shown = lines.take(2).toMutableList()
+        if (lines.size > 2) shown[1] = shown[1] + "…"
+        for (i in shown.indices) while (big.measureText(shown[i]) > w - 20 && shown[i].length > 3) shown[i] = shown[i].dropLast(2) + "…"
+        val lh = big.textSize * 1.12f; val y0 = h / 2 - (shown.size - 1) * lh / 2 + big.textSize * .36f
+        for ((i, s) in shown.withIndex()) c.drawText(s, (w - big.measureText(s)) / 2, y0 + i * lh, big)
+    }
 
     init {
         outlineProvider = object : ViewOutlineProvider() {
@@ -107,7 +123,7 @@ class CardFace(ctx: Context) : View(ctx) {
             c.drawBitmap(b, src, r, paint)
         }
         a?.glyph?.let { g ->
-            val gs = h * .46f / g.height
+            val gs = minOf(h * (if (a.caption != null) .46f else .56f) / g.height, w * .72f / g.width)
             val gw = g.width * gs; val gh = g.height * gs
             val top = if (a.caption != null) h * .2f else (h - gh) / 2
             c.drawBitmap(g, null, RectF((w - gw) / 2, top, (w + gw) / 2, top + gh), paint)
@@ -116,6 +132,14 @@ class CardFace(ctx: Context) : View(ctx) {
             var t = cap; while (text.measureText(t) > w - 24 && t.length > 4) t = t.dropLast(2) + "…"
             c.drawText(t, (w - text.measureText(t)) / 2, h - Kit.dp(context, 14f), text)
         }
+        a?.bigText?.let { t -> drawBig(c, t, w, h) }
+        a?.badge?.let { b ->
+            small.textSize = Kit.dp(context, 11f)
+            val bw = small.measureText(b) + Kit.dp(context, 12f); val bh = Kit.dp(context, 18f); val m = Kit.dp(context, 8f)
+            paint.color = a.badgeColor; c.drawRoundRect(RectF(m, m, m + bw, m + bh), 5f, 5f, paint)
+            c.drawText(b, m + Kit.dp(context, 6f), m + bh - Kit.dp(context, 5f), small)
+        }
+        if (a?.star == true) { small.textSize = Kit.dp(context, 17f); small.color = 0xFFFFD166.toInt(); c.drawText("★", w - Kit.dp(context, 24f), Kit.dp(context, 24f), small); small.color = Color.WHITE }
         edge.strokeWidth = 1f
         edge.color = Color.argb(28, 255, 255, 255)
         r.inset(edge.strokeWidth / 2, edge.strokeWidth / 2)

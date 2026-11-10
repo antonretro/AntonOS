@@ -47,3 +47,9 @@ android {
     buildFeatures { buildConfig = true }
     lint { checkReleaseBuilds = false }
 }
+
+dependencies {
+    // the built-in player for TV, radio and videos (HLS streams from the channel list)
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+}
