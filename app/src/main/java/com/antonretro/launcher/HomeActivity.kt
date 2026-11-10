@@ -278,8 +278,8 @@ class HomeActivity : Activity() {
         val dir = if (tabs.indexOf(name) >= tabs.indexOf(current)) 1 else -1
         if (old != null && old !== new) {
             old.leave()
-            if (animate) old.view.animate().alpha(0f).translationX(-dir * Kit.dp(this, 40f)).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withEndAction { old.view.visibility = View.GONE }.start()
-            else old.view.visibility = View.GONE
+            // the old tab leaves at once; only the new one moves (half the drawing per frame)
+            old.view.animate().cancel(); old.view.visibility = View.GONE
         }
         current = name; tabIdx = tabs.indexOf(name)
         new.view.visibility = View.VISIBLE
