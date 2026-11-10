@@ -69,7 +69,8 @@ def start_w(box, component, cold=True):
     if cold:
         box.sh(f"am force-stop {pkg}"); time.sleep(1.5)
     out = box.sh(f"am start -W -n {component}", timeout=90)
-    m = re.search(r"TotalTime:\s*(\d+)", out) or re.search(r"ThisTime:\s*(\d+)", out)
+    # ThisTime = our own activity; TotalTime also counts whatever had to start before it
+    m = re.search(r"ThisTime:\s*(\d+)", out) or re.search(r"TotalTime:\s*(\d+)", out)
     return int(m.group(1)) if m else None
 
 def pss_mb(box, pkg):
@@ -87,8 +88,11 @@ def gfx_jank(box, pkg, keys):
     return (int(total.group(1)) if total else 0, float(janky.group(2)) if janky else None,
             int(p90.group(1)) if p90 else None)
 
+PERF_FILE = "/sdcard/Android/data/com.antonretro.launcher/files/perf.log"
+
 def rlperf(box):
-    out = box.sh("logcat -d -s RLPerf:I", timeout=30)
+    # the box drops log lines from ordinary apps, so the launcher also writes them to a file
+    out = box.sh(f"cat {PERF_FILE} 2>/dev/null; logcat -d -s RLPerf:I", timeout=30)
     vals = {}
     for k, v in re.findall(r"RLPerf\W.*?(\w+)=(\d+)", out):
         vals.setdefault(k, []).append(int(v))
@@ -137,7 +141,7 @@ def main():
     results = []
     print("\nRetro Launcher speed budget:")
     if LAUNCHER in pk:
-        box.sh("logcat -c")
+        box.sh(f"logcat -c; rm -f {PERF_FILE}")
         results.append(row("Cold start to first frame", start_w(box, HOME_ACT), BUDGET["cold"]))
         time.sleep(3)
         results.append(row("Idle memory (PSS)", pss_mb(box, LAUNCHER), BUDGET["mem_mb"], "MB"))

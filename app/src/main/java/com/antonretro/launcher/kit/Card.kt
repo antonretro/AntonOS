@@ -23,6 +23,8 @@ class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap?
 class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Boolean) : FrameLayout(ctx) {
     val card = CardFace(ctx)
     private val shadow = ImageView(ctx)
+    /** Focus sheen + light edge as a separate, pre-drawn layer: focusing never re-renders the art. */
+    private val ring = View(ctx)
     val label: TextView = Kit.text(ctx, Kit.LABEL_TEXT, bold = true)
     private val cw = Kit.dpi(ctx, wDp); private val ch = Kit.dpi(ctx, hDp)
     var focused = false; private set
@@ -34,6 +36,11 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         shadow.alpha = 0f
         addView(shadow, LayoutParams(cw + pad * 2, ch + pad * 2).apply { leftMargin = -pad; topMargin = -pad + Kit.dpi(ctx, 8f) })
         addView(card, LayoutParams(cw, ch))
+        ring.background = FocusRing(Kit.dp(ctx, Kit.CARD_RADIUS))
+        ring.alpha = 0f
+        ring.setLayerType(LAYER_TYPE_HARDWARE, null)
+        addView(ring, LayoutParams(cw, ch))
+        ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
         label.gravity = Gravity.CENTER_HORIZONTAL
         label.alpha = if (alwaysLabel) .62f else 0f
         Kit.shadowText(label)
@@ -55,15 +62,17 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         val lift = if (on) -Kit.dp(context, 4f) else 0f
         card.animate().scaleX(s).scaleY(s).translationY(lift).setDuration(d).setInterpolator(Kit.EASE).start()
         shadow.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
+        ring.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
         label.animate().alpha(if (on) 1f else if (alwaysLabel) .62f else 0f).translationY(if (on) Kit.dp(context, 4f) else 0f).setDuration(d).start()
-        card.focusLook = on
         translationZ = if (on) 2f else 0f   // draw above neighbours without reordering the row
     }
 
     /** The little dip when OK is pressed. */
     fun press(then: () -> Unit) {
+        ring.animate().scaleX(1.04f).scaleY(1.04f).setDuration(Kit.t(Kit.T_PRESS)).start()
         card.animate().scaleX(1.04f).scaleY(1.04f).setDuration(Kit.t(Kit.T_PRESS)).withEndAction {
             card.animate().scaleX(Kit.FOCUS_SCALE).scaleY(Kit.FOCUS_SCALE).setDuration(Kit.t(Kit.T_PRESS)).start()
+            ring.animate().scaleX(Kit.FOCUS_SCALE).scaleY(Kit.FOCUS_SCALE).setDuration(Kit.t(Kit.T_PRESS)).start()
             then()
         }.start()
     }
@@ -107,15 +116,25 @@ class CardFace(ctx: Context) : View(ctx) {
             var t = cap; while (text.measureText(t) > w - 24 && t.length > 4) t = t.dropLast(2) + "…"
             c.drawText(t, (w - text.measureText(t)) / 2, h - Kit.dp(context, 14f), text)
         }
-        if (focusLook) {
-            paint.shader = LinearGradient(0f, 0f, w * .6f, h * .6f, Color.argb(70, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP)
-            c.drawRect(r, paint); paint.shader = null
-        }
-        edge.strokeWidth = if (focusLook) 2.5f else 1f
-        edge.color = if (focusLook) Color.argb(150, 255, 255, 255) else Color.argb(28, 255, 255, 255)
+        edge.strokeWidth = 1f
+        edge.color = Color.argb(28, 255, 255, 255)
         r.inset(edge.strokeWidth / 2, edge.strokeWidth / 2)
         c.drawRoundRect(r, radius, radius, edge)
     }
+}
+
+class FocusRing(private val radius: Float) : android.graphics.drawable.Drawable() {
+    private val sheen = Paint(Paint.ANTI_ALIAS_FLAG); private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f; color = Color.argb(150, 255, 255, 255) }
+    private val r = RectF()
+    override fun draw(c: Canvas) {
+        r.set(bounds)
+        sheen.shader = LinearGradient(0f, 0f, r.width() * .6f, r.height() * .6f, Color.argb(70, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, radius, radius, sheen)
+        r.inset(1.25f, 1.25f); c.drawRoundRect(r, radius, radius, edge)
+    }
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(cf: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
 
 /** Soft shadows are rendered once per card size and reused (never drawn per frame). */

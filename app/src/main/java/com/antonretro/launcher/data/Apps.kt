@@ -55,10 +55,12 @@ class AppRepo(private val ctx: Context) {
     } catch (e: Exception) { null }
 
     companion object {
-        val KNOWN_GAMES = setOf("com.kiloo.subwaysurf", "com.antonretro.themepark", "com.eamobile.themepark_na")
+        val KNOWN_GAMES = setOf("com.antonretro.subwaysurfersde", "com.antonretro.themepark", "com.antonretro.multiverse", "com.eamobile.themepark_na",
+            "com.kiloo.subwaysurf", "air.au.com.metro.DumbWaysToDie", "air.com.hypah.io.slither", "com.rovio.angrybirdsstarwars.ads.iap")
+        val YOUTUBE_APPS = setOf("org.smarttube.stable", "org.smarttube.beta", "com.teamsmart.videomanager.tv", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv")
         /** Shown first in the dock on a fresh box, if installed. */
-        val DOCK_DEFAULTS = listOf("com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv", "org.xbmc.kodi",
-            "com.kiloo.subwaysurf", "com.android.vending", "org.fdroid.fdroid", "com.droidlogic.FileBrower")
+        val DOCK_DEFAULTS = listOf("org.smarttube.stable", "com.teamsmart.videomanager.tv", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv", "org.xbmc.kodi",
+            "com.antonretro.subwaysurfersde", "com.antonretro.multiverse", "com.android.vending", "org.fdroid.fdroid", "com.droidlogic.FileBrower")
         /** Hidden from Apps by default (Retro Launcher replaces them). */
         val HIDDEN_DEFAULTS = setOf("com.android.settings", "com.droidlogic.mboxsettings", "com.spocky.projengmenu",
             "com.droidlogic.mboxlauncher", "com.android.launcher", "com.android.tv.settings")

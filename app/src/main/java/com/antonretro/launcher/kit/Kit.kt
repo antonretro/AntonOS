@@ -73,6 +73,8 @@ object Kit {
         includeFontPadding = false
         isSingleLine = true
         ellipsize = android.text.TextUtils.TruncateAt.END
+        // fading text must not need an off-screen buffer every frame
+        if (android.os.Build.VERSION.SDK_INT >= 24) forceHasOverlappingRendering(false)
     }
 
     fun shadowText(tv: TextView) = tv.setShadowLayer(12f, 0f, 2f, Color.argb(120, 0, 0, 0))

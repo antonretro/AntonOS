@@ -45,6 +45,7 @@ class HomeActivity : Activity() {
     private lateinit var tabBar: LinearLayout
     private lateinit var clock: TextView
     private val tabViews = ArrayList<TextView>()
+    private lateinit var pills: PillTrack
 
     private val tabs = listOf("Home", "TV", "Radio", "YouTube", "Videos", "Games", "Apps", "Settings")
     private val screens = LinkedHashMap<String, Screen>()
@@ -56,6 +57,7 @@ class HomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val t0 = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
+        Perf.file = getExternalFilesDir(null)?.let { java.io.File(it, "perf.log") }
         repo = AppRepo(this); store = Store(this)
         val dm = resources.displayMetrics
         Backdrop.build(store.wallpaper, maxOf(dm.widthPixels, dm.heightPixels), minOf(dm.widthPixels, dm.heightPixels))
@@ -84,7 +86,8 @@ class HomeActivity : Activity() {
         // content is clipped under the tab bar with a soft fade (pre-made gradient, no per-frame work)
         root.addView(stage, -1, -1)
 
-        val bar = FrameLayout(this)
+        pills = PillTrack(this)
+        val bar = pills
         bar.background = GlassDrawable(bar, Kit.dp(this, 27f))
         tabBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f)) }
         for ((i, name) in tabs.withIndex()) {
@@ -95,6 +98,7 @@ class HomeActivity : Activity() {
             tabViews.add(tv)
         }
         bar.addView(tabBar)
+        tabBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> drawTabs(animate = false) }
         val topFade = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0x00000000)) }
         root.addView(topFade, FrameLayout.LayoutParams(-1, Kit.dpi(this, 110f)))
         root.addView(bar, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(this@HomeActivity, 41f); topMargin = Kit.dpi(this@HomeActivity, 29f) })
@@ -166,6 +170,9 @@ class HomeActivity : Activity() {
      *  tab bar, clock and dock cards slide up into place one after another. Any key skips. */
     private fun playIntro() {
         introRunning = true
+        if (getSharedPreferences("intro", MODE_PRIVATE).getBoolean("sound", true)) try {
+            android.media.MediaPlayer.create(this, R.raw.startup_chime)?.apply { setVolume(.8f, .8f); setOnCompletionListener { it.release() }; start() }
+        } catch (_: Exception) {}
         val home = screens["Home"] as RowsScreen
         val bar = tabBar.parent as View
         val parts = listOf(bar, clock) + home.introViews()
@@ -216,7 +223,7 @@ class HomeActivity : Activity() {
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
         (screens["Games"] as RowsScreen).setRows(listOf(Row("Android games", visible.filter { it.isGame }, alwaysLabel = true)))
-        val yt = all.filter { it.component.packageName.startsWith("com.liskovsoft.smarttube") }
+        val yt = all.filter { it.component.packageName in AppRepo.YOUTUBE_APPS }
         (screens["YouTube"] as RowsScreen).setRows(listOf(Row("YouTube (search and your channels come in the next stage)", yt, alwaysLabel = true)))
         updateShelf()
     }
@@ -254,10 +261,10 @@ class HomeActivity : Activity() {
         }
         val title = Kit.text(this, Kit.SHELF_TITLE, true).apply { text = item.title; Kit.shadowText(this) }
         val sub = Kit.text(this, Kit.SHELF_SUB, false, 0xD9FFFFFF.toInt()).apply { text = "Press OK to open"; Kit.shadowText(this) }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(title); addView(sub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 9f) }) }
-        layer.addView(box, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); bottomMargin = Kit.dpi(this@HomeActivity, 50f) })
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(title, LinearLayout.LayoutParams(-1, -2)); addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 9f) }) }
+        layer.addView(box, FrameLayout.LayoutParams(Kit.dpi(this, 760f), -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); bottomMargin = Kit.dpi(this@HomeActivity, 50f) })
         shelf.addView(layer, -1, -1)
-        layer.animate().alpha(1f).setDuration(Kit.t(Kit.T_FADE)).start()
+        layer.animate().alpha(1f).setDuration(Kit.t(Kit.T_FADE)).withLayer().start()
     }
 
     private fun updateScrolled() {
@@ -277,24 +284,27 @@ class HomeActivity : Activity() {
         val dir = if (tabs.indexOf(name) >= tabs.indexOf(current)) 1 else -1
         if (old != null && old !== new) {
             old.leave()
-            if (animate) old.view.animate().alpha(0f).translationX(-dir * Kit.dp(this, 40f)).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withEndAction { old.view.visibility = View.GONE }.start()
+            if (animate) old.view.animate().alpha(0f).translationX(-dir * Kit.dp(this, 40f)).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withLayer().withEndAction { old.view.visibility = View.GONE }.start()
             else old.view.visibility = View.GONE
         }
         current = name; tabIdx = tabs.indexOf(name)
         new.view.visibility = View.VISIBLE
-        if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).start() }
+        if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).withLayer().start() }
         else { new.view.alpha = 1f; new.view.translationX = 0f }
         if (!inTabBar) new.enter()
         drawTabs(); updateShelf(); updateScrolled()
         Perf.afterFrame("tab", t0)
     }
 
-    private fun drawTabs() {
+    private fun drawTabs(animate: Boolean = true) {
+        if (!::pills.isInitialized || tabViews[0].width == 0) return
+        val s = tabViews[tabs.indexOf(current)]; val f = tabViews[tabIdx]
+        pills.setHeight(s.top.toFloat(), s.bottom.toFloat())
+        pills.moveSelected(s.left.toFloat(), s.right.toFloat(), animate)
+        pills.moveFocus(f.left.toFloat(), f.right.toFloat(), inTabBar, animate)
         for ((i, tv) in tabViews.withIndex()) {
             val sel = tabs[i] == current; val foc = inTabBar && i == tabIdx
-            tv.background = if (foc || sel) GradientDrawable().apply { cornerRadius = Kit.dp(this@HomeActivity, 21f); setColor(if (foc) Kit.FOCUS_FILL else 0x29FFFFFF) } else null
             tv.setTextColor(if (foc) Kit.FOCUS_TEXT else if (sel) Kit.TEXT else 0xBFFFFFFF.toInt())
-            tv.animate().scaleX(if (foc) 1.08f else 1f).scaleY(if (foc) 1.08f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
     }
 
@@ -422,7 +432,7 @@ class HomeActivity : Activity() {
         if (returning) {   // gentle scale-down from 1.05 and fade back in, focus on the same card
             returning = false
             stage.scaleX = 1.05f; stage.scaleY = 1.05f; stage.alpha = 0f
-            stage.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(Kit.t(280)).setInterpolator(Kit.EASE).start()
+            stage.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(Kit.t(280)).setInterpolator(Kit.EASE).withLayer().start()
         }
     }
 
@@ -456,7 +466,14 @@ class HomeActivity : Activity() {
 
 /** Speed numbers for launcher/tools/speedcheck.py (logcat tag RLPerf). */
 object Perf {
-    fun log(what: String, ms: Long) = Log.i("RLPerf", "$what=$ms")
+    /** The box drops log lines from ordinary apps, so numbers also go to
+     *  /sdcard/Android/data/com.antonretro.launcher/files/perf.log (read by speedcheck.py). */
+    @Volatile var file: java.io.File? = null
+    private val lines = java.util.concurrent.LinkedBlockingQueue<String>()
+    private val writer = Thread {
+        while (true) { val l = lines.take(); try { file?.appendText(l + "\n") } catch (_: Exception) {} }
+    }.apply { isDaemon = true; start() }
+    fun log(what: String, ms: Long) { Log.i("RLPerf", "$what=$ms"); lines.offer("RLPerf $what=$ms") }
     /** Time from an input (uptime ms) to the start of the next drawn frame. */
     fun afterFrame(what: String, since: Long) {
         Choreographer.getInstance().postFrameCallback { frameNanos -> log(what, frameNanos / 1_000_000 - since) }

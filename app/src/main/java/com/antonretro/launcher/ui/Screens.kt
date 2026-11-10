@@ -70,7 +70,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             val rv = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
             if (row.glass) {
                 val g = View(ctx); g.background = GlassDrawable(g, Kit.dp(ctx, 27f)); glassViews.add(g)
-                rv.addView(g, FrameLayout.LayoutParams(-1, Kit.dpi(ctx, h + 58f)).apply { leftMargin = Kit.dpi(ctx, 29f); rightMargin = Kit.dpi(ctx, 29f); topMargin = -Kit.dpi(ctx, 23f) })
+                rv.addView(g, FrameLayout.LayoutParams(-1, Kit.dpi(ctx, h + 74f)).apply { leftMargin = Kit.dpi(ctx, 29f); rightMargin = Kit.dpi(ctx, 29f); topMargin = -Kit.dpi(ctx, 23f) })
             }
             row.title?.let {
                 val t = Kit.text(ctx, Kit.TITLE_TEXT, true).apply { text = it; alpha = .9f }
