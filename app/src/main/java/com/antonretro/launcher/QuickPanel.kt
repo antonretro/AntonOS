@@ -189,7 +189,7 @@ class RetroKeys : AccessibilityService() {
         if (now - rescuedAt > 60_000) {
             rescuedAt = now
             Perf.note("watchdog: 4 keys passed on, none reached the launcher: bringing it back to the front")
-            try { startActivity(Intent(this, HomeActivity::class.java).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } catch (_: Exception) {}
+            try { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } catch (_: Exception) {}
         } else {
             Perf.note("watchdog: keys still not arriving: switching the key helper off so the remote works")
             if (android.os.Build.VERSION.SDK_INT >= 24) disableSelf()
@@ -426,7 +426,7 @@ class QuickPanel : Activity() {
     }
 
     private fun home(extra: Intent.() -> Unit = {}) =
-        startActivity(Intent(this, HomeActivity::class.java).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).apply(extra))
+        startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).apply(extra))
 
     fun goHome() {
         if (game) RetroCmd.send("SAVE_STATE")

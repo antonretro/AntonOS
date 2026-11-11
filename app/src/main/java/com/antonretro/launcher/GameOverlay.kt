@@ -53,7 +53,7 @@ class GameOverlay : Activity() {
 
     private fun launcher(action: String, key: String? = null) {
         try {
-            startActivity(Intent(this, HomeActivity::class.java).setAction(Intent.ACTION_MAIN)
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("rl_game", action).putExtra("rl_rom", key))
         } catch (_: Exception) {}
         finish(); overridePendingTransition(0, 0)

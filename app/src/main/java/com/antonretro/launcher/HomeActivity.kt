@@ -171,6 +171,8 @@ class HomeActivity : Activity() {
         safely("channels") { loadChannels() }
         // started fresh with something to open (a Recent card in the quick panel, or a test): open it once the lists are loaded
         intent?.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open at start") { openKey(key) } }, 3000) }
+        // started fresh by the game menu (Android closed the launcher while the game ran): still do what it asked
+        intent?.getStringExtra("rl_game")?.let { act -> val key = intent.getStringExtra("rl_rom"); ui.postDelayed({ safely("game action at start") { gameAction(act, key) } }, 500) }
         ui.postDelayed({ maybeRefreshGuide(12 * HOUR) }, 60_000)
         ui.postDelayed(guideTimer, 30_000)
         safely("keys helper") { reattachKeysHelper() }
@@ -721,7 +723,11 @@ class HomeActivity : Activity() {
 
     private lateinit var gameMenu: GameMenu
     /** Ends the paused game engine (Android lets the launcher do that while it is in the background). */
-    private fun endEngine() { try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (_: Exception) {} }
+    private fun endEngine() {
+        // the engine must be in the background for Android to end it: try now and once more a moment later
+        fun kill() = try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (e: Exception) { Perf.note("can't end the game engine: $e") }
+        kill(); ui.postDelayed({ kill() }, 2500)
+    }
     private var gameAway: Rom? = null
     private var homeFromGame = false
     private var homePressed = false

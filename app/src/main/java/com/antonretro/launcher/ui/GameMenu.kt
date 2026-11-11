@@ -34,8 +34,8 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
 
     private class MRow(val label: () -> String, val value: (() -> String)? = null, val side: ((Int) -> Unit)? = null, val ok: (() -> Unit)? = null)
 
-    private val art = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
-    private val artBox = FrameLayout(ctx)
+    /** the game's cover on its own, in its real shape (no panel around it), like on the shelf */
+    private val art = com.antonretro.launcher.kit.CardFace(ctx)
     private val title = Kit.text(ctx, 30f, true).apply { isSingleLine = false; maxLines = 2 }
     private val system = Kit.text(ctx, 18f, true, Kit.TEXT_DIM)
     private val pads = Kit.text(ctx, 17f, false, Kit.TEXT_DIM).apply { isSingleLine = false; maxLines = 5 }
@@ -60,10 +60,7 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
         if (!overGame) addView(ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; Backdrop.blurredDim?.let { setImageBitmap(it) } }, -1, -1)
         addView(View(ctx).apply { setBackgroundColor(if (overGame) Color.argb(200, 6, 8, 14) else Color.argb(140, 6, 8, 14)) }, -1, -1)
         val left = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        artBox.background = GlassDrawable(artBox, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
-        artBox.setPadding(Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f))
-        artBox.addView(art, -1, -1)
-        left.addView(artBox, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), Kit.dpi(ctx, 300f)))
+        left.addView(art, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), Kit.dpi(ctx, 300f)))
         left.addView(title, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), -2).apply { topMargin = Kit.dpi(ctx, 18f) })
         left.addView(system, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), -2).apply { topMargin = Kit.dpi(ctx, 6f) })
         left.addView(pads, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), -2).apply { topMargin = Kit.dpi(ctx, 18f) })
@@ -86,8 +83,18 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
         alive = gameAlive
         rom = r; changed = false; applying.visibility = View.GONE
         title.text = r.title; system.text = r.system.shelf
-        art.setImageDrawable(GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(r.system.colour, Color.BLACK)).apply { cornerRadius = Kit.dp(context, 14f) })
-        Images.load(r.boxArt, Kit.dpi(context, 312f), Kit.dpi(context, 272f)) { b -> if (b != null && rom === r) art.setImageBitmap(b) }
+        // nothing until the real cover is ready (no coloured stand-in); a game with no cover gets its title card
+        art.visibility = View.INVISIBLE; art.art = null
+        val showCover = { b: android.graphics.Bitmap? ->
+            if (rom === r) {
+                art.art = if (b != null) com.antonretro.launcher.kit.Art(b, 0, 0, fit = true, cover = true)
+                          else com.antonretro.launcher.kit.Art(null, r.system.colour, Color.BLACK, null, null, bigText = r.title)
+                art.visibility = View.VISIBLE
+            }
+        }
+        val own = listOf("png", "jpg", "jpeg").map { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/Covers/${r.file.nameWithoutExtension}.$it") }.firstOrNull { it.isFile }
+        if (own != null) Thread { val b = try { android.graphics.BitmapFactory.decodeFile(own.path) } catch (e: Exception) { null }; post { showCover(b) } }.start()
+        else Images.load(r.boxArt, Kit.dpi(context, 340f), Kit.dpi(context, 300f)) { b -> showCover(b) }
         pads.text = padsText()
         readOptions(r)
         mainPage()
@@ -106,7 +113,7 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
             val d = InputDevice.getDevice(id) ?: continue
             if (!d.isVirtual && (d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) found.add(d)
         }
-        if (found.isEmpty()) return "No controller connected. The remote works too: OK is A, Back is B."
+        if (found.isEmpty()) return "Playing with the remote: OK is A, Back is B."
         return found.withIndex().joinToString("\n") { (i, d) -> "Player ${i + 1}   ${d.name.trim()}" }
     }
 
