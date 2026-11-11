@@ -473,10 +473,13 @@ class HomeActivity : Activity() {
     }
 
     private fun storageRows(): List<SRow> {
-        fun gb(b: Long) = String.format(Locale.getDefault(), "%.1f GB", b / 1e9)
-        val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        fun gb(b: Long) = if (b < 1_000_000_000L) String.format(Locale.getDefault(), "%d MB", b / 1_000_000) else String.format(Locale.getDefault(), "%.1f GB", b / 1e9)
         val out = ArrayList<SRow>()
-        out.add(SRow("Box storage", { gb(st.availableBytes) + " free of " + gb(st.totalBytes) }))
+        out.add(SRow("Box storage", {
+            val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            gb(st.availableBytes) + " free of " + gb(st.totalBytes) + if (st.availableBytes < LOW_STORAGE) "  ·  almost full: apps may stop installing" else "" }))
+        out.add(SRow("Retro Launcher's own files", { "Logos and box art " + gb(Images.sizeOnDisk()) + " (kept under 40 MB), TV guide " + gb(java.io.File(filesDir, "guide.db").length()) },
+            value = { "Clear" }, onClick = { bg.execute { Images.clear(); ui.post { notice("Cleared", "Logos and box art download again when shown"); settingsScreen.refresh() } } }))
         for (u in usbRoots()) { val s = try { android.os.StatFs(u.path) } catch (e: Exception) { null }; out.add(SRow("USB drive ${u.name}", { s?.let { gb(it.availableBytes) + " free" } }, onClick = { offerGamesFrom(listOf(u), quietIfNone = false) })) }
         out.add(SRow("Add games from a USB drive", onClick = { offerGamesFrom(usbRoots(), quietIfNone = false) }))
         out.add(SRow("Storage details", onClick = go(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)))
@@ -1044,6 +1047,17 @@ class HomeActivity : Activity() {
         }
     }
 
+    /** Below this much free space, say so plainly (installs fail and apps misbehave when the box is full). */
+    private val LOW_STORAGE = 200L * 1_000_000
+    private var lowWarnedAt = 0L
+    private fun checkStorage() {
+        val free = try { android.os.StatFs(filesDir.path).availableBytes } catch (e: Exception) { return }
+        if (free < LOW_STORAGE && SystemClock.uptimeMillis() - lowWarnedAt > 6 * HOUR || (lowWarnedAt == 0L && free < LOW_STORAGE)) {
+            lowWarnedAt = SystemClock.uptimeMillis()
+            notice("Storage almost full", "${free / 1_000_000} MB left. See Settings, Storage")
+        }
+    }
+
     /** Every 30 s: reminders due within a minute; every hour: the daily guide update. */
     private var guideTicks = 0
     private val guideTimer = object : Runnable {
@@ -1053,7 +1067,8 @@ class HomeActivity : Activity() {
                     "Watch" to { if (guide.showing) guide.hide(); val l = guideList(); openPlayer(l, l.indexOfFirst { it.url == r.url }.coerceAtLeast(0)) }, "Not now" to {})
                 else android.widget.Toast.makeText(this@HomeActivity, "Starting in a minute: ${r.title} on ${r.channel}", android.widget.Toast.LENGTH_LONG).show()
             }
-            if (++guideTicks % 120 == 0) maybeRefreshGuide(24 * HOUR)
+            if (++guideTicks % 120 == 0) { maybeRefreshGuide(24 * HOUR); checkStorage() }
+            if (guideTicks == 2) checkStorage()
             ui.postDelayed(this, 30_000)
         }
     }

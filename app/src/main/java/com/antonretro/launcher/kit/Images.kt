@@ -37,8 +37,19 @@ object Images {
     private const val RETRY_NET = 10 * 60_000L          // a download that failed: try again in 10 minutes
     private const val RETRY_UNREADABLE = 24 * 3600_000L // a file Android can't decode (SVG and the like): once a day
 
+    /** The logo and box-art store never grows past this (oldest files go first); the box has little free space. */
+    private const val CAP = 40L * 1024 * 1024
+    fun sizeOnDisk(): Long = dir.listFiles()?.sumOf { it.length() } ?: 0L
+    fun clear() { dir.listFiles()?.forEach { it.delete() }; mem.evictAll(); retryAt.clear() }
+    private fun trim() {
+        val files = dir.listFiles()?.sortedBy { it.lastModified() } ?: return
+        var total = files.sumOf { it.length() }
+        for (f in files) { if (total <= CAP * 3 / 4) break; total -= f.length(); f.delete() }
+    }
+
     fun init(ctx: Context) {
         dir = File(ctx.filesDir, "img").apply { mkdirs() }
+        pool.execute { try { if (sizeOnDisk() > CAP) trim() } catch (_: Exception) {} }
         // move anything from the old place (the cache folder Android may empty) once
         File(ctx.cacheDir, "img").listFiles()?.forEach { f -> try { val t = File(dir, f.name); if (!t.exists()) f.renameTo(t) else f.delete() } catch (_: Exception) {} }
     }
