@@ -1113,7 +1113,7 @@ class HomeActivity : Activity() {
         if (::dialog.isInitialized && dialog.showing) dialog.hide()
         if (::keyboard.isInitialized && keyboard.showing) keyboard.close()
         if (returning || stage.alpha < 1f) { stage.animate().cancel(); stage.alpha = 1f; stage.scaleX = 1f; stage.scaleY = 1f }
-        (screens["Settings"] as? SettingsScreen)?.reset()
+        if (current == "Settings") (screens["Settings"] as? SettingsScreen)?.reset()   // only rebuild Settings if it's the tab being left
         inTabBar = false
         if (current != "Home") showTab("Home")
         screens["Home"]?.reset(); screens["Home"]?.enter()
