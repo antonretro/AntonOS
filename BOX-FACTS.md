@@ -23,3 +23,7 @@
 
 Proven routes (Nov 11 2026, remote via `sendevent`): Back in a game opens the quick panel and Back returns to the game; holding Back in Android Settings opens the quick panel; a short Back still works as Back; Home from a game shows the game panel on Home (Stay on Home first), also after the quick panel was used; Quit there closes RetroArch.
 Not yet proven: anything with the real Xbox pad (Guide, Start+Select, hold Start), the mouse corner button and top-edge pill, SmartTube/Kodi/browser/Android game.
+- **No save state has ever been written on this box** (`Saves/states/*` empty for every game, Nov 11 2026), so "exactly where you left it" after quitting doesn't exist yet; only the game's own battery saves (`autosave_interval = "10"`) survive. Untested: whether RetroArch's own Start+Select quit writes one.
+- RetroArch's `QUITFOCUS` launch extra exists and makes it quit when Home is pressed, but it saves nothing: not used. Home leaves RetroArch paused in the background, so Resume is exact.
+- The command interface code is in this build ("Bringing up command interface" string present) but is never started; per-core folders only hold `.opt` core options, no override turns it off. Still unexplained.
+

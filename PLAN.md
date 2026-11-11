@@ -168,6 +168,16 @@ Anthony, after getting stuck in a game: "make sure that there's always a way to 
 - **Showing the way out:** a short hint at the bottom when a game starts ("Xbox button or hold Start: menu and Home"), once per app for other apps, and with a mouse plugged in a small Home button in the top-right corner of every app and game.
 - **Test matrix** (muted, added to the smoke test): RetroArch, SmartTube while playing, Kodi, a full-screen Android game, the browser and Android's own Settings, each with the remote, the Xbox pad and the mouse. Report any app where it fails.
 
+### The game Home Menu (Anthony: "pressing home should show up like a Wii-like thing ... right now ... you're just kind of boxed into this")
+
+One menu for every way out of a game: the remote's Home, the Xbox button, Select+Start, Back in a game, or the game closing by itself. Our own glass style; no console maker's artwork or sounds.
+
+- **What it shows:** the game's box art and title, its system, the controllers with player numbers, and big choices: **Resume** (first; pressing Home again also resumes), **Leave game** (confirm: "Leave *game*?" Leave / Stay), **Game options**, **Controls** (what each button does on that system), **All game settings** (Settings → Games).
+- **How it works on this box:** Home pauses RetroArch in the background (`pause_nonactive`), so Resume brings the game back exactly. The menu lives in Retro Launcher, so no overlay or key helper is needed.
+- **Game options**, per game, written as a RetroArch game override (`RetroLauncher/<core>/<game>.cfg`): picture (Sharp pixels / Smooth), screen (Whole pixels / Fill the screen), sound (Normal / Quieter / Louder), rewind (on / off). Applying restarts the game behind an "Applying…" card. Which pad is Player 1 waits for testing with real pads.
+- **Saving, honestly:** RetroArch's command port never opens on this box and no save state has ever been written here (`Saves/states` is empty), so the menu can't save your exact spot. Leaving or applying options goes back to the game's own last save (written every 10 s). The menu says so plainly instead of promising "your progress is saved". Find out why states aren't written (RetroArch's own Start+Select quit, `savestate_auto_save`, folder rights) and bring back Save/Load slots and "exactly where you were" when it works. RetroArch's `QUITFOCUS` launch option quits on Home but saves nothing: not used.
+- **Ordinary apps:** possible from the launcher side (the key helper knows the app that was in front, and Resume just reopens it), but it adds a step to every Home press, so it waits for Anthony's choice. For now Home goes straight Home from apps.
+
 ### Web browser (built in)
 
 The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. Retro Launcher gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.

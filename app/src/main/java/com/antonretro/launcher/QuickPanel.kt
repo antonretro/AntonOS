@@ -78,7 +78,7 @@ class RetroKeys : AccessibilityService() {
         if (inLauncher()) return
         val way = if (hasPad()) "Xbox button or hold Start: menu and Home" else "Hold Back: menu and Home"
         // in games the route that works on every pad, helper or not: RetroArch's own Start + Select quit (it saves first)
-        if (inGame()) { if (was?.startsWith("com.retroarch") != true) ui.postDelayed({ if (inGame()) hint("Start + Select: save and go Home") }, 1500) }
+        if (inGame()) { if (was?.startsWith("com.retroarch") != true) ui.postDelayed({ if (inGame()) hint("Home or Start + Select: menu") }, 1500) }
         else { val k = "hinted:" + foreground; if (!prefs.getBoolean(k, false)) { prefs.edit().putBoolean(k, true).apply(); ui.postDelayed({ hint(way) }, 1500) } }
     }
 
@@ -145,6 +145,8 @@ class RetroKeys : AccessibilityService() {
         if (testMode) Perf.note("quick panel trigger $why in $foreground")
         if (QuickPanel.showing) { QuickPanel.current?.goHome(); return }
         corner?.visibility = View.GONE; hintView?.visibility = View.GONE
+        // in a game every trigger leads to the one game Home Menu, which lives in Retro Launcher: just go Home
+        if (inGame()) { goHome(); return }
         val app = foreground
         if (app == null || app == packageName) { goHome(); return }
         try {

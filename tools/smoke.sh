@@ -55,30 +55,30 @@ if [ "${2:-}" = "--game" ]; then
   if [ -n "$PAD" ]; then
     press() { a "sendevent $PAD 1 $1 1; sendevent $PAD 0 0 0; sendevent $PAD 1 $1 0; sendevent $PAD 0 0 0"; }
     a "am force-stop com.retroarch.ra32"; a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 8
-    press 316; sleep 2; check "pad Guide in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
-    press 305; sleep 2; check "pad B resumes the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
-    press 316; sleep 2; press 316; sleep 3; check "pad Guide twice in a game goes straight Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
+    press 316; sleep 2; check "pad Guide in a game opens the game Home Menu" "$(focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
+    press 305; sleep 2; check "pad B (Back on the menu) resumes the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
+    press 316; sleep 3; press 316; sleep 3; check "pad Guide twice in a game: menu, then back to the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
     # a pad without a Guide button: Select + Start
     a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 6
     a "sendevent $PAD 1 314 1; sendevent $PAD 0 0 0; sendevent $PAD 1 315 1; sendevent $PAD 0 0 0; sendevent $PAD 1 315 0; sendevent $PAD 0 0 0; sendevent $PAD 1 314 0; sendevent $PAD 0 0 0"; sleep 2
-    check "pad Select+Start in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
+    check "pad Select+Start in a game quits to the game Home Menu" "$(focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
     a "input keyevent 3"; sleep 3; check "Home from the game" "$(focus | grep -q $PKG/ && echo ok || echo "$(focus)")"
     # outside games: Guide over Android's own Settings
     a "am start -n com.android.settings/.Settings" >/dev/null; sleep 3
     press 316; sleep 2; check "pad Guide over Settings opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
-    press 304; sleep 3; check "then A (Go Home) goes Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
+    press 304; sleep 3; check "then A (Go Home) goes Home" "$(focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
   else echo "SKIP  no pad connected: Guide checks"; fi
   # the remote (always connected): real hardware presses on the IR keypad, which the key helper does see
   KP=/dev/input/event0
   rk() { a "sendevent $KP 1 $1 1; sendevent $KP 0 0 0; sleep ${2:-0}; sendevent $KP 1 $1 0; sendevent $KP 0 0 0"; }
   a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 8
-  rk 158; sleep 2; check "remote Back in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
-  rk 158; sleep 2; check "Back again returns to the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
+  rk 158; sleep 2; check "remote Back in a game opens the game Home Menu" "$(focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
+  rk 158; sleep 2; check "Back on the menu returns to the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
   rk 102; sleep 3; check "remote Home from the game" "$(focus | grep -q $PKG/ && echo ok || echo "$(focus)")"
   a "input keyevent 4"; sleep 1
   a "am start -n com.android.settings/.Settings" >/dev/null; sleep 3
   rk 158 1.4; sleep 2; check "hold Back over Settings opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
-  a "input keyevent 23"; sleep 3; check "then OK (Go Home) goes Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
+  a "input keyevent 23"; sleep 3; check "then OK (Go Home) goes Home" "$(focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
   a "am force-stop com.retroarch.ra32"
   a "mv $CFG.smokebak $CFG"
   check "key helper still running" "$(bound)"

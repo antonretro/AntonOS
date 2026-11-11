@@ -238,6 +238,13 @@ class HomeActivity : Activity() {
             onLater = { c, p -> guideLater(c, p) }
             onCover = { on -> coverHome(on) }
         }
+        gameMenu = GameMenu(this).apply {
+            onResume = { r -> RetroKeys.beforeLauncher = null; gameAway = null; playGame(r, null) }
+            onLeave = { r -> RetroKeys.beforeLauncher = null; gameAway = null; endEngine(); notice("Game closed", r.title) }
+            onRestart = { r -> RetroKeys.beforeLauncher = null; endEngine(); ui.postDelayed({ playGame(r, null) }, 900) }
+            onAllSettings = { showTab("Settings"); settingsScreen.open("Games") }
+        }
+        root.addView(gameMenu, -1, -1)
         player.onGuide = { c -> openGuide(c.url) }
         player.nowLine = { c -> Guide.nowNext(c.url).first?.let { "Now: ${it.title}, until ${timeFmt.format(Date(it.stop))}" } }
         for ((name, s) in screens) {
@@ -578,24 +585,12 @@ class HomeActivity : Activity() {
      * panel, in our own app, offers what to do with it. No overlay and no key helper needed. Stay on Home is
      * first, so Home then OK always gets you out.
      */
+    private lateinit var gameMenu: GameMenu
+    /** Ends the paused game engine (Android lets the launcher do that while it is in the background). */
+    private fun endEngine() { try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (_: Exception) {} }
     private var gameAway: Rom? = null
     private var homeFromGame = false
     private var homePressed = false
-    private fun gamePanel(rom: Rom) {
-        if (dialog.showing || (::player.isInitialized && player.showing)) return
-        // RetroArch's command port never opens on this box (checked 2026-11-11), so Save/Load/Restart can't be sent;
-        // Quit ends the engine from here (Android lets the launcher do that once it's in the background).
-        // The game's own saves are kept: RetroArch writes them every 10 s (autosave_interval).
-        dialog.show("${rom.title} is paused", "It waits right where you left it. Start + Select in the game saves your exact place and quits.",
-            "Stay on Home" to { },
-            "Back to the game" to { gameAway = null; RetroKeys.beforeLauncher = null; playGame(rom, null) },
-            "Quit the game" to {
-                gameAway = null; RetroKeys.beforeLauncher = null
-                try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (_: Exception) {}
-                notice("Game closed", rom.title)
-            })
-    }
-
     /** The quick panel's Recent cards: an app, a channel or a game, by key. */
     private fun openKey(key: String) {
         when (val item = itemFor(key)) {
@@ -1215,6 +1210,7 @@ class HomeActivity : Activity() {
         if (digits.isNotEmpty() && e.action == KeyEvent.ACTION_UP && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) { finishDigits(); return true }
         if (digits.isNotEmpty() && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
+        if (::gameMenu.isInitialized && gameMenu.showing) return gameMenu.onKey(e)
         if (::guide.isInitialized && guide.showing && guide.alpha > 0f) return guide.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
@@ -1404,6 +1400,8 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
+        // Home again while the game's Home Menu is up: back to the game (like a console)
+        if (Intent.ACTION_MAIN == intent.action && intent.getStringExtra("rl_open") == null && ::gameMenu.isInitialized && gameMenu.showing && gameMenu.alpha > 0f) { gameMenu.resume(); return }
         if (Intent.ACTION_MAIN == intent.action) { goHome(); homePressed = intent.getStringExtra("rl_open") == null; if (gameAway != null) homeFromGame = true }   // Home always means the Home tab, from anywhere
         intent.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open recent") { openKey(key) } }, 250) }
         Perf.afterFrame("home", t0)
@@ -1422,17 +1420,17 @@ class HomeActivity : Activity() {
         tickClock()
         // back from a game by Home (the game is paused behind us): offer the game panel. The key helper knows which
         // app was in front before us; without it, fall back to remembering the last game we started.
-        if (homeFromGame || homePressed) {
-            val pressed = homePressed
-            ui.postDelayed({
-                val before = RetroKeys.beforeLauncher
-                val fromGame = if (RetroKeys.alive) before?.startsWith("com.retroarch") == true && pressed else homeFromGame
-                val rom = gameAway ?: store.recentGames.firstOrNull()?.let { itemFor(it) as? Item.Game }?.rom
-                Perf.note("resume after Home: before=$before fromGame=$fromGame rom=${rom?.title}")
-                if (fromGame && rom != null) gamePanel(rom)
-                homeFromGame = false
-            }, 450)
-        } else gameAway = null
+        // back from a game, by Home, the Xbox button, Select+Start or the game closing: the game's Home Menu.
+        // The key helper knows which app was in front before us; without it, remember the last game we started.
+        ui.postDelayed({
+            val before = RetroKeys.beforeLauncher
+            val fromGame = if (RetroKeys.alive) before?.startsWith("com.retroarch") == true else homeFromGame
+            val rom = gameAway ?: store.recentGames.firstOrNull()?.let { itemFor(it) as? Item.Game }?.rom
+            if (fromGame) Perf.note("back from game: before=$before rom=${rom?.title}")
+            if (fromGame && rom != null && !gameMenu.showing) { RetroKeys.beforeLauncher = null; gameMenu.show(rom) }
+            if (!fromGame) gameAway = null
+            homeFromGame = false
+        }, 450)
         homePressed = false
         if (returning) {   // gentle scale-down from 1.05 and fade back in, focus on the same card
             returning = false
