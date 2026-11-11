@@ -61,6 +61,12 @@ class Keyboard(ctx: Context) : FrameLayout(ctx) {
         panel.animate().translationY(0f).setDuration(Kit.t(300)).setInterpolator(Kit.EASE).start()
     }
 
+    /** Text from the phone remote (typed or dictated): replaces what's in the box; [submit] presses the box's button. */
+    fun fromPhone(t: String, submit: Boolean) {
+        if (!showing) return
+        text.clear(); text.append(t); show()
+        if (submit) { val s = text.toString(); close(); done?.invoke(s) }
+    }
     fun close() { animate().alpha(0f).setDuration(Kit.t(180)).withEndAction { visibility = View.GONE }.start() }
 
     private fun build() {

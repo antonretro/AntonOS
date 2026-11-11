@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TV Remote">
+<meta name="theme-color" content="#0b0d12">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Retro Launcher remote</title>
+<style>
+/* Retro Launcher's phone remote: served by the box itself on the home network (see PhoneRemote.kt). */
+:root{--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.12);--dim:#9aa0aa;--accent:#4f8cff;--r:22px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0b0d12;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",sans-serif;overscroll-behavior:none}
+body{background:radial-gradient(120% 70% at 50% -10%,#1f2a44 0,#0b0d12 60%) fixed;padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 92px);user-select:none;-webkit-user-select:none}
+header{display:flex;align-items:center;gap:10px}
+header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.2px}
+#dot{width:9px;height:9px;border-radius:50%;background:#666;box-shadow:0 0 0 3px rgba(255,255,255,.05);transition:background .3s}
+#dot.on{background:#3ddc84}
+#status{font-size:14px;color:var(--dim);margin:4px 0 16px;min-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page{display:none}.page.on{display:block;animation:in .22s ease}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* the touch pad: swipe to move, tap to choose */
+#pad{position:relative;width:100%;aspect-ratio:1/1;max-width:380px;margin:0 auto;border-radius:34px;background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.03));border:1px solid var(--edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 20px 40px rgba(0,0,0,.35);touch-action:none;overflow:hidden}
+#pad .chev{position:absolute;color:rgba(255,255,255,.28);font-size:26px;font-weight:700;pointer-events:none}
+#pad .n{top:14px;left:50%;transform:translateX(-50%)}#pad .s{bottom:14px;left:50%;transform:translateX(-50%) rotate(180deg)}
+#pad .w{left:16px;top:50%;transform:translateY(-50%) rotate(-90deg)}#pad .e{right:16px;top:50%;transform:translateY(-50%) rotate(90deg)}
+#ok{position:absolute;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.08);border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:rgba(255,255,255,.75);pointer-events:none;transition:background .12s,transform .12s}
+#ok.hit{background:rgba(255,255,255,.28);transform:translate(-50%,-50%) scale(.94)}
+.ripple{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border-radius:50%;background:rgba(255,255,255,.25);pointer-events:none;animation:rip .45s ease-out forwards}
+@keyframes rip{from{transform:scale(.3);opacity:1}to{transform:scale(2.2);opacity:0}}
+#padhint{text-align:center;font-size:13px;color:var(--dim);margin:10px 0 18px}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:380px;margin:0 auto 12px}
+.b{height:58px;border-radius:var(--r);background:var(--glass);border:1px solid var(--edge);color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .1s,background .1s;font-family:inherit}
+.b:active,.b.hit{transform:scale(.95);background:rgba(255,255,255,.18)}
+.b .i{font-size:20px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 2px;margin:14px -18px 0;padding-left:18px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;height:40px;padding:0 16px;border-radius:20px;background:var(--glass);border:1px solid var(--edge);font-weight:700;font-size:15px;display:flex;align-items:center;color:#ddd}
+.chip:active{background:rgba(255,255,255,.2)}
+.lbl{font-size:13px;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin:18px 2px 8px}
+/* typing and dictation */
+textarea{width:100%;min-height:150px;border-radius:var(--r);background:rgba(255,255,255,.06);border:1px solid var(--edge);color:#fff;font:600 20px/1.35 inherit;padding:16px;resize:none;outline:none;font-family:inherit}
+textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,140,255,.25)}
+.tip{font-size:13px;color:var(--dim);margin:8px 2px 14px;line-height:1.4}
+.wide{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.b.primary{background:#fff;color:#111;border-color:#fff}
+/* number pad */
+#numview{height:64px;border-radius:var(--r);background:rgba(255,255,255,.05);border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;letter-spacing:4px;margin-bottom:14px}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:380px;margin:0 auto}
+.keys .b{height:64px;font-size:24px}
+/* bottom bar */
+nav{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);height:64px;border-radius:32px;background:rgba(22,24,32,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--edge);display:grid;grid-template-columns:repeat(3,1fr);padding:6px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+nav button{border:0;background:none;color:var(--dim);font:700 15px inherit;border-radius:26px;font-family:inherit}
+nav button.on{background:rgba(255,255,255,.12);color:#fff}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translate(-50%,-30px);opacity:0;padding:10px 16px;border-radius:18px;background:rgba(30,32,42,.95);border:1px solid var(--edge);font-size:14px;font-weight:600;transition:.25s;max-width:88vw;text-align:center;z-index:9}
+#toast.on{transform:translate(-50%,0);opacity:1}
+#lost{display:none;margin-top:30vh;text-align:center;color:var(--dim);font-size:16px;line-height:1.5;padding:0 20px}
+</style>
+</head>
+<body>
+<header><span id="dot"></span><h1>Retro Launcher</h1></header>
+<div id="status">Connecting…</div>
+
+<section class="page on" id="p-remote">
+  <div id="pad"><span class="chev n">⌃</span><span class="chev s">⌃</span><span class="chev w">⌃</span><span class="chev e">⌃</span><div id="ok">OK</div></div>
+  <div id="padhint">Swipe to move · tap to choose</div>
+  <div class="row"><button class="b" data-k="back"><span class="i">‹</span>Back</button><button class="b" data-k="home"><span class="i">⌂</span>Home</button><button class="b" data-k="playpause"><span class="i">⏯</span></button></div>
+  <div class="row"><button class="b" data-k="voldown"><span class="i">−</span>Vol</button><button class="b" data-k="mute">Mute</button><button class="b" data-k="volup"><span class="i">+</span>Vol</button></div>
+  <div class="chips" id="tabs"></div>
+</section>
+
+<section class="page" id="p-type">
+  <div class="lbl">Speak or type</div>
+  <textarea id="txt" placeholder="Search, a Wi-Fi password, a web address…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+  <div class="tip">To speak, tap the 🎤 on your phone's keyboard. Words appear on the TV as you go when a box is open there.</div>
+  <div class="wide"><button class="b primary" id="send">Send to TV</button><button class="b" id="yt">Search YouTube</button></div>
+</section>
+
+<section class="page" id="p-num">
+  <div class="lbl">Channel number</div>
+  <div id="numview">–</div>
+  <div class="keys" id="keys"></div>
+</section>
+
+<div id="lost">This remote needs its key from the TV.<br>On the TV open <b>Settings → Controllers &amp; Remotes → Use your phone</b> and scan the code.</div>
+<nav><button class="on" data-p="remote">Remote</button><button data-p="type">Type</button><button data-p="num">Numbers</button></nav>
+<div id="toast"></div>
+
+<script>
+// the secret from the QR code: kept on the phone so the remote keeps working from the home screen
+const q = new URLSearchParams(location.search);
+let token = q.get('t') || localStorage.getItem('rl-token');
+if (q.get('t')) { localStorage.setItem('rl-token', q.get('t')); history.replaceState(null, '', location.pathname); }
+const $ = id => document.getElementById(id);
+if (!token) { document.querySelectorAll('section,nav,header,#status').forEach(e => e.style.display = 'none'); $('lost').style.display = 'block'; }
+
+// ---- transport: every press goes through send(); swap this for another channel later without touching the page
+async function send(path, data) {
+  try {
+    const r = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Remote-Token': token }, body: JSON.stringify(data || {}) });
+    const j = await r.json();
+    $('dot').classList.toggle('on', r.ok);
+    if (j.status) $('status').textContent = j.status;
+    if (j.note) toast(j.note);
+    if (r.status === 403) { localStorage.removeItem('rl-token'); toast(j.note || 'Scan the code on the TV again'); }
+    return j;
+  } catch (e) { $('dot').classList.remove('on'); $('status').textContent = 'Not connected: same Wi-Fi as the TV?'; }
+}
+const buzz = () => navigator.vibrate && navigator.vibrate(8);
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.remove('on'), 2200); }
+const key = k => { buzz(); send('key', { k }); };
+
+// ---- pages
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.p));
+  buzz();
+});
+
+// ---- touch pad: a swipe is an arrow (holding at the end keeps moving), a tap is OK
+const pad = $('pad'); let st = null, rep = null;
+function arrow(dx, dy) { return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); }
+function ripple(x, y) { const r = pad.getBoundingClientRect(), d = document.createElement('div'); d.className = 'ripple'; d.style.left = (x - r.left) + 'px'; d.style.top = (y - r.top) + 'px'; pad.appendChild(d); setTimeout(() => d.remove(), 460); }
+pad.addEventListener('pointerdown', e => { pad.setPointerCapture(e.pointerId); st = { x: e.clientX, y: e.clientY, moved: false }; });
+pad.addEventListener('pointermove', e => {
+  if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+  if (Math.hypot(dx, dy) > 34) {        // each 34 px of travel is one step, so a long swipe moves several
+    const k = arrow(dx, dy); key(k); ripple(e.clientX, e.clientY); st = { x: e.clientX, y: e.clientY, moved: true, k };
+  }
+});
+pad.addEventListener('pointerup', e => {
+  clearInterval(rep);
+  if (st && !st.moved) {
+    // a tap near an edge moves that way, a tap in the middle chooses
+    const r = pad.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    if (Math.hypot(x, y) < .24) { key('ok'); $('ok').classList.add('hit'); setTimeout(() => $('ok').classList.remove('hit'), 140); }
+    else key(arrow(x, y));
+    ripple(e.clientX, e.clientY);
+  }
+  st = null;
+});
+pad.addEventListener('pointercancel', () => { clearInterval(rep); st = null; });
+
+// ---- buttons
+document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
+['Home', 'TV', 'Radio', 'YouTube', 'Media', 'Games', 'Apps', 'Settings'].forEach(t => {
+  const c = document.createElement('button'); c.className = 'chip b'; c.style.height = '40px'; c.textContent = t; c.onclick = () => { buzz(); send('tab', { name: t }); }; $('tabs').appendChild(c);
+});
+
+// ---- typing and dictation: text streams to an open box on the TV as it changes (dictation sends whole phrases)
+let tt = null;
+$('txt').addEventListener('input', () => { clearTimeout(tt); tt = setTimeout(() => send('text', { t: $('txt').value, submit: false }), 350); });
+$('txt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('send').click(); } });
+$('send').onclick = () => { buzz(); clearTimeout(tt); send('text', { t: $('txt').value, submit: true }).then(j => { if (j && j.ok) $('txt').value = ''; }); };
+$('yt').onclick = () => { buzz(); clearTimeout(tt); const t = $('txt').value.trim(); if (!t) return toast('Type or say what to search for'); send('text', { t, submit: true, target: 'youtube' }).then(j => { if (j && j.ok) $('txt').value = ''; }); };
+
+// ---- number pad
+let num = '';
+const show = () => $('numview').textContent = num || '–';
+['1','2','3','4','5','6','7','8','9','⌫','0','OK'].forEach(k => {
+  const b = document.createElement('button'); b.className = 'b'; b.textContent = k; if (k === 'OK') b.classList.add('primary');
+  b.onclick = () => { buzz(); if (k === '⌫') num = num.slice(0, -1); else if (k === 'OK') { if (num) send('number', { n: num }); num = ''; } else if (num.length < 4) num += k; show(); };
+  $('keys').appendChild(b);
+});
+
+// ---- stay in touch: what the TV shows, every few seconds while the page is open
+if (token) { send('status'); setInterval(() => { if (!document.hidden) send('status'); }, 4000); }
+</script>
+</body>
+</html>
