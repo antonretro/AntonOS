@@ -452,6 +452,9 @@ Each stage ends with a screenshot from the real box shown to Anthony. Don't move
 
 ## Shipping in this repo
 
+- **Target for the skill (Anthony): running it on a box sets up everything.** It downloads the signed Retro Launcher APK from the GitHub release, installs it and RetroArch with the tuned config, pushes the channel list and guide sources, grants the launcher's permissions and switches its key helper on over ADB (with the real-key check from `tools/install.sh`), pre-compiles the main apps, applies the approved speed tuning, sets Retro Launcher as the home app (the classic launcher stays as a fallback), and finishes with the smoke test. README and screenshots updated to match. Nothing is pushed, released or published without Anthony's OK.
+- **The visualizer's "Classic pack" is never hosted in or downloaded from this repo or a release** (the data is Microsoft's). The only allowed route: an optional skill step that builds the pack on the user's own PC from their own installed Windows Media Player (the visualizer project's export step reading their `wmp.dll`), then pushes the result to `/sdcard/RetroLauncher/Visualizer/classic/` over ADB. It skips silently when the PC has no such file. Coordinate the export tool with the "Visualizations decomp Windows" session at that stage.
+
 - **The skill sets itself up** (Anthony): when someone uses the Android TV box skill in Claude Code, it detects their computer (Windows, macOS or Linux) and fetches what it needs itself, such as Android's platform tools (ADB) from Google's official download, into a folder it controls, instead of asking them to install things by hand. It asks before downloading and says where it put them.
 
 - Source lives in `launcher/`. The signed APK goes out as a GitHub Release, not into git.
