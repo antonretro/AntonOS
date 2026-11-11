@@ -17,7 +17,6 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -145,7 +144,8 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     val showing get() = visibility == View.VISIBLE
     var onClose: (() -> Unit)? = null
     private val ui = Handler(Looper.getMainLooper())
-    private var web: WebView? = null
+    /** the visualizer behind the controls, behind one small interface (see Visualizer.kt) */
+    private var vis: VisualizerHost? = null
     private val bg = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY }
     private val cover = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val title = Kit.text(ctx, 34f, true)
@@ -242,7 +242,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         ctls[5].view.text = if (style == "battery") "Plasma" else "Spectrum"
         ctls[6].view.text = "◀ " + (presets.getOrNull(preset) ?: "Random") + " ▶"
         progress(); paint()
-        if (showing) startTap()
+        if (showing) music.tap.listener = { b, ch, r -> vis?.feedPcm(b, ch, r) }
     }
 
     private fun progress() {
@@ -293,55 +293,28 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
 
     // ------------------------------------------------------------------ the visualizer (Anthony's engine, bundled; no internet)
     private fun startVisualizer() {
-        if (web == null) try {
-            web = WebView(context).apply {
-                settings.javaScriptEnabled = true; settings.domStorageEnabled = true
-                settings.allowFileAccess = true
-                @Suppress("DEPRECATION") settings.allowFileAccessFromFileURLs = true
-                setLayerType(View.LAYER_TYPE_HARDWARE, null); setBackgroundColor(Color.BLACK)
-                isFocusable = false; isFocusableInTouchMode = false
-                webViewClient = object : android.webkit.WebViewClient() {
-                    override fun onPageFinished(view: WebView, url: String) {
-                        bg.visibility = View.INVISIBLE   // the visualizer covers it: don't draw the wallpaper under it every frame
-                        view.evaluateJavascript("setSize(1280,720);setVisualizer('$style');setIdle('demo');listPresets()") { json ->
-                            presets = try { org.json.JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) } } } catch (e: Exception) { listOf("Random") }
-                            preset = 0; refresh()
-                        }
-                    }
+        if (vis == null) try {
+            vis = WebVisualizer(context, ui, style).also { v ->
+                v.onReady = { names ->
+                    bg.visibility = View.INVISIBLE   // the visualizer covers it: don't draw the wallpaper under it every frame
+                    presets = names; preset = 0; refresh()
                 }
-                loadUrl("file:///android_asset/visualizer/nowplaying.html")
+                addView(v.view, 1, LayoutParams(-1, -1))
             }
-            addView(web, 1, LayoutParams(-1, -1))
-        } catch (e: Throwable) { Perf.note("visualizer can't start: $e"); web = null }
-        web?.onResume(); web?.evaluateJavascript("resume()", null)
-        startTap()
+        } catch (e: Throwable) { Perf.note("visualizer can't start: $e"); vis = null }
+        vis?.resume()
+        music.tap.listener = { bytes, ch, rate -> vis?.feedPcm(bytes, ch, rate) }
     }
 
     private fun stopVisualizer() {
-        stopTap()
+        music.tap.listener = null
         bg.visibility = View.VISIBLE
-        web?.let { w -> w.evaluateJavascript("pause()", null); removeView(w); w.destroy() }
-        web = null
+        vis?.let { v -> removeView(v.view); v.release() }
+        vis = null
     }
 
-    private fun setStyle(s: String) { style = s; web?.evaluateJavascript("setVisualizer('$s');listPresets()") { json ->
-        presets = try { org.json.JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) } } } catch (e: Exception) { listOf("Random") }
-        preset = 0; refresh() } }
-    private fun setPreset(i: Int) { if (presets.isEmpty()) return; preset = ((i % presets.size) + presets.size) % presets.size; web?.evaluateJavascript("setPreset($preset)", null); refresh() }
-
-    /** The player's own pass-through tap feeds the visualizer: about 6 batches a second, base64 PCM. */
-    private val pending = java.io.ByteArrayOutputStream()
-    private fun startTap() {
-        music.tap.listener = { bytes, ch, rate ->
-            var out: String? = null
-            synchronized(pending) {
-                pending.write(bytes, 0, bytes.size)
-                if (pending.size() >= rate / 6 * ch * 2) { out = android.util.Base64.encodeToString(pending.toByteArray(), android.util.Base64.NO_WRAP); pending.reset() }
-            }
-            out?.let { b64 -> ui.post { web?.evaluateJavascript("feedPcmBase64('$b64',$ch,$rate)", null) } }
-        }
-    }
-    private fun stopTap() { music.tap.listener = null; synchronized(pending) { pending.reset() } }
+    private fun setStyle(s: String) { style = s; vis?.setVisualizer(s) { names -> presets = names; preset = 0; refresh() } }
+    private fun setPreset(i: Int) { if (presets.isEmpty()) return; preset = ((i % presets.size) + presets.size) % presets.size; vis?.setPreset(preset); refresh() }
 
     companion object {
         /** A drawn cover for songs without one: the title on a colour of its own. */
