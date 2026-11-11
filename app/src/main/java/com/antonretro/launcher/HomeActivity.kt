@@ -328,6 +328,10 @@ class HomeActivity : Activity() {
 
     private fun controllerRows(): List<SRow> {
         val out = ArrayList<SRow>()
+        if (!RetroKeys.alive) out.add(SRow("The key helper is off", { "Without it, some apps can trap you. Restart the box to switch it back on" }))
+        out.add(SRow("Get out of any app", { "Controller: the Guide button, or hold Start, or press Select and Start together. Then OK goes Home" }))
+        out.add(SRow("With the remote", { "Home, or hold Back for a second. A short Back works as normal" }))
+        out.add(SRow("With a mouse or keyboard", { "Touch the top edge of the screen with the pointer, or hold Esc" }))
         for (id in InputDevice.getDeviceIds()) {
             val d = InputDevice.getDevice(id) ?: continue
             if (d.isVirtual) continue
@@ -342,7 +346,9 @@ class HomeActivity : Activity() {
             } ?: continue
             out.add(SRow(d.name.trim(), { kind }))
         }
-        out.add(SRow("Pair a Bluetooth controller", onClick = go(Settings.ACTION_BLUETOOTH_SETTINGS)))
+        val bt = packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_BLUETOOTH)
+        if (bt) out.add(SRow("Pair a Bluetooth controller", onClick = go(Settings.ACTION_BLUETOOTH_SETTINGS)))
+        else out.add(SRow("Connect a wireless controller", { "This box has no Bluetooth. Use a controller that comes with its own USB receiver, or an 8BitDo USB Wireless Adapter: plug it in, hold its pair button and your controller's pair button, done" }))
         out.add(SRow("Use your phone as a remote", { "Coming soon" }))
         return out
     }
@@ -549,13 +555,23 @@ class HomeActivity : Activity() {
         }
     }
 
-    private fun playGame(rom: Rom, cell: CardCell) {
+    /** The quick panel's Recent cards: an app, a channel or a game, by key. */
+    private fun openKey(key: String) {
+        when (val item = itemFor(key)) {
+            is Item.App -> safeStart(Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+            is Item.Ch -> { val l = byNumber(item.ch.radio); openPlayer(l, l.indexOfFirst { it.url == item.ch.url }.coerceAtLeast(0)) }
+            is Item.Game -> playGame(item.rom, null)
+            else -> {}
+        }
+    }
+
+    private fun playGame(rom: Rom, cell: CardCell?) {
         val i = GameRepo.launchIntent(this, rom)
         if (i == null) {
             dialog.show("Games need one more piece", "The game engine (RetroArch) isn't installed on this box yet. It runs hidden: you'll only ever see your games.", "OK" to {})
             return
         }
-        val opts = ActivityOptions.makeScaleUpAnimation(cell.card, 0, 0, cell.card.width, cell.card.height)
+        val opts = cell?.let { ActivityOptions.makeScaleUpAnimation(it.card, 0, 0, it.card.width, it.card.height) }
         val same = store.recentGames.firstOrNull() == rom.key
         if (same) {
             // the same game: bring it back where you left it
@@ -564,7 +580,7 @@ class HomeActivity : Activity() {
             // a different game: close the engine first (swapping games inside RetroArch crashes it)
             try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(i.component!!.packageName) } catch (_: Exception) {}
         }
-        if (safeStart(i, opts.toBundle())) { store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
+        if (safeStart(i, opts?.toBundle())) { store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
     }
 
     /** Looks on USB drives for games and offers to copy them into the library in one press. */
@@ -1348,6 +1364,7 @@ class HomeActivity : Activity() {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
         if (Intent.ACTION_MAIN == intent.action) goHome()   // Home always means the Home tab, from anywhere
+        intent.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open recent") { openKey(key) } }, 250) }
         Perf.afterFrame("home", t0)
     }
 

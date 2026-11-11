@@ -55,7 +55,7 @@
         </activity>
         <!-- pause menu shown over a running game -->
         <activity
-            android:name=".PauseActivity"
+            android:name=".QuickPanel"
             android:exported="false"
             android:theme="@style/Theme.Retro.Overlay"
             android:launchMode="singleTask"

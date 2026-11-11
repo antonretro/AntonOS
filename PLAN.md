@@ -156,6 +156,15 @@ His words: "I want like all the settings for like RetroArch to look in the style
 
 Identify each device by `InputDevice` vendor/product ID and sources, from a small built-in table: Xbox (360/One/Series and "Generic X-Box pad" clones), PlayStation (DS3/DS4/DualSense), Nintendo (Switch Pro, Joy-Con), 8BitDo, Logitech, plus generic gamepad, mouse, keyboard, air-mouse remote, webcam, USB drive. Unknown pads are "Controller" with generic glyphs. The notice says what it is in plain words with our own drawn icon (never the makers' logos): "Xbox controller connected", "Mouse connected", "USB drive connected: 32 GB". Button hints everywhere switch to that family's labels (A/B/X/Y, Cross/Circle, Nintendo's swapped A/B), or to remote or mouse hints when those were used last. Settings → Controllers & Remotes lists each device with its type, a live button test, and Player 1/2 order; the right RetroArch autoconfig is applied per pad so games map correctly with no setup.
 
+### Never stuck: the quick panel (release rule, built before anything else new)
+
+Anthony, after getting stuck in a game: "make sure that there's always a way to exit the app ... let's say you press the Xbox home button, it should be a thing that pops up so you can go home ... really good and really easy". **A release fails if any app can trap you.**
+
+- **Triggers, from any app** (the key helper, our accessibility service, sees keys before apps do): the pad's Guide/Xbox button; on pads without one, hold Start about 1 s, or Select+Start together; on the remote, Home as normal, plus hold Back about 1 s (a short Back still goes to the app as Back); on a keyboard, hold Esc or the Home key; with a mouse, a small Home pill that appears when the pointer touches the top edge. RetroArch's own menu combos (Start+Select, Back) stay on in the tuned `retroarch.cfg` only as a fallback: the helper takes those keys first, so the two never fight, and if the helper ever dies there is still a way out. The triggers are shown once in the welcome and always in Settings → Controllers.
+- **The panel:** glass, our style, over whatever is running, with big choices: **Go Home** (focused first, so trigger then OK always gets you home), **Back to the app**, **Close this app** (stops it and goes Home), **Recent** (the last few apps, channels and games), volume and the clock. In a game the same panel adds Save, Load and Restart: one pause/exit panel, not two.
+- **Guarantees:** pressing the trigger twice goes straight Home with no panel; if the panel can't open over an app, it goes Home instead; the helper lives in the launcher's process, and Retro Launcher switches it back on at start if Android turned it off. If an app swallows a key before the helper sees it, find another route on this box (ask before any system-partition change).
+- **Test matrix** (muted, added to the smoke test): RetroArch, SmartTube while playing, Kodi, a full-screen Android game, the browser and Android's own Settings, each with the remote, the Xbox pad and the mouse. Report any app where it fails.
+
 ### Web browser (built in)
 
 The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. Retro Launcher gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.
@@ -348,6 +357,7 @@ Anthony: "the games to be like pixelized, like Nearest Neighbor ... by default. 
 
 Each stage ends with a screenshot from the real box shown to Anthony. Don't move on if it isn't smooth.
 
+0. **Never stuck (do first).** The quick panel above, with its test matrix passing on the box.
 1. **Box facts and resolution.** The checks above. Decide 720p or 1080p. Back up Projectivy's data and the current home setting.
 2. **Design mockup.** HTML at 1920x1080: Home, each tab, scrolled grid, Settings page, a dialog, on-screen keyboard, control panel, edit mode, browser, a notice. Get Anthony's yes on the look before writing the app. Cheap to change here, expensive later.
 3. **Design kit.** The shared components, in code, shown on one test screen on the box.
