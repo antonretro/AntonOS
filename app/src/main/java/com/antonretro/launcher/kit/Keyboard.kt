@@ -91,7 +91,7 @@ class Keyboard(ctx: Context) : FrameLayout(ctx) {
         for ((ri, row) in keys.withIndex()) for ((ki, k) in row.withIndex()) {
             val on = ri == r && ki == c; val accent = k.text == doneLabel
             k.background = bg(on, accent); k.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
-            k.animate().scaleX(if (on) 1.1f else 1f).scaleY(if (on) 1.1f else 1f).setDuration(Kit.t(120)).start()
+            Kit.unclip(k); k.animate().scaleX(if (on) 1.1f else 1f).scaleY(if (on) 1.1f else 1f).setDuration(Kit.t(120)).start()
         }
     }
 

@@ -347,7 +347,7 @@ class QuickPanel : Activity() {
             val on = ri == r && ci == c
             v.background = GradientDrawable().apply { cornerRadius = Kit.dp(this@QuickPanel, 26f); setColor(if (on) Kit.FOCUS_FILL else 0x1FFFFFFF) }
             v.setTextColor(if (on) Kit.FOCUS_TEXT else Color.WHITE)
-            v.animate().scaleX(if (on) 1.04f else 1f).scaleY(if (on) 1.04f else 1f).setDuration(Kit.t(150)).start()
+            Kit.unclip(v); v.animate().scaleX(if (on) 1.04f else 1f).scaleY(if (on) 1.04f else 1f).setDuration(Kit.t(150)).start()
         }
     }
 

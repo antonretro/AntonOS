@@ -67,7 +67,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
             val on = i == sel
             b.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, 28f); setColor(if (on) Kit.FOCUS_FILL else 0x24FFFFFF) }
             b.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
-            b.animate().scaleX(if (on) 1.06f else 1f).scaleY(if (on) 1.06f else 1f).setDuration(Kit.t(150)).start()
+            Kit.unclip(b); b.animate().scaleX(if (on) 1.06f else 1f).scaleY(if (on) 1.06f else 1f).setDuration(Kit.t(150)).start()
         }
     }
 

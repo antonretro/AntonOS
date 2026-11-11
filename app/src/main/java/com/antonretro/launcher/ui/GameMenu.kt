@@ -175,7 +175,7 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
             v.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, 28f); setColor(if (on && !passive) Kit.FOCUS_FILL else if (passive) 0x00000000 else 0x1FFFFFFF) }
             v.setTextColor(if (on && !passive) Kit.FOCUS_TEXT else if (passive) 0xD9FFFFFF.toInt() else Color.WHITE)
             v.pivotX = 0f; v.pivotY = v.height / 2f   // grow to the right: the rounded left edge never gets cut off
-            v.animate().scaleX(if (on && !passive) 1.04f else 1f).scaleY(if (on && !passive) 1.04f else 1f).setDuration(Kit.t(150)).start()
+            Kit.unclip(v); v.animate().scaleX(if (on && !passive) 1.04f else 1f).scaleY(if (on && !passive) 1.04f else 1f).setDuration(Kit.t(150)).start()
         }
     }
 

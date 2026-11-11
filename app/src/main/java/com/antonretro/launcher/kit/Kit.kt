@@ -71,6 +71,15 @@ object Kit {
         else cachedFont ?: Typeface.create("sans-serif-medium", Typeface.NORMAL).also { cachedFont = it }
     }
 
+    /**
+     * The no-cut-off rule: anything that grows when focused must never be clipped by the boxes around it.
+     * Call before scaling a focused item: the few containers above it stop clipping their children.
+     */
+    fun unclip(v: android.view.View, levels: Int = 4) {
+        var p = v.parent; var n = 0
+        while (p is android.view.ViewGroup && n < levels) { p.clipChildren = false; p.clipToPadding = false; p = p.parent; n++ }
+    }
+
     fun dp(ctx: Context, v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, ctx.resources.displayMetrics)
     fun dpi(ctx: Context, v: Float) = dp(ctx, v).toInt()
 

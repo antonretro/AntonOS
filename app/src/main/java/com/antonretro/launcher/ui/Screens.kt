@@ -236,7 +236,7 @@ class ListScreen(ctx: Context, private val title: String, private val entries: L
             val want = if (on) bgOn.constantState!!.newDrawable() else bgOff.constantState!!.newDrawable()
             if ((tv.tag as? Boolean) != on) { tv.background = want; tv.tag = on }
             tv.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
-            tv.animate().scaleX(if (on) 1.03f else 1f).scaleY(if (on) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
+            Kit.unclip(tv); tv.animate().scaleX(if (on) 1.03f else 1f).scaleY(if (on) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
         onFocusChanged?.invoke()
     }

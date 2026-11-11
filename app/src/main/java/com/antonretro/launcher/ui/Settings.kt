@@ -87,7 +87,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
             val sel = i == cat; val foc = active && !inPage && sel
             tv.background = if (foc || sel) GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(if (foc) Kit.FOCUS_FILL else 0x24FFFFFF) } else null
             tv.setTextColor(if (foc) Kit.FOCUS_TEXT else if (sel) Kit.TEXT else 0xCCFFFFFF.toInt())
-            tv.animate().scaleX(if (foc) 1.03f else 1f).scaleY(if (foc) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
+            Kit.unclip(tv); tv.animate().scaleX(if (foc) 1.03f else 1f).scaleY(if (foc) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
         for ((i, v) in rowViews.withIndex()) v.setFocus(active && inPage && i == row)
         // keep the focused row on screen
@@ -166,7 +166,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
             if (f == on && painted) return
             painted = true
             on = f; update()
-            animate().scaleX(if (f) 1.02f else 1f).scaleY(if (f) 1.02f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
+            Kit.unclip(this); animate().scaleX(if (f) 1.02f else 1f).scaleY(if (f) 1.02f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
 
         private fun paintBg() {

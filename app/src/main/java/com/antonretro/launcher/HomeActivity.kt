@@ -106,10 +106,18 @@ class HomeActivity : Activity() {
     /** Never blank the setting (if the app died halfway the helper would stay off): change it by adding ourselves
      *  once more, which makes Android bind the helper again. The next healthy start tidies the duplicate away. */
     private fun rebindKeys(enabled: String) {
+        // off, then on: Android makes a fresh connection. (Adding a second copy of ourselves could leave Android
+        // holding a dead connection whose key filter swallowed every remote key until the next change.)
         val me = "$packageName/${RetroKeys::class.java.name}"
-        Settings.Secure.putString(contentResolver, "enabled_accessibility_services", "$enabled:$me")
-        Settings.Secure.putInt(contentResolver, "accessibility_enabled", 1)
-        Perf.note("keys helper re-attached")
+        val others = enabled.split(':').filter { it.isNotBlank() && !it.contains("antonretro", true) }.joinToString(":")
+        Settings.Secure.putString(contentResolver, "enabled_accessibility_services", others)
+        ui.postDelayed({
+            safely("keys on") {
+                Settings.Secure.putString(contentResolver, "enabled_accessibility_services", if (others.isBlank()) me else "$others:$me")
+                Settings.Secure.putInt(contentResolver, "accessibility_enabled", 1)
+                Perf.note("keys helper re-attached (off and on)")
+            }
+        }, 800)
     }
 
 

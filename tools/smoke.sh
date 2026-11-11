@@ -16,9 +16,16 @@ check() { if [ "$2" = ok ]; then echo "PASS  $1"; else echo "FAIL  $1 ($2)"; fai
 focus() { a dumpsys window | grep mCurrentFocus | head -1; }
 crashed() { a "logcat -d -b crash 2>/dev/null; logcat -d" | grep -q "FATAL EXCEPTION" && echo yes || echo no; }
 
+# sound off for the whole run (games, chime, TV); it stays off until tools/unmute.sh at the end of the session
+bash "$(dirname "$0")/mute.sh" "$DEV" || { echo "FAIL  could not mute the box: not testing with sound on"; exit 9; }
 a "logcat -c"
-bound() { a "dumpsys accessibility" | grep "services:{Service" | grep -q -E "label=(Retro Launcher buttons|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
+bound() { a "dumpsys accessibility" | grep -q "services:{Service[label=(Retro Launcher|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
 check "key helper running" "$(bound)"
+# the helper must pass REAL remote keys on (a stale helper once swallowed every key and left the remote dead)
+LOG=/sdcard/Android/data/$PKG/files/perf.log
+realkey() { n=$(a "cat $LOG | wc -l" | tr -d '
+ '); a "sendevent /dev/input/event0 1 114 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 114 0; sendevent /dev/input/event0 0 0 0"; sleep 2; a "tail -n +$((n+1)) $LOG" | grep -q "keys helper saw 25" && echo ok || echo "a real remote key did not get through"; }
+check "real remote keys pass through the key helper" "$(realkey)"
 a "cmd package set-home-activity $ACT" >/dev/null 2>&1
 home=$(a "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | tail -1 | tr -d '\r')
 check "Retro Launcher is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home goes to $home")"
@@ -85,4 +92,5 @@ if [ "${2:-}" = "--game" ]; then
   check "no crash after games" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 fi
 echo "$fails failure(s)"
+echo "NOTE  the box is still muted: run tools/unmute.sh when testing is finished"
 exit $fails
