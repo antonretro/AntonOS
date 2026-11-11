@@ -42,6 +42,8 @@ class RetroKeys : AccessibilityService() {
     companion object {
         @Volatile var alive = false
         @Volatile var instance: RetroKeys? = null
+        /** The app that was in front just before Retro Launcher came back (so Home knows it came from a game). */
+        @Volatile var beforeLauncher: String? = null
         const val HOLD_MS = 900L
     }
     private val ui = Handler(Looper.getMainLooper())
@@ -54,8 +56,12 @@ class RetroKeys : AccessibilityService() {
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         if (e?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) e.packageName?.toString()?.let {
-            if (it != "com.android.systemui" && it != "android" && e.className?.toString() != QuickPanel::class.java.name) {
+            val cls = e.className?.toString() ?: ""
+            // our own overlays (hint, corner button, pill) are windows of this package too: they must not count as "the launcher is in front"
+            val ownOverlay = it == packageName && !cls.startsWith("com.antonretro")
+            if (it != "com.android.systemui" && it != "android" && cls != QuickPanel::class.java.name && !ownOverlay) {
                 val was = foreground; foreground = it
+                if (it == packageName && was != null && was != packageName) beforeLauncher = was
                 if (it != was) entered(was)
             }
         }
@@ -71,7 +77,8 @@ class RetroKeys : AccessibilityService() {
         updateCorner()
         if (inLauncher()) return
         val way = if (hasPad()) "Xbox button or hold Start: menu and Home" else "Hold Back: menu and Home"
-        if (inGame()) { if (was?.startsWith("com.retroarch") != true) ui.postDelayed({ if (inGame()) hint(way) }, 1500) }
+        // in games the route that works on every pad, helper or not: RetroArch's own Start + Select quit (it saves first)
+        if (inGame()) { if (was?.startsWith("com.retroarch") != true) ui.postDelayed({ if (inGame()) hint("Start + Select: save and go Home") }, 1500) }
         else { val k = "hinted:" + foreground; if (!prefs.getBoolean(k, false)) { prefs.edit().putBoolean(k, true).apply(); ui.postDelayed({ hint(way) }, 1500) } }
     }
 
@@ -289,11 +296,7 @@ class QuickPanel : Activity() {
         val choices = ArrayList<Choice>()
         choices.add(Choice("Go Home") { goHome() })
         choices.add(Choice(if (game) "Back to the game" else "Back to $appName") { backToApp(null) })
-        if (game) {
-            choices.add(Choice("Save my place") { backToApp("SAVE_STATE") })
-            choices.add(Choice("Load my saved place") { backToApp("LOAD_STATE") })
-            choices.add(Choice("Start again") { backToApp("RESET") })
-        }
+        // Save/Load/Restart need RetroArch's command port, which doesn't open on this box: not offered until it does
         choices.add(Choice(if (game) "Close the game" else "Close $appName") { closeApp() })
         for (ch in choices) addRow(box, listOf(button(ch.label, 520f, 52f)), listOf(ch.run))
 

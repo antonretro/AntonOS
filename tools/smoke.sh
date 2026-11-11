@@ -68,6 +68,18 @@ if [ "${2:-}" = "--game" ]; then
     press 316; sleep 2; check "pad Guide over Settings opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
     press 304; sleep 3; check "then A (Go Home) goes Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
   else echo "SKIP  no pad connected: Guide checks"; fi
+  # the remote (always connected): real hardware presses on the IR keypad, which the key helper does see
+  KP=/dev/input/event0
+  rk() { a "sendevent $KP 1 $1 1; sendevent $KP 0 0 0; sleep ${2:-0}; sendevent $KP 1 $1 0; sendevent $KP 0 0 0"; }
+  a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 8
+  rk 158; sleep 2; check "remote Back in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
+  rk 158; sleep 2; check "Back again returns to the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
+  rk 102; sleep 3; check "remote Home from the game" "$(focus | grep -q $PKG/ && echo ok || echo "$(focus)")"
+  a "input keyevent 4"; sleep 1
+  a "am start -n com.android.settings/.Settings" >/dev/null; sleep 3
+  rk 158 1.4; sleep 2; check "hold Back over Settings opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
+  a "input keyevent 23"; sleep 3; check "then OK (Go Home) goes Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
+  a "am force-stop com.retroarch.ra32"
   a "mv $CFG.smokebak $CFG"
   check "key helper still running" "$(bound)"
   check "no crash after games" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"

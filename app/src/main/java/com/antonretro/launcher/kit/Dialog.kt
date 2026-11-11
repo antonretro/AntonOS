@@ -44,7 +44,8 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {
         title.text = t; body.text = b
         buttons.removeAllViews(); btns.clear(); actions = choices.map { it.second }
-        vertical = choices.size > 3
+        // side by side only when they fit the box (about 34 characters in all); otherwise one per line
+        vertical = choices.size > 3 || choices.sumOf { it.first.length } > 34
         buttons.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         for ((i, c) in choices.withIndex()) {
             val tv = Kit.text(context, 21f, true).apply { text = c.first; gravity = Gravity.CENTER; setPadding(Kit.dpi(context, 28f), 0, Kit.dpi(context, 28f), 0) }

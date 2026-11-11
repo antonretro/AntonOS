@@ -573,6 +573,29 @@ class HomeActivity : Activity() {
         }
     }
 
+    /**
+     * Pressing Home in a game lands here: RetroArch is paused in the background (pause_nonactive) and this
+     * panel, in our own app, offers what to do with it. No overlay and no key helper needed. Stay on Home is
+     * first, so Home then OK always gets you out.
+     */
+    private var gameAway: Rom? = null
+    private var homeFromGame = false
+    private var homePressed = false
+    private fun gamePanel(rom: Rom) {
+        if (dialog.showing || (::player.isInitialized && player.showing)) return
+        // RetroArch's command port never opens on this box (checked 2026-11-11), so Save/Load/Restart can't be sent;
+        // Quit ends the engine from here (Android lets the launcher do that once it's in the background).
+        // The game's own saves are kept: RetroArch writes them every 10 s (autosave_interval).
+        dialog.show("${rom.title} is paused", "It waits right where you left it. Start + Select in the game saves your exact place and quits.",
+            "Stay on Home" to { },
+            "Back to the game" to { gameAway = null; RetroKeys.beforeLauncher = null; playGame(rom, null) },
+            "Quit the game" to {
+                gameAway = null; RetroKeys.beforeLauncher = null
+                try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (_: Exception) {}
+                notice("Game closed", rom.title)
+            })
+    }
+
     /** The quick panel's Recent cards: an app, a channel or a game, by key. */
     private fun openKey(key: String) {
         when (val item = itemFor(key)) {
@@ -598,7 +621,7 @@ class HomeActivity : Activity() {
             // a different game: close the engine first (swapping games inside RetroArch crashes it)
             try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(i.component!!.packageName) } catch (_: Exception) {}
         }
-        if (safeStart(i, opts?.toBundle())) { store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
+        if (safeStart(i, opts?.toBundle())) { gameAway = rom; homeFromGame = false; store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
     }
 
     /** Looks on USB drives for games and offers to copy them into the library in one press. */
@@ -1381,7 +1404,7 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
-        if (Intent.ACTION_MAIN == intent.action) goHome()   // Home always means the Home tab, from anywhere
+        if (Intent.ACTION_MAIN == intent.action) { goHome(); homePressed = intent.getStringExtra("rl_open") == null; if (gameAway != null) homeFromGame = true }   // Home always means the Home tab, from anywhere
         intent.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open recent") { openKey(key) } }, 250) }
         Perf.afterFrame("home", t0)
     }
@@ -1397,6 +1420,20 @@ class HomeActivity : Activity() {
         hideSystemBars()
         Kit.init(this)
         tickClock()
+        // back from a game by Home (the game is paused behind us): offer the game panel. The key helper knows which
+        // app was in front before us; without it, fall back to remembering the last game we started.
+        if (homeFromGame || homePressed) {
+            val pressed = homePressed
+            ui.postDelayed({
+                val before = RetroKeys.beforeLauncher
+                val fromGame = if (RetroKeys.alive) before?.startsWith("com.retroarch") == true && pressed else homeFromGame
+                val rom = gameAway ?: store.recentGames.firstOrNull()?.let { itemFor(it) as? Item.Game }?.rom
+                Perf.note("resume after Home: before=$before fromGame=$fromGame rom=${rom?.title}")
+                if (fromGame && rom != null) gamePanel(rom)
+                homeFromGame = false
+            }, 450)
+        } else gameAway = null
+        homePressed = false
         if (returning) {   // gentle scale-down from 1.05 and fade back in, focus on the same card
             returning = false
             stage.scaleX = 1.05f; stage.scaleY = 1.05f; stage.alpha = 0f
