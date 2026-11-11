@@ -222,6 +222,7 @@ class HomeActivity : Activity() {
             SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your dock, hidden apps and tabs go back to how they started. Your channels and games stay.",
                 "Reset" to { store.dock.clear(); store.hidden.clear(); store.hiddenTabs.clear(); store.save(); applyHiddenTabs(); loadApps(); notice("Home screen reset", "") }, "Cancel" to {}) }),
         ) },
+        SPage("game", "Games") { gameRows() },
         SPage("apps", "Apps") { appRows() },
         SPage("usb", "Storage") { storageRows() },
         SPage("info", "About") { listOf(
@@ -301,6 +302,23 @@ class HomeActivity : Activity() {
         out.add(SRow("Pair a Bluetooth controller", onClick = go(Settings.ACTION_BLUETOOTH_SETTINGS)))
         out.add(SRow("Use your phone as a remote", { "Coming soon" }))
         return out
+    }
+
+    /** Library-wide game options, written straight into the tuned retroarch.cfg. */
+    private fun gameRows(): List<SRow> {
+        fun on(k: String) = RetroConfig.get(k) == "true"
+        fun flip(k: String) { RetroConfig.set(k, if (on(k)) "false" else "true") }
+        val shapes = listOf("22" to "As the game was made", "0" to "4:3 (old TV)", "1" to "16:9 (fill the screen)")
+        return listOf(
+            SRow("Pause menu", { "In a game: the Guide button, Start + Select, or Back on the remote" }),
+            SRow("Pick up where you left off", { "Saves your place when you leave a game" }, toggle = { on("savestate_auto_save") }, onClick = { flip("savestate_auto_save"); RetroConfig.set("savestate_auto_load", RetroConfig.get("savestate_auto_save") ?: "true") }),
+            SRow("Save in-game progress often", { "Writes battery saves every 10 seconds" }, toggle = { (RetroConfig.get("autosave_interval") ?: "0") != "0" }, onClick = { RetroConfig.set("autosave_interval", if ((RetroConfig.get("autosave_interval") ?: "0") != "0") "0" else "10") }),
+            SRow("Picture shape", value = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; shapes.firstOrNull { it.first == v }?.second ?: "As the game was made" },
+                onClick = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; val i = shapes.indexOfFirst { it.first == v }; RetroConfig.set("aspect_ratio_index", shapes[(i + 1) % shapes.size].first) }),
+            SRow("Smooth picture", { "Off gives sharp, blocky pixels" }, toggle = { on("video_smooth") }, onClick = { flip("video_smooth") }),
+            SRow("Show messages in games", { "Small notes like \"Saved\"" }, toggle = { on("video_font_enable") }, onClick = { flip("video_font_enable") }),
+            SRow("Controllers", { "Plug in and play: controllers set themselves up" }),
+        )
     }
 
     private fun appRows(): List<SRow> = repo.apps.map { a ->
@@ -885,6 +903,7 @@ class HomeActivity : Activity() {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_PAGE_UP -> { switchTab(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_PAGE_DOWN -> { switchTab(1); return true }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { onBackKey(); return true }
+            KeyEvent.KEYCODE_BUTTON_MODE -> { if (::player.isInitialized && player.showing) player.close(keepRadio = true); dialog.hide(); keyboard.close(); inTabBar = false; if (current != "Home") showTab("Home"); screens["Home"]?.reset(); return true }   // the controller's Guide/Xbox button = Home
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BUTTON_START -> { if (!inTabBar) screens[current]?.longOk(); return true }
         }
         return super.dispatchKeyEvent(e)

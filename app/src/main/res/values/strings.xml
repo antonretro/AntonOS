@@ -1,4 +1,6 @@
 <resources>
     <!-- The one place the display name lives. -->
     <string name="app_name">Retro Launcher</string>
+    <string name="keys_name">Retro Launcher buttons</string>
+    <string name="keys_desc">Lets the controller Guide button go Home from anywhere and open the Retro Launcher pause menu in games. Reads no screen content.</string>
 </resources>

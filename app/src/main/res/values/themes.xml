@@ -7,4 +7,8 @@
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:defaultFocusHighlightEnabled">false</item>
     </style>
+    <style name="Theme.Retro.Overlay" parent="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>
