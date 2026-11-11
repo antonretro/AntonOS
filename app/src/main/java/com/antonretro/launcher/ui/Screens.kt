@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.Gravity
 import com.antonretro.launcher.data.Item
 import com.antonretro.launcher.kit.*
 
@@ -51,6 +52,12 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
     private val cells = ArrayList<List<CardCell>>()     // a small pool per row, re-bound as you scroll
     private val windows = ArrayList<Int>()              // first item shown by each row's pool
     private val steps = ArrayList<Float>()
+    /** how many cards of each row fit FULLY on screen (the pool holds one more, half off the edge) */
+    private val fits = ArrayList<Int>()
+    private val fadeL = ArrayList<View>(); private val fadeR = ArrayList<View>()
+    private val arrowL = ArrayList<TextView>(); private val arrowR = ArrayList<TextView>()
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hideArrows = Runnable { for (a in arrowL + arrowR) a.animate().alpha(0f).setDuration(Kit.t(250)).start() }
     private val tops = ArrayList<Float>()
     private val glassViews = ArrayList<View>()
     private var fr = 0; private var fc = 0; private var active = false
@@ -68,6 +75,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
         val keepKey = rows.getOrNull(fr)?.items?.getOrNull(fc)?.key
         rows = newRows.filter { it.items.isNotEmpty() }
         content.removeAllViews(); glassViews.clear(); rowViews.clear(); tracks.clear(); cells.clear(); tops.clear(); windows.clear(); steps.clear()
+        fits.clear(); fadeL.clear(); fadeR.clear(); arrowL.clear(); arrowR.clear()
         var top = Kit.dp(ctx, startTop)
         for ((ri, row) in rows.withIndex()) {
             val h = if (row.poster) Kit.POSTER_H else Kit.CARD_H
@@ -90,14 +98,34 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             for (pi in 0 until poolSize) {
                 val cell = CardCell(ctx, w, h, row.alwaysLabel)
                 if (layers) cell.card.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, windows[ri] + pi, mouse = true); onHoverFocus?.invoke() }; false }
-                cell.setOnClickListener { focusAt(ri, windows[ri] + pi); ok() }
+                cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, windows[ri] + pi, mouse = true); onHoverFocus?.invoke(); showArrows(ri) }; false }
+                // a card only partly on screen: the first click slides it fully into view, the next one opens it
+                cell.setOnClickListener { if (pi >= fits[ri]) focusAt(ri, windows[ri] + pi) else { focusAt(ri, windows[ri] + pi); ok() } }
                 cell.setOnLongClickListener { focusAt(ri, windows[ri] + pi); longOk(); true }
                 track.addView(cell, LinearLayout.LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { if (pi > 0) leftMargin = Kit.dpi(ctx, Kit.GAP) })
                 list.add(cell)
             }
-            windows.add(0); steps.add(step)
+            windows.add(0); steps.add(step); fits.add(visible)
             rv.addView(track, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X) })
+            // there's more: a soft fade at an edge with more cards behind it, and (for the mouse) arrows on hover
+            fun fade(left: Boolean) = View(ctx).apply {
+                background = android.graphics.drawable.GradientDrawable(if (left) android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT else android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(0x00000000, 0x8C000000.toInt())); alpha = 0f; isClickable = false
+            }
+            val fl = fade(true); val frr = fade(false)
+            rv.addView(fl, FrameLayout.LayoutParams(Kit.dpi(ctx, 48f), Kit.dpi(ctx, h)))
+            rv.addView(frr, FrameLayout.LayoutParams(Kit.dpi(ctx, 72f), Kit.dpi(ctx, h), Gravity.END))
+            fadeL.add(fl); fadeR.add(frr)
+            fun arrow(left: Boolean) = Kit.text(ctx, 26f, true).apply {
+                text = if (left) "‹" else "›"; gravity = Gravity.CENTER; alpha = 0f
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xCC181A22.toInt()); setStroke(1, Kit.GLASS_EDGE) }
+                setOnClickListener { pageRow(ri, if (left) -1 else 1) }
+                setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) showArrows(ri); false }
+            }
+            val al = arrow(true); val ar = arrow(false)
+            rv.addView(al, FrameLayout.LayoutParams(Kit.dpi(ctx, 44f), Kit.dpi(ctx, 44f), Gravity.START).apply { leftMargin = Kit.dpi(ctx, 8f); topMargin = Kit.dpi(ctx, h / 2 - 22f) })
+            rv.addView(ar, FrameLayout.LayoutParams(Kit.dpi(ctx, 44f), Kit.dpi(ctx, 44f), Gravity.END).apply { rightMargin = Kit.dpi(ctx, 8f); topMargin = Kit.dpi(ctx, h / 2 - 22f) })
+            arrowL.add(al); arrowR.add(ar)
             content.addView(rv, FrameLayout.LayoutParams(-1, -2).apply { topMargin = top.toInt() })
             rowViews.add(rv); tracks.add(track); cells.add(list); tops.add(top)
             bind(ri)
@@ -134,7 +162,9 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
         // horizontal: the pool slides one card at a time and is re-bound, so a row can hold thousands
         for ((ri, tr) in tracks.withIndex()) {
             val list = cells[ri]; if (list.isEmpty()) continue
-            val visible = (list.size - 1).coerceAtLeast(1).let { if (list.size >= rows[ri].items.size) list.size else it }
+            // slide so the focused card is FULLY on screen. (Counting the half-visible extra card as visible once left
+            // the last card of short rows cut off at the edge with focus on it: "you can't get to them".)
+            val visible = fits[ri].coerceAtMost(rows[ri].items.size)
             val c = if (ri == fr) fc else 0
             val want = (c - (visible - 1)).coerceIn(0, (rows[ri].items.size - visible).coerceAtLeast(0))
             val ws = windows[ri]
@@ -146,6 +176,11 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             }
         }
         for ((ri, list) in cells.withIndex()) for ((pi, cell) in list.withIndex()) cell.setFocus(active && ri == fr && windows[ri] + pi == fc, animate)
+        for (ri in rows.indices) {
+            val more = windows[ri] + fits[ri] < rows[ri].items.size; val before = windows[ri] > 0
+            fadeR.getOrNull(ri)?.animate()?.alpha(if (more) 1f else 0f)?.setDuration(Kit.t(200))?.start()
+            fadeL.getOrNull(ri)?.animate()?.alpha(if (before) 1f else 0f)?.setDuration(Kit.t(200))?.start()
+        }
         for ((ri, rv) in rowViews.withIndex()) rv.translationZ = if (ri == fr) 1f else 0f
         // vertical: keep the row above the focused one visible
         val target = if (fr <= 0 || !active) 0f else {
@@ -197,6 +232,23 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
     fun introViews(): List<View> = (cells.getOrNull(0) ?: emptyList<View>()) + rowViews.drop(1)
     /** Wheel / page scrolling for mice. */
     fun scrollBy(dRow: Int) = move(dRow, 0)
+
+    /** Mouse arrows at a row's edges: shown while hovering a row that has more cards that way. */
+    private fun showArrows(ri: Int) {
+        for (i in arrowL.indices) {
+            val l = i == ri && windows[i] > 0; val r = i == ri && windows[i] + fits[i] < rows[i].items.size
+            arrowL[i].animate().alpha(if (l) 1f else 0f).setDuration(Kit.t(150)).start(); arrowL[i].isClickable = l
+            arrowR[i].animate().alpha(if (r) 1f else 0f).setDuration(Kit.t(150)).start(); arrowR[i].isClickable = r
+        }
+        ui.removeCallbacks(hideArrows); ui.postDelayed(hideArrows, 2500)
+    }
+    /** One screenful along a row (mouse arrows, sideways wheel). */
+    fun pageRow(ri: Int, dir: Int) {
+        val n = rows.getOrNull(ri)?.items?.size ?: return
+        fr = ri; active = true
+        fc = if (dir > 0) (windows[ri] + 2 * fits[ri] - 1).coerceAtMost(n - 1) else (windows[ri] - fits[ri]).coerceAtLeast(0)
+        applyFocus(true); showArrows(ri)
+    }
 }
 
 /** A plain vertical list (Settings, for now): big rows, focus = white fill. */

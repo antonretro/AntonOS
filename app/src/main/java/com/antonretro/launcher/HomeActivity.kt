@@ -589,6 +589,12 @@ class HomeActivity : Activity() {
     }
     /** The small "Now playing" chip by the clock while music plays with Now Playing closed. */
     private var musicChipView: TextView? = null
+    /** Chips by the clock sit to its LEFT with a gap, whatever the clock's width (they once covered it). */
+    private fun chipRightMargin(): Int {
+        val w = if (clock.width > 0) clock.width else clock.paint.measureText(clock.text.toString()).toInt()
+        return Kit.dpi(this, Kit.SAFE_X) + w + Kit.dpi(this, 16f)
+    }
+    private fun placeChip(v: View?) { v ?: return; (v.layoutParams as? FrameLayout.LayoutParams)?.let { if (it.rightMargin != chipRightMargin()) { it.rightMargin = chipRightMargin(); v.layoutParams = it } } }
     private fun musicChip() {
         val show = ::music.isInitialized && music.active && !(::nowPlayingView.isInitialized && nowPlayingView.showing)
         if (!show) { musicChipView?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
@@ -596,10 +602,11 @@ class HomeActivity : Activity() {
             t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
             t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
             t.setOnClickListener { openNowPlaying() }
-            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, 130f); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = chipRightMargin(); topMargin = Kit.dpi(this@HomeActivity, 36f) })
             musicChipView = t
         }
         chip.text = (if (music.playing) "♪  " else "❚❚  ") + (music.current?.title ?: "")
+        placeChip(chip)
         chip.bringToFront(); chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
     }
 
@@ -627,8 +634,9 @@ class HomeActivity : Activity() {
                 val byKey: Map<String, Item> = found.associate { it.key to Item.Game(it) } + androidGames.associateBy { it.key }
                 val rows = ArrayList<Row>()
                 rows.add(Row("Built-in games", builtInGames, alwaysLabel = true))
-                val keep = store.recentGames.mapNotNull { byKey[it] }
-                if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true))
+                // retro games you played lately, as boxes (Android games stay in their own row below)
+                val keep = store.recentGames.mapNotNull { byKey[it] }.filterIsInstance<Item.Game>()
+                if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true, poster = true, aspect = .86f))
                 if (androidGames.isNotEmpty()) rows.add(Row("Android games", androidGames, alwaysLabel = true))
                 // one shelf per console, each card the shape of that console's box
                 for ((sys, list) in found.groupBy { it.system }) rows.add(Row(sys.shelf, list.map { Item.Game(it) }, alwaysLabel = true, poster = true, aspect = sys.boxAspect))
@@ -969,9 +977,10 @@ class HomeActivity : Activity() {
             t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
             t.setOnClickListener { player.current?.let { openPlayer(listOf(it), 0) } }
             t.setOnLongClickListener { player.stopBackground(); nowPlaying(null); true }
-            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, 130f); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = chipRightMargin(); topMargin = Kit.dpi(this@HomeActivity, 36f) })
             nowChip = t
         }
+        placeChip(chip)
         chip.text = "♪  ${c.name}"; chip.alpha = 0f; chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
     }
 
@@ -1193,7 +1202,14 @@ class HomeActivity : Activity() {
             val s = item.rom.system
             val dark = Color.rgb(Color.red(s.colour) / 4, Color.green(s.colour) / 4, Color.blue(s.colour) / 4)
             cell.card.art = Art(null, s.colour, dark, null, null, bigText = item.rom.title, badge = s.badge, badgeColor = 0x99000000.toInt())
-            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
+            val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
+            // your own cover first (RetroLauncher/Covers/<game file name>.png or .jpg), then the box art matched by the
+            // game's exact catalogue name; no match shows the title card above, never another game's cover
+            val own = listOf("png", "jpg", "jpeg").map { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/Covers/${item.rom.file.nameWithoutExtension}.$it") }.firstOrNull { it.isFile }
+            if (own != null) bg.execute {
+                val b = try { android.graphics.BitmapFactory.decodeFile(own.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = 1 }) } catch (e: Exception) { null }
+                ui.post { if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, square = true) }
+            } else Images.load(item.rom.boxArt, w, h) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, square = true) }
             return
         }
         if (item is Item.Track) {
@@ -1629,7 +1645,7 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- clock + app changes
     private val timeFmt get() = SimpleDateFormat(if (store.clock24) "H:mm" else "h:mm a", Locale.getDefault())   // 12-hour "5:33 PM" unless 24-hour is chosen
-    private fun tickClock() { clock.text = timeFmt.format(Date()) }
+    private fun tickClock() { clock.text = timeFmt.format(Date()); clock.post { placeChip(musicChipView); placeChip(nowChip) } }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
