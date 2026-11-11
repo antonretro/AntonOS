@@ -87,6 +87,11 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
         art.visibility = View.INVISIBLE; art.art = null
         val showCover = { b: android.graphics.Bitmap? ->
             if (rom === r) {
+                // the card takes the cover's exact shape (as large as fits 340 x 300): never cropped or stretched
+                val lp = art.layoutParams
+                if (b != null) { val k = minOf(Kit.dp(context, 340f) / b.width, Kit.dp(context, 300f) / b.height); lp.width = (b.width * k).toInt(); lp.height = (b.height * k).toInt() }
+                else { lp.width = Kit.dpi(context, 340f); lp.height = Kit.dpi(context, 300f) }
+                art.layoutParams = lp
                 art.art = if (b != null) com.antonretro.launcher.kit.Art(b, 0, 0, fit = true, cover = true)
                           else com.antonretro.launcher.kit.Art(null, r.system.colour, Color.BLACK, null, null, bigText = r.title)
                 art.visibility = View.VISIBLE
