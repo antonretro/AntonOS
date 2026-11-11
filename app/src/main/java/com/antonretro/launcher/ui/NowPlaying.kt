@@ -99,6 +99,22 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     private val styleText = Kit.text(ctx, 16f, true, Kit.TEXT_DIM)
     private class Ctl(val view: TextView, val run: () -> Unit, val side: ((Int) -> Unit)? = null)
     private val ctls = ArrayList<Ctl>()
+    private val shade = View(ctx)
+    private val bar = LinearLayout(ctx)
+    /** The bar hides after a few seconds without input so the visualizer fills the screen (Anthony: "I really want that"). */
+    private var controlsShown = true
+    private val autoHide = Runnable { setControls(false, "after 5 s") }
+    private fun setControls(show: Boolean, why: String = "") {
+        if (show && !controlsShown || !show) Perf.note("now playing bar ${if (show) "shown" else "hidden"} $why")
+        controlsShown = show
+        for (v in listOf<View>(shade, bar)) { v.animate().cancel(); v.animate().alpha(if (show) 1f else 0f).setDuration(Kit.t(if (show) 200 else 600)).start() }
+        ui.removeCallbacks(autoHide); if (show) ui.postDelayed(autoHide, 5000)
+    }
+    /** Any key or mouse movement: bring the bar back. Returns true if it was hidden (that input only wakes it). */
+    private var wakeLogged = 0L
+    private fun wake(why: String = "input"): Boolean { val now = android.os.SystemClock.uptimeMillis(); if (now - wakeLogged > 1000) { wakeLogged = now; Perf.note("now playing wake: $why") }; val was = !controlsShown; setControls(true, why); return was }
+    private var lastSong: Song? = null
+    private var lastX = -1f; private var lastY = -1f
     private var sel = 1
     private var style = "battery"; private var presets: List<String> = listOf("Random"); private var preset = 0
 
@@ -106,9 +122,10 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         visibility = View.GONE; isClickable = true; setBackgroundColor(Color.BLACK)
         addView(bg, -1, -1)
         // the visualizer goes in at index 1 (behind everything else) when it is created
-        val shade = View(ctx).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x00000000, 0xCC000000.toInt())) }
-        addView(shade, -1, -1)
-        val bar = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        // the darkening only behind the bar (a full-screen layer over the visualizer cost a blend every frame)
+        shade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0xCC000000.toInt()))
+        addView(shade, LayoutParams(-1, Kit.dpi(ctx, 320f), Gravity.BOTTOM))
+        bar.orientation = LinearLayout.HORIZONTAL; bar.gravity = Gravity.CENTER_VERTICAL
         bar.setPadding(Kit.dpi(ctx, 20f), Kit.dpi(ctx, 20f), Kit.dpi(ctx, 28f), Kit.dpi(ctx, 20f))
         bar.background = GlassDrawable(bar, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         cover.background = GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.inner(Kit.R_L, 20f)) }; cover.clipToOutline = true
@@ -149,15 +166,17 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         animate().alpha(1f).setDuration(Kit.t(250)).start()
         startVisualizer()
         refresh(); ui.removeCallbacks(tick); ui.post(tick)
+        setControls(true)
     }
 
     fun hide() {
-        ui.removeCallbacks(tick); stopVisualizer()
+        ui.removeCallbacks(tick); ui.removeCallbacks(autoHide); stopVisualizer()
         animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
     }
 
     fun refresh() {
         val s = music.current ?: return
+        if (s !== lastSong) { lastSong = s; if (showing) setControls(true, "new song") }
         title.text = s.title; artist.text = if (s.album.isNotEmpty() && s.album != s.artist) "${s.artist}  ·  ${s.album}" else s.artist
         cover.setImageBitmap(coverFor(s, Kit.dpi(context, 150f)))
         Thread { val b = MusicRepo.cover(s, Kit.dpi(context, 150f)); if (b != null) ui.post { if (music.current === s) cover.setImageBitmap(b) } }.start()
@@ -189,6 +208,8 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
 
     fun onKey(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return true
+        val media = e.keyCode in listOf(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        if (wake() && !media && e.keyCode != KeyEvent.KEYCODE_BACK && e.keyCode != KeyEvent.KEYCODE_BUTTON_B) return true
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> { sel = (sel - 1).coerceAtLeast(0); paint() }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { sel = (sel + 1).coerceAtMost(ctls.size - 1); paint() }
@@ -204,6 +225,17 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         return true
     }
 
+    override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+        // only real movement counts: something on this box reports a pointer that never moves
+        if (e.action == MotionEvent.ACTION_SCROLL) { wake("wheel"); return true }
+        if (e.action == MotionEvent.ACTION_HOVER_MOVE) {
+            if (Math.abs(e.x - lastX) + Math.abs(e.y - lastY) > 6) { if (lastX >= 0) wake("mouse"); lastX = e.x; lastY = e.y }
+            return true
+        }
+        return super.onGenericMotionEvent(e)
+    }
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean { if (!controlsShown) { wake(); return true }; return false }
+
     // ------------------------------------------------------------------ the visualizer (Anthony's engine, bundled; no internet)
     private fun startVisualizer() {
         if (web == null) try {
@@ -215,13 +247,14 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
                 isFocusable = false; isFocusableInTouchMode = false
                 webViewClient = object : android.webkit.WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String) {
+                        bg.visibility = View.INVISIBLE   // the visualizer covers it: don't draw the wallpaper under it every frame
                         view.evaluateJavascript("setSize(1280,720);setVisualizer('$style');setIdle('demo');listPresets()") { json ->
                             presets = try { org.json.JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) } } } catch (e: Exception) { listOf("Random") }
                             preset = 0; refresh()
                         }
                     }
                 }
-                loadUrl("file:///android_asset/visualizer/index.html")
+                loadUrl("file:///android_asset/visualizer/nowplaying.html")
             }
             addView(web, 1, LayoutParams(-1, -1))
         } catch (e: Throwable) { Perf.note("visualizer can't start: $e"); web = null }
@@ -231,6 +264,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
 
     private fun stopVisualizer() {
         stopTap()
+        bg.visibility = View.VISIBLE
         web?.let { w -> w.evaluateJavascript("pause()", null); removeView(w); w.destroy() }
         web = null
     }
@@ -250,7 +284,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
                     var wave: ByteArray? = null
                     override fun onWaveFormDataCapture(v: Visualizer, w: ByteArray, rate: Int) { wave = w }
                     override fun onFftDataCapture(v: Visualizer, fft: ByteArray, rate: Int) { feed(fft, wave) }
-                }, (Visualizer.getMaxCaptureRate() / 2).coerceAtMost(15000), true, true)
+                }, (Visualizer.getMaxCaptureRate() / 2).coerceAtMost(10000), true, true)
                 enabled = true
             }
         } catch (e: Throwable) { Perf.note("visualizer tap unavailable: $e"); vis = null }
