@@ -9,6 +9,8 @@ DEV="${1:-${BOX:?set BOX=<box-ip>:5555 in tools/box.env}}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APK="${2:-$HERE/../app/build/outputs/apk/release/app-release.apk}"
 ADB="${ADB:-adb}"
+# Windows adb needs a Windows path for the file (path conversion is off for the shell commands below)
+command -v cygpath >/dev/null 2>&1 && APK="$(cygpath -w "$APK")"
 export MSYS_NO_PATHCONV=1
 PKG=com.antonretro.launcher
 ME=$PKG/$PKG.RetroKeys
@@ -28,7 +30,7 @@ a "settings put secure enabled_accessibility_services '$new'; settings put secur
 
 bound=no
 for i in $(seq 1 15); do
-  if a "dumpsys accessibility" | grep -q "label=Retro Launcher buttons"; then bound=yes; break; fi
+  if a "dumpsys accessibility" | grep "services:{Service" | grep -q -E "label=(Retro Launcher buttons|com.antonretro.launcher.RetroKeys)"; then bound=yes; break; fi
   sleep 1
 done
 if [ $bound = yes ]; then echo "PASS  key helper switched on and running"; else echo "FAIL  key helper is NOT running: the Xbox button won't get anyone out of a game"; exit 2; fi
@@ -36,4 +38,4 @@ if [ $bound = yes ]; then echo "PASS  key helper switched on and running"; else 
 # ahead-of-time compile for speed (runs on the box; the launcher keeps working meanwhile)
 a "cmd package compile -m speed -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
 # compiling restarts nothing, but check once more that the helper survived it
-a "dumpsys accessibility" | grep -q "label=Retro Launcher buttons" && echo "PASS  key helper still running" || { echo "FAIL  key helper stopped after compile"; exit 2; }
+a "dumpsys accessibility" | grep "services:{Service" | grep -q -E "label=(Retro Launcher buttons|com.antonretro.launcher.RetroKeys)" && echo "PASS  key helper still running" || { echo "FAIL  key helper stopped after compile"; exit 2; }

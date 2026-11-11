@@ -17,7 +17,7 @@ focus() { a dumpsys window | grep mCurrentFocus | head -1; }
 crashed() { a "logcat -d -b crash 2>/dev/null; logcat -d" | grep -q "FATAL EXCEPTION" && echo yes || echo no; }
 
 a "logcat -c"
-bound() { a "dumpsys accessibility" | grep -q "label=Retro Launcher buttons" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
+bound() { a "dumpsys accessibility" | grep "services:{Service" | grep -q -E "label=(Retro Launcher buttons|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
 check "key helper running" "$(bound)"
 a "cmd package set-home-activity $ACT" >/dev/null 2>&1
 home=$(a "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | tail -1 | tr -d '\r')
