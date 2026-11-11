@@ -11,7 +11,7 @@ P=/sdcard/Android/data/com.antonretro.launcher/files/perf.log
 a() { timeout 90 "$ADB" -s "$DEV" shell "$@"; }
 fails=0
 keys() { local s=""; for k in "$@"; do s="$s input keyevent $k; sleep 0.7;"; done; a "$s"; sleep 1; }
-state() { a "grep 'RLNote state' $P | tail -1" | tr -d '\r'; }
+state() { a "grep 'RLNote state' $P" | tr -d '\r' | tail -n 1; }   # tail on the PC: the box's tail returned several lines
 expect() { local st; st=$(state); if echo "$st" | grep -q "$2"; then echo "PASS  $1"; else echo "FAIL  $1   [$st]"; fails=$((fails+1)); fi; }
 
 a "touch /sdcard/RetroLauncher/.test-mute; rm -f $P"
