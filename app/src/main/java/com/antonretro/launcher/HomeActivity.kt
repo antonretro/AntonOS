@@ -25,6 +25,9 @@ import com.antonretro.launcher.data.Item
 import com.antonretro.launcher.data.Store
 import com.antonretro.launcher.data.Channel
 import com.antonretro.launcher.data.ChannelRepo
+import com.antonretro.launcher.data.Guide
+import com.antonretro.launcher.data.Prog
+import com.antonretro.launcher.data.Reminder
 import com.antonretro.launcher.data.GameRepo
 import com.antonretro.launcher.data.Rom
 import com.antonretro.launcher.data.VideoRepo
@@ -136,6 +139,8 @@ class HomeActivity : Activity() {
         ui.postDelayed({ safely("videos") { rebuildVideos() } }, 1200)
         safely("apps") { loadApps { safely("intro") { if (wantIntro()) playIntro() } } }
         safely("channels") { loadChannels() }
+        ui.postDelayed({ maybeRefreshGuide(12 * HOUR) }, 60_000)
+        ui.postDelayed(guideTimer, 30_000)
         safely("keys helper") { reattachKeysHelper() }
         ui.postDelayed({ safely("player") { player.prepare() } }, 1500)   // the first channel doesn't pay for creating the player
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
@@ -209,6 +214,14 @@ class HomeActivity : Activity() {
             numberOf = { c -> this@HomeActivity.numberOf(c) }
         }
         applyPlayerSettings()
+        safely("guide") { Guide.open(this) }
+        guide = GuideView(this, { c -> numberOf(c) }, { store.clock24 }).apply {
+            onWatch = { list, i -> hide(); openPlayer(list, i) }
+            onLater = { c, p -> guideLater(c, p) }
+            onCover = { on -> coverHome(on) }
+        }
+        player.onGuide = { c -> openGuide(c.url) }
+        player.nowLine = { c -> Guide.nowNext(c.url).first?.let { "Now: ${it.title}, until ${timeFmt.format(Date(it.stop))}" } }
         for ((name, s) in screens) {
             s.view.visibility = View.GONE
             stage.addView(s.view, -1, -1)
@@ -347,7 +360,10 @@ class HomeActivity : Activity() {
         out.add(SRow("Channel numbers", { "Type a number on the remote to go straight to a channel. Hold OK on a channel to change its number" }))
         out.add(SRow("Number all channels again", { "Favourites first, then country by country" }, onClick = {
             dialog.show("Number all channels again?", "Every channel gets a new number, starting from 1 with your favourites.", "Renumber" to { store.numbers.clear(); rebuildChannelRows(); notice("Channels renumbered", "Favourites start at 1") }, "Cancel" to {}) }))
-        out.add(SRow("TV Guide", { "What's on now and next: coming soon" }))
+        out.add(SRow("TV Guide", { guideStatus() }, value = { "Open" }, onClick = { openGuide(null) }))
+        out.add(SRow("Update the guide now", { if (Guide.refreshing) "Updating… ${Guide.progress}" else "It also updates by itself once a day" }, onClick = { maybeRefreshGuide(0) }))
+        out.add(SRow("Guide sources", { "${Guide.sources().size} free guide feeds. To change them, edit RetroLauncher/guide-sources.txt" }))
+        for (r in Guide.reminders.sortedBy { it.start }) out.add(SRow("⏰  " + r.title, { "${r.channel} · ${timeFmt.format(Date(r.start))}" }, value = { "Cancel" }, onClick = { Guide.removeReminder(r); notice("Reminder cancelled", r.title) }))
         val byUrl = (ChannelRepo.tv + ChannelRepo.radio).associateBy { it.url }
         for (u in store.favourites) byUrl[u]?.let { c -> out.add(SRow("★  " + c.name, { "Favourite · " + c.country }, value = { "Remove" }, onClick = { star(c) })) }
         for ((g, chans) in ChannelRepo.groups(ChannelRepo.tv) + ChannelRepo.groups(ChannelRepo.radio).map { ("Radio - " + it.first) to it.second }) {
@@ -707,7 +723,10 @@ class HomeActivity : Activity() {
             val favs = store.favourites.mapNotNull { byUrl[it] }.filter { it.radio == radioTab && it.url !in store.hiddenChannels }
             val recent = store.recentChannels.mapNotNull { byUrl[it] }.filter { it.radio == radioTab }
             val out = ArrayList<Row>()
-            if (!radioTab) store.lastTv?.let { byUrl[it] }?.let { out.add(Row("Keep watching", listOf(Item.Ch(it)), alwaysLabel = true)) }
+            if (!radioTab) {
+                val last = store.lastTv?.let { byUrl[it] }
+                out.add(Row(if (last != null) "Keep watching" else "What's on", listOf<Item>(guideItem) + listOfNotNull(last?.let { Item.Ch(it) }), alwaysLabel = true))
+            }
             if (favs.isNotEmpty()) out.add(Row("Favourites", favs.map { Item.Ch(it) }, alwaysLabel = true))
             if (recent.isNotEmpty()) out.add(Row("Recent", recent.map { Item.Ch(it) }, alwaysLabel = true))
             for ((g, all) in ChannelRepo.groups(list)) {
@@ -800,6 +819,85 @@ class HomeActivity : Activity() {
         if (player.parent == null) root.addView(player, -1, -1)
         player.bringToFront()
         player.play(list, index)
+    }
+
+    // ---------------------------------------------------------------- TV Guide
+    private lateinit var guide: GuideView
+    private val HOUR = 3600_000L
+    private val guideItem = Item.Action("tv:guide", "TV Guide", "What's on now and next", "guide") { openGuide(null) }
+
+    /** Favourites first, then channels that have a guide, then the rest; each by channel number. */
+    private fun guideList(): List<Channel> {
+        val shown = ChannelRepo.tv.filter { it.url !in store.hiddenChannels && it.country !in store.hiddenGroups }
+        val favs = store.favourites.mapNotNull { u -> shown.firstOrNull { it.url == u } }
+        val rest = shown.filter { it.url !in store.favourites }.sortedBy { numberOf(it) }
+        return favs + rest.filter { Guide.hasData(it.url) } + rest.filter { !Guide.hasData(it.url) }
+    }
+
+    /** While the guide covers the screen, nothing under it is drawn (the Mali-450 was spending most of each frame on it). */
+    private val covered = HashMap<View, Int>()
+    private fun coverHome(on: Boolean) {
+        if (on) { for (v in listOf<View>(drift, bgSharp, bgBlur, dim, shelf, stage, pills, clock)) if (!covered.containsKey(v)) { covered[v] = v.visibility; v.visibility = View.INVISIBLE } }
+        else { for ((v, vis) in covered) v.visibility = vis; covered.clear() }
+    }
+
+    private fun openGuide(startUrl: String?) {
+        if (guide.parent == null) root.addView(guide, -1, -1)
+        guide.show(guideList(), startUrl ?: player.current?.takeIf { player.showing }?.url ?: store.lastTv)
+        dialog.bringToFront()
+        if (Guide.channelCount == 0) maybeRefreshGuide(0)
+    }
+
+    private fun guideLater(c: Channel, p: Prog) {
+        val has = Guide.hasReminder(c.url, p.start)
+        val day = if (android.text.format.DateUtils.isToday(p.start)) "" else "tomorrow "
+        dialog.show(p.title, "${c.name} · ${day}${timeFmt.format(Date(p.start))}",
+            (if (has) "Cancel reminder" else "Remind me") to {
+                if (has) Guide.reminders.firstOrNull { it.url == c.url && it.start == p.start }?.let { Guide.removeReminder(it) }
+                else Guide.addReminder(Reminder(c.url, c.name, p.start, p.title))
+                notice(if (has) "Reminder cancelled" else "Reminder set", if (has) p.title else "A minute before it starts")
+                guide.reload()
+            },
+            "Watch ${c.name} now" to { guide.hide(); val l = guideList(); openPlayer(l, l.indexOfFirst { it.url == c.url }.coerceAtLeast(0)) },
+            "Cancel" to {})
+    }
+
+    private fun guideStatus(): String {
+        if (Guide.refreshing) return "Updating… ${Guide.progress}"
+        val at = Guide.lastUpdated()
+        if (at == 0L) return "Not downloaded yet"
+        val total = ChannelRepo.tv.size.takeIf { it > 0 } ?: Guide.totalChannels()
+        val day = if (android.text.format.DateUtils.isToday(at)) "today" else "on " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(Date(at))
+        return "${Guide.channelCount} of $total channels have a guide · updated $day at ${timeFmt.format(Date(at))}"
+    }
+
+    /** Downloads the guide when it is older than maxAge. Never while a channel is starting. */
+    private fun maybeRefreshGuide(maxAge: Long) {
+        if (Guide.refreshing || ChannelRepo.tv.isEmpty()) return
+        if (maxAge > 0 && System.currentTimeMillis() - Guide.lastUpdated() < maxAge) return
+        if (maxAge > 0 && ::player.isInitialized && player.showing) { ui.postDelayed({ maybeRefreshGuide(maxAge) }, 10 * 60_000L); return }
+        Perf.note("guide refresh start")
+        Guide.refresh(ChannelRepo.tv) { result ->
+            ui.post {
+                Perf.note("guide $result")
+                if (guide.showing) { guide.reload(); notice("Guide updated", result) }
+                rebuildChannelRows()
+            }
+        }
+    }
+
+    /** Every 30 s: reminders due within a minute; every hour: the daily guide update. */
+    private var guideTicks = 0
+    private val guideTimer = object : Runnable {
+        override fun run() {
+            for (r in Guide.dueReminders()) {
+                if (resumed) dialog.show("Starting in a minute", "${r.title} on ${r.channel}",
+                    "Watch" to { if (guide.showing) guide.hide(); val l = guideList(); openPlayer(l, l.indexOfFirst { it.url == r.url }.coerceAtLeast(0)) }, "Not now" to {})
+                else android.widget.Toast.makeText(this@HomeActivity, "Starting in a minute: ${r.title} on ${r.channel}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            if (++guideTicks % 120 == 0) maybeRefreshGuide(24 * HOUR)
+            ui.postDelayed(this, 30_000)
+        }
     }
 
     // ---------------------------------------------------------------- notices
@@ -925,6 +1023,7 @@ class HomeActivity : Activity() {
             Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
             return
         }
+        if (item.key == "tv:guide") { cell.card.art = Art(null, 0xFF3B6FD9.toInt(), 0xFF121A33.toInt(), null, null, bigText = "TV Guide", badge = if (Guide.channelCount > 0) "${Guide.channelCount} CHANNELS" else null, badgeColor = 0x99000000.toInt()); return }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
         if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
         if (item is Item.YtAdd) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add a channel"); return }
@@ -1004,6 +1103,7 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- tabs
     private fun showTab(name: String, animate: Boolean = true) {
+        if (name == "TV") maybeRefreshGuide(12 * HOUR)
         val t0 = SystemClock.uptimeMillis()
         val old = screens[current]; val new = screens[name] ?: return
         val dir = if (tabs.indexOf(name) >= tabs.indexOf(current)) 1 else -1
@@ -1058,6 +1158,7 @@ class HomeActivity : Activity() {
         if (digits.isNotEmpty() && e.action == KeyEvent.ACTION_UP && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) { finishDigits(); return true }
         if (digits.isNotEmpty() && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
+        if (::guide.isInitialized && guide.showing && guide.alpha > 0f) return guide.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
             if (e.action == KeyEvent.ACTION_UP) return true
@@ -1109,6 +1210,7 @@ class HomeActivity : Activity() {
     fun goHome() {
         if (introRunning) introSkip?.invoke()
         if (::saver.isInitialized && saver.showing) stopSaver()
+        if (::guide.isInitialized && guide.showing) guide.hide()
         if (::player.isInitialized && player.showing) player.close(keepRadio = true)
         if (::dialog.isInitialized && dialog.showing) dialog.hide()
         if (::keyboard.isInitialized && keyboard.showing) keyboard.close()
@@ -1230,7 +1332,7 @@ class HomeActivity : Activity() {
     private val idleCheck = object : Runnable {
         override fun run() {
             val mins = store.saverMinutes
-            if (mins > 0 && resumed && !saver.showing && !(::player.isInitialized && player.showing) && !dialog.showing && !keyboard.showing &&
+            if (mins > 0 && resumed && !saver.showing && !(::player.isInitialized && player.showing) && !(::guide.isInitialized && guide.showing) && !dialog.showing && !keyboard.showing &&
                 SystemClock.uptimeMillis() - lastInput > mins * 60_000L) startSaver()
             ui.postDelayed(this, 15_000)
         }

@@ -62,6 +62,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     var numberOf: (Channel) -> Int = { it.number }     // channel, keepPlaying (radio)
     var onTuned: ((Channel) -> Unit)? = null
     var onStar: ((Channel) -> Unit)? = null
+    var onGuide: ((Channel) -> Unit)? = null
+    /** "Now: News at Nine, until 9:30 PM" from the guide, or null. */
+    var nowLine: ((Channel) -> String?)? = null
 
     private var player: ExoPlayer? = null
     /** Set while playing one of your own videos (not a channel). */
@@ -239,7 +242,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         Perf.log(if (firstTune) "channel" else "zap", SystemClock.uptimeMillis() - tunedAt)
         warmNeighbours()
         firstTune = false
-        bSub.text = "${c.country}  ·  Up/Down for other channels  ·  OK for the list"
+        bSub.text = (try { nowLine?.invoke(c) } catch (e: Exception) { null } ?: c.country) + "  ·  Up/Down other channels  ·  Menu guide"
         ui.postDelayed(fadeBanner, 3500)
     }
 
@@ -314,7 +317,8 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                 if (current?.radio == true) { player?.let { it.playWhenReady = !it.playWhenReady; radioSub.text = if (it.playWhenReady) "${current?.country}  ·  Back keeps it playing" else "Paused  ·  OK to play, Back to stop" } }
                 else showStrip()
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> showStrip()
-            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BUTTON_Y -> current?.let { onStar?.invoke(it) }
+            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_GUIDE -> current?.let { if (it.radio) onStar?.invoke(it) else onGuide?.invoke(it) }
+            KeyEvent.KEYCODE_BUTTON_Y -> current?.let { onStar?.invoke(it) }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> close(keepRadio = true)
             else -> return false
         }

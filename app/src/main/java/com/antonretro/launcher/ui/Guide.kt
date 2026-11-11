@@ -1,0 +1,369 @@
+package com.antonretro.launcher.ui
+
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import com.antonretro.launcher.data.Channel
+import com.antonretro.launcher.data.Guide
+import com.antonretro.launcher.data.Prog
+import com.antonretro.launcher.kit.Backdrop
+import com.antonretro.launcher.kit.Kit
+import java.text.DateFormat
+import java.util.Date
+import java.util.concurrent.Executors
+
+/**
+ * The TV Guide: channels down the side, time across, programmes as rounded blocks, the current time as a
+ * line. One custom view draws only what is on screen, so scrolling 2,000 channels costs the same as 10.
+ * Programme data is read from Guide (SQLite) a few rows at a time, off the UI thread.
+ */
+@SuppressLint("ViewConstructor")
+class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private val clock24: () -> Boolean) : FrameLayout(ctx) {
+    var onWatch: ((List<Channel>, Int) -> Unit)? = null
+    var onLater: ((Channel, Prog) -> Unit)? = null
+    /** true once the guide fully covers the screen: Home hides what is underneath so it isn't drawn every frame. */
+    var onCover: ((Boolean) -> Unit)? = null
+    val showing get() = visibility == View.VISIBLE
+
+    // before the views below: Grid's paints are sized with dp() when it is created
+    private val d = ctx.resources.displayMetrics.density
+    private fun dp(v: Float) = v * d
+    private val ui = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor()
+    private val title = Kit.text(ctx, 34f, true)
+    private val meta = Kit.text(ctx, 19f, true, Kit.TEXT_DIM)
+    private val desc = Kit.text(ctx, Kit.BODY_TEXT, false, 0xD9FFFFFF.toInt()).apply { isSingleLine = false; maxLines = 2 }
+    private val hint = Kit.text(ctx, 16f, false, Kit.TEXT_DIM)
+    private val grid = Grid(ctx)
+    private val bg = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY }
+    private var bgFor: android.graphics.Bitmap? = null
+    private var bgBitmap: android.graphics.Bitmap? = null
+
+    private var chans: List<Channel> = emptyList()
+    private val cache = HashMap<String, List<Prog>>()
+    private val loading = HashSet<String>()
+
+    // focus and scroll
+    private var fRow = 0
+    private var fProg: Prog? = null
+    private var anchor = 0L                  // the time Up/Down tries to stay on
+    private var topRow = 0f                  // first visible row (animated)
+    private var viewStart = 0L               // time at the left edge of the programme area (animated)
+    private var targetTop = 0; private var targetStart = 0L
+    private var anim: ValueAnimator? = null
+
+    private val windowMs = 150 * 60_000L     // two and a half hours across
+    private val half = 30 * 60_000L
+
+    init {
+        visibility = View.GONE; isClickable = true
+        addView(bg, -1, -1)
+        // fixed sizes everywhere: new text then only redraws itself instead of re-measuring the whole screen
+        fun put(v: View, top: Float, h: Float, w: Float = 900f) = addView(v, LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, top) })
+        put(meta, 34f, 26f); put(title, 64f, 44f); put(desc, 112f, 52f)
+        hint.text = "OK  watch or remind   ·   Back  close"; hint.gravity = android.view.Gravity.END
+        addView(hint, LayoutParams(Kit.dpi(ctx, 320f), Kit.dpi(ctx, 24f), android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 40f) })
+        addView(grid, LayoutParams(-1, -1).apply { topMargin = Kit.dpi(ctx, 178f) })
+    }
+
+    // ------------------------------------------------------------------ open / close
+    fun show(list: List<Channel>, startUrl: String?) {
+        chans = list; cache.clear(); loading.clear()
+        val now = System.currentTimeMillis()
+        targetStart = floorHalf(now); viewStart = targetStart; anchor = now
+        fRow = list.indexOfFirst { it.url == startUrl }.coerceAtLeast(0)
+        targetTop = (fRow - 2).coerceAtLeast(0); topRow = targetTop.toFloat()
+        fProg = null
+        // one ready-made background picture (blurred wallpaper with the dark tint baked in): one layer, not two
+        val src = Backdrop.blurredDim
+        if (src != null && src !== bgFor) {
+            bgFor = src
+            bgBitmap = src.copy(android.graphics.Bitmap.Config.RGB_565, true)?.also { Canvas(it).drawColor(Color.argb(150, 6, 8, 14)) }
+            bg.setImageBitmap(bgBitmap)
+        }
+        if (bgBitmap == null) bg.setBackgroundColor(Color.rgb(12, 14, 20))
+        visibility = View.VISIBLE; alpha = 0f; bringToFront()
+        animate().alpha(1f).setDuration(Kit.t(220)).withEndAction { if (showing) onCover?.invoke(true) }.start()
+        focusChanged(); ui.removeCallbacks(tick); ui.postDelayed(tick, 30_000)
+    }
+
+    fun hide() { ui.removeCallbacks(tick); onCover?.invoke(false); animate().alpha(0f).setDuration(Kit.t(180)).withEndAction { visibility = View.GONE; cache.clear() }.start() }
+
+    /** New guide data arrived: forget what was read and redraw. */
+    fun reload() { if (!showing) return; cache.clear(); loading.clear(); fProg = null; focusChanged() }
+
+    private val tick = object : Runnable { override fun run() { if (showing) { grid.invalidate(); updateInfo(); ui.postDelayed(this, 30_000) } } }
+
+    // ------------------------------------------------------------------ data
+    private fun rowsVisible(): Int = ((grid.height - dp(HEADER)) / dp(ROW_H + ROW_GAP)).toInt().coerceAtLeast(1)
+
+    private fun progsFor(i: Int): List<Prog>? {
+        val c = chans.getOrNull(i) ?: return null
+        if (!Guide.hasData(c.url)) return emptyList()
+        cache[c.url]?.let { return it }
+        if (c.url !in loading) {
+            // read this row and its neighbours in one query
+            val want = (i - 8..i + rowsVisible() + 8).mapNotNull { chans.getOrNull(it)?.url }.filter { it !in cache && it !in loading && Guide.hasData(it) }
+            loading.addAll(want)
+            val now = System.currentTimeMillis()
+            io.execute {
+                val got = Guide.window(want, now - 3 * 3600_000L, now + 48 * 3600_000L)
+                ui.post {
+                    if (cache.size > 300) cache.clear()
+                    for (u in want) { cache[u] = got[u] ?: emptyList(); loading.remove(u) }
+                    if (fProg == null) pickProg()
+                    grid.invalidate(); updateInfo()
+                }
+            }
+        }
+        return null
+    }
+
+    private fun pickProg() {
+        val l = progsFor(fRow) ?: return
+        fProg = l.firstOrNull { it.onAt(anchor) } ?: l.firstOrNull { it.start >= anchor } ?: l.lastOrNull()
+    }
+
+    // ------------------------------------------------------------------ moving
+    fun onKey(e: KeyEvent): Boolean {
+        if (e.action != KeyEvent.ACTION_DOWN) return true
+        when (e.keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> moveRow(-1)
+            KeyEvent.KEYCODE_DPAD_DOWN -> moveRow(1)
+            KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_BUTTON_L1 -> moveRow(-rowsVisible())
+            KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_BUTTON_R1 -> moveRow(rowsVisible())
+            KeyEvent.KEYCODE_DPAD_LEFT -> moveTime(-1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> moveTime(1)
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_NUMPAD_ENTER -> if (e.repeatCount == 0) ok()
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_GUIDE -> if (e.repeatCount == 0) hide()
+        }
+        return true
+    }
+
+    private fun moveRow(dr: Int) {
+        val n = (fRow + dr).coerceIn(0, (chans.size - 1).coerceAtLeast(0))
+        if (n == fRow) return
+        fRow = n; fProg = null; pickProg()
+        val vis = rowsVisible()
+        if (fRow < targetTop + 1) targetTop = (fRow - 1).coerceAtLeast(0)
+        if (fRow > targetTop + vis - 2) targetTop = (fRow - vis + 2).coerceAtLeast(0)
+        focusChanged()
+    }
+
+    private fun moveTime(dc: Int) {
+        val now = System.currentTimeMillis()
+        val l = progsFor(fRow)
+        val cur = fProg
+        if (l.isNullOrEmpty() || cur == null) {
+            // no guide for this channel: just move the time
+            targetStart = (targetStart + dc * half).coerceIn(floorHalf(now) - 2 * half, floorHalf(now) + 92 * half)
+            anchor = targetStart; focusChanged(); return
+        }
+        val i = l.indexOf(cur) + dc
+        val next = l.getOrNull(i) ?: return
+        if (dc < 0 && next.stop <= now - 2 * half) return
+        fProg = next
+        anchor = maxOf(next.start, now.takeIf { next.onAt(it) } ?: next.start)
+        if (next.start < targetStart || next.start >= targetStart + windowMs - half) targetStart = maxOf(floorHalf(next.start), floorHalf(now) - 2 * half)
+        if (next.stop <= targetStart) targetStart = floorHalf(next.start)
+        focusChanged()
+    }
+
+    private fun ok() {
+        val c = chans.getOrNull(fRow) ?: return
+        val p = fProg
+        if (p != null && p.start > System.currentTimeMillis()) onLater?.invoke(c, p)
+        else onWatch?.invoke(chans, fRow)
+    }
+
+    private fun focusChanged() {
+        anim?.cancel()
+        val fromTop = topRow; val fromStart = viewStart
+        if (fromTop == targetTop.toFloat() && fromStart == targetStart) { grid.invalidate(); updateInfo(); return }
+        anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = Kit.t(220); interpolator = Kit.EASE
+            addUpdateListener { a -> val f = a.animatedValue as Float
+                topRow = fromTop + (targetTop - fromTop) * f
+                viewStart = fromStart + ((targetStart - fromStart) * f).toLong()
+                grid.invalidate() }
+            start()
+        }
+        updateInfo()
+    }
+
+    // ------------------------------------------------------------------ the text above the grid
+    private fun fmt(t: Long): String = timeFmt().format(Date(t))
+    private fun timeFmt(): DateFormat = if (clock24()) java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault()) else java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+
+    private fun updateInfo() {
+        val c = chans.getOrNull(fRow)
+        val now = System.currentTimeMillis()
+        if (c == null) { title.text = "No channels"; meta.text = ""; desc.text = ""; return }
+        val num = numberOf(c)
+        val p = fProg
+        val l = progsFor(fRow)
+        when {
+            !Guide.hasData(c.url) -> {
+                title.text = c.name
+                meta.text = "$num  ·  ${c.country}"
+                desc.text = if (Guide.refreshing) "Getting the guide…  ${Guide.progress}" else if (Guide.channelCount == 0) "No guide yet. It downloads by itself when the box is online." else "No guide information for this channel. OK to watch it."
+            }
+            p == null -> { title.text = c.name; meta.text = "$num  ·  ${c.country}"; desc.text = if (l == null) "Loading…" else "Nothing listed. OK to watch it." }
+            else -> {
+                title.text = p.title + (p.sub?.let { "  ·  $it" } ?: "")
+                val mins = ((p.stop - p.start) / 60_000).toInt()
+                val whenTxt = when {
+                    p.onAt(now) -> "On now, ${((p.stop - now) / 60_000).toInt().coerceAtLeast(1)} min left"
+                    p.start > now -> { val m = ((p.start - now) / 60_000).toInt(); if (m < 60) "Starts in $m min" else if (sameDay(p.start, now)) "Later today" else "Tomorrow" }
+                    else -> "Earlier"
+                }
+                val bell = if (Guide.hasReminder(c.url, p.start)) "  ·  Reminder set" else ""
+                meta.text = "$num  ${c.name}   ·   ${fmt(p.start)} – ${fmt(p.stop)}  ($mins min)   ·   $whenTxt$bell"
+                desc.text = p.desc ?: ""
+            }
+        }
+    }
+
+    private fun sameDay(a: Long, b: Long): Boolean {
+        val ca = java.util.Calendar.getInstance().apply { timeInMillis = a }; val cb = java.util.Calendar.getInstance().apply { timeInMillis = b }
+        return ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+
+    private fun floorHalf(t: Long): Long { val off = java.util.TimeZone.getDefault().getOffset(t); return ((t + off) / half) * half - off }
+
+    // ------------------------------------------------------------------ drawing
+    private inner class Grid(ctx: Context) : View(ctx) {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Kit.font(ctx, true); textSize = dp(18f) }
+        private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Kit.font(ctx); textSize = dp(15f) }
+        private val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Kit.font(ctx, true); textSize = dp(16f); color = Kit.TEXT_DIM }
+        private val r = RectF()
+        private val labelCache = HashMap<Long, String>()
+
+        override fun onDraw(cv: Canvas) {
+            val left = dp(Kit.SAFE_X); val right = width - dp(Kit.SAFE_X)
+            val chanW = dp(CHAN_W); val pLeft = left + chanW + dp(8f)
+            val perMs = (right - pLeft) / windowMs
+            val rowsTop = dp(HEADER); val rowH = dp(ROW_H); val step = dp(ROW_H + ROW_GAP)
+            val now = System.currentTimeMillis()
+            fun x(t: Long) = pLeft + (t - viewStart) * perMs
+
+            // time labels every half hour
+            var t = floorHalf(viewStart)
+            while (t < viewStart + windowMs + half) {
+                val lx = x(t)
+                if (lx >= pLeft - 2 && lx < right - dp(40f)) {
+                    val s = labelCache.getOrPut(t) { fmt(t) }
+                    cv.drawText(s, lx + dp(6f), dp(22f), small.apply { color = Kit.TEXT_DIM })
+                    fill.color = Color.argb(40, 255, 255, 255); cv.drawRect(lx, dp(30f), lx + 1, rowsTop - dp(6f), fill)
+                }
+                t += half
+            }
+            if (labelCache.size > 400) labelCache.clear()
+
+            val first = topRow.toInt(); val frac = topRow - first
+            val vis = ((height - rowsTop) / step).toInt() + 2
+            cv.save(); cv.clipRect(0f, rowsTop - dp(4f), width.toFloat(), height.toFloat())
+            for (k in 0 until vis) {
+                val i = first + k
+                val c = chans.getOrNull(i) ?: break
+                val top = rowsTop + (k - frac) * step
+                if (top > height) break
+                val focusedRow = i == fRow
+                // channel cell
+                r.set(left, top, left + chanW, top + rowH)
+                fill.color = if (focusedRow) Color.argb(70, 255, 255, 255) else Color.argb(34, 255, 255, 255)
+                cv.drawRoundRect(r, dp(12f), dp(12f), fill)
+                val ns = numberOf(c).toString()
+                cv.drawText(ns, left + dp(14f), top + rowH / 2 + dp(6f), num)
+                val nameX = left + dp(14f) + maxOf(dp(44f), num.measureText(ns) + dp(10f))
+                text.color = Kit.TEXT
+                drawFit(cv, c.name, nameX, top + rowH / 2 + dp(6f), left + chanW - dp(10f) - nameX, text)
+
+                // programmes
+                cv.save(); cv.clipRect(pLeft, top - dp(4f), right + dp(4f), top + rowH + dp(4f))
+                val l = progsFor(i)
+                if (l == null || l.isEmpty()) {
+                    r.set(pLeft, top, right, top + rowH)
+                    val focused = focusedRow
+                    fill.color = if (focused) Kit.FOCUS_FILL else Color.argb(18, 255, 255, 255)
+                    cv.drawRoundRect(r, dp(12f), dp(12f), fill)
+                    small.color = if (focused) Kit.FOCUS_TEXT else Kit.TEXT_DIM
+                    cv.drawText(if (l == null) "…" else if (Guide.hasData(c.url)) "Nothing listed" else "No guide information", pLeft + dp(16f), top + rowH / 2 + dp(5f), small)
+                } else for (p in l) {
+                    if (p.stop <= viewStart || p.start >= viewStart + windowMs) continue
+                    val x0 = maxOf(x(p.start), pLeft); val x1 = minOf(x(p.stop), right) - dp(4f)
+                    if (x1 - x0 < dp(3f)) continue
+                    r.set(x0, top, x1, top + rowH)
+                    val focused = focusedRow && p === fProg
+                    val live = p.onAt(now)
+                    fill.color = when { focused -> Kit.FOCUS_FILL; live -> Color.argb(62, 255, 255, 255); p.stop <= now -> Color.argb(16, 255, 255, 255); else -> Color.argb(34, 255, 255, 255) }
+                    cv.drawRoundRect(r, dp(12f), dp(12f), fill)
+                    if (x1 - x0 > dp(28f)) {
+                        text.color = if (focused) Kit.FOCUS_TEXT else if (p.stop <= now) Kit.TEXT_DIM else Kit.TEXT
+                        val tx = x0 + dp(14f)
+                        val bell = if (Guide.hasReminder(c.url, p.start)) "⏰ " else ""
+                        drawFit(cv, bell + p.title, tx, top + rowH / 2 + dp(6f), x1 - tx - dp(10f), text)
+                    }
+                }
+                cv.restore()
+            }
+            cv.restore()
+
+            // now line
+            val nx = x(now)
+            if (nx in pLeft..right) {
+                fill.color = Kit.ACCENT
+                cv.drawRect(nx - dp(1f), dp(30f), nx + dp(1f), height.toFloat(), fill)
+                cv.drawCircle(nx, dp(30f), dp(4f), fill)
+            }
+        }
+
+        /** Text cut to fit, with an ellipsis; no layout objects per frame. */
+        private fun drawFit(cv: Canvas, s: String, x: Float, y: Float, w: Float, p: Paint) {
+            if (w <= 0) return
+            val n = p.breakText(s, true, w, null)
+            if (n >= s.length) { cv.drawText(s, x, y, p); return }
+            val m = p.breakText(s, true, w - p.measureText("…"), null).coerceAtLeast(0)
+            cv.drawText(s.substring(0, m).trimEnd() + "…", x, y, p)
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            if (e.action != MotionEvent.ACTION_UP) return true
+            val rowsTop = dp(HEADER); val step = dp(ROW_H + ROW_GAP)
+            if (e.y < rowsTop) return true
+            val i = (topRow + (e.y - rowsTop) / step).toInt()
+            if (i !in chans.indices) return true
+            val pLeft = dp(Kit.SAFE_X) + dp(CHAN_W) + dp(8f)
+            val t = if (e.x > pLeft) viewStart + ((e.x - pLeft) / ((width - dp(Kit.SAFE_X) - pLeft) / windowMs)).toLong() else System.currentTimeMillis()
+            val p = progsFor(i)?.firstOrNull { it.onAt(t) }
+            if (i == fRow && (p == null || p === fProg)) { ok(); return true }
+            fRow = i; anchor = t; fProg = p; if (p == null) pickProg(); focusChanged()
+            return true
+        }
+
+        override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+            if (e.action == MotionEvent.ACTION_SCROLL) { val v = e.getAxisValue(MotionEvent.AXIS_VSCROLL); if (v != 0f) moveRow(if (v < 0) 1 else -1); return true }
+            return super.onGenericMotionEvent(e)
+        }
+    }
+
+    companion object {
+        const val HEADER = 40f
+        const val ROW_H = 52f
+        const val ROW_GAP = 8f
+        const val CHAN_W = 250f
+    }
+}
