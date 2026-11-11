@@ -66,44 +66,56 @@ class HomeActivity : Activity() {
     private var tabIdx = 0
     private var scrolledShown = false
 
+    /** Start-up must never crash the Home button: anything optional that fails is logged and skipped. */
+    private inline fun safely(what: String, f: () -> Unit) { try { f() } catch (t: Throwable) { Perf.note("startup step '$what' failed: $t") } }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val t0 = SystemClock.uptimeMillis()
-        super.onCreate(savedInstanceState)
+        super.onCreate(null)   // never restore old view state: Home always starts clean on the Home tab
         Perf.file = getExternalFilesDir(null)?.let { java.io.File(it, "perf.log") }
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { th, e -> Perf.note("CRASH " + e + " " + android.util.Log.getStackTraceString(e).replace("\n", " ")); Thread.sleep(150); previous?.uncaughtException(th, e) }
         Kit.init(this)
         repo = AppRepo(this); store = Store(this)
         val dm = resources.displayMetrics
         screenW = maxOf(dm.widthPixels, dm.heightPixels); screenH = minOf(dm.widthPixels, dm.heightPixels)
-        if (store.wallpaper < Backdrop.SCENES.size) Backdrop.build(store.wallpaper, screenW, screenH)
+        if (store.wallpaper !in 0 until (Backdrop.SCENES.size + Drift.PALETTES.size)) store.wallpaper = 0
+        safely("wallpaper") { if (store.wallpaper < Backdrop.SCENES.size) Backdrop.build(store.wallpaper, screenW, screenH) }
+        if (Backdrop.blurred == null) Backdrop.build(0, screenW, screenH)
         buildViews()
         setContentView(root)
         window.setBackgroundDrawable(null)   // the wallpaper covers everything: skip one full-screen fill
         hideSystemBars()
-        buildScreens()
-        Kit.motion = if (store.reduceMotion) 0.01f else 1f
-        applyHiddenTabs()
-        showTab("Home", animate = false)
-        Images.init(this)
+        // overlays exist before anything can ask for them
+        keyboard = Keyboard(this); dialog = Dialog(this)
         saver = Screensaver(this) { i -> Backdrop.render(i, screenW, screenH) }
-        root.addView(saver, -1, -1)
-        ui.postDelayed(idleCheck, 15_000)
         yt = YouTubeRepo(filesDir)
-        keyboard = Keyboard(this); root.addView(keyboard, -1, -1)
-        rebuildYouTube()
-        dialog = Dialog(this); root.addView(dialog, -1, -1)
-        (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(inputListener, ui)
-        for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.let { inputNames[id] = it.name }
-        registerReceiver(deviceReceiver, IntentFilter().apply { addAction(Intent.ACTION_MEDIA_MOUNTED); addAction(Intent.ACTION_MEDIA_EJECT); addAction(Intent.ACTION_MEDIA_REMOVED); addDataScheme("file") })
-        registerReceiver(deviceReceiver, IntentFilter(android.net.ConnectivityManager.CONNECTIVITY_ACTION))
-        ui.postDelayed({ rebuildVideos() }, 1200)
-        loadApps { if (wantIntro()) playIntro() }
-        loadChannels()
-        ui.postDelayed({ player.prepare() }, 1500)   // the first channel doesn't pay for creating the player
-        registerReceivers()
+        Images.init(this)
+        buildScreens()
+        root.addView(saver, -1, -1); root.addView(keyboard, -1, -1); root.addView(dialog, -1, -1)
+        Kit.motion = if (store.reduceMotion) 0.01f else 1f
+        safely("tabs") { applyHiddenTabs() }
+        showTab("Home", animate = false)
+        ui.postDelayed(idleCheck, 15_000)
+        safely("youtube") { rebuildYouTube() }
+        safely("inputs") {
+            (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(inputListener, ui)
+            for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.let { inputNames[id] = it.name }
+        }
+        safely("receivers") {
+            registerReceiver(deviceReceiver, IntentFilter().apply { addAction(Intent.ACTION_MEDIA_MOUNTED); addAction(Intent.ACTION_MEDIA_EJECT); addAction(Intent.ACTION_MEDIA_REMOVED); addDataScheme("file") })
+            registerReceiver(deviceReceiver, IntentFilter(android.net.ConnectivityManager.CONNECTIVITY_ACTION))
+            registerReceivers()
+        }
+        ui.postDelayed({ safely("videos") { rebuildVideos() } }, 1200)
+        safely("apps") { loadApps { safely("intro") { if (wantIntro()) playIntro() } } }
+        safely("channels") { loadChannels() }
+        ui.postDelayed({ safely("player") { player.prepare() } }, 1500)   // the first channel doesn't pay for creating the player
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean { root.viewTreeObserver.removeOnPreDrawListener(this); Perf.log("cold", SystemClock.uptimeMillis() - t0); return true }
         })
     }
+
 
     // ---------------------------------------------------------------- views
     private fun buildViews() {
@@ -156,12 +168,13 @@ class HomeActivity : Activity() {
         screens["Home"] = RowsScreen(this, 410f, true, art, open)
         screens["TV"] = RowsScreen(this, 150f, false, art, open, "Loading your channels…")
         screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Loading radio stations…")
-        for (n in listOf("Home", "TV", "Radio", "Games", "Apps", "YouTube", "Videos")) (screens[n] as RowsScreen).onLong = { item, _ -> cardOptions(n, item) }
         screens["YouTube"] = RowsScreen(this, 150f, false, art, open)
         screens["Videos"] = RowsScreen(this, 150f, false, art, open, "Your videos and films will show up here.")
         screens["Games"] = RowsScreen(this, 150f, false, art, open)
         screens["Apps"] = RowsScreen(this, 150f, false, art, open, "Looking for apps…")
         screens["Settings"] = SettingsScreen(this, settingsPages())
+        // after every screen exists (this ran too early once and crashed the launcher at start)
+        for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         player = PlayerOverlay(this, art).apply {
             onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
@@ -439,6 +452,14 @@ class HomeActivity : Activity() {
             return
         }
         val opts = ActivityOptions.makeScaleUpAnimation(cell.card, 0, 0, cell.card.width, cell.card.height)
+        val same = store.recentGames.firstOrNull() == rom.key
+        if (same) {
+            // the same game: bring it back where you left it
+            i.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        } else {
+            // a different game: close the engine first (swapping games inside RetroArch crashes it)
+            try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(i.component!!.packageName) } catch (_: Exception) {}
+        }
         if (safeStart(i, opts.toBundle())) { store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
     }
 
