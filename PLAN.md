@@ -329,6 +329,16 @@ No nags, no tips, no "enable this service" messages, ever.
 
 Projectivy is closed source (its GitHub page only hosts the downloads), so its code can't be reused or reskinned. Take the ideas that work (reading both TV and phone apps, per-app card art, instant refresh when an app is added or disabled) and write our own.
 
+## Works with no PC: the plain-APK rule
+
+Anthony asked about people who "don't really know tech". **Retro Launcher must be fully usable when installed as a plain APK on a box, with no PC, no ADB and no AI.** Everything ADB does today needs an in-app path, guided by the first-time welcome:
+- **Home app:** the welcome says "press Home and choose Retro Launcher, then Always" and notices when it's done.
+- **Key helper:** a guided screen opens Android's accessibility page with a picture of exactly what to switch on, and notices when it works. Without it the launcher stays safe and never-stuck (RetroArch's Start+Select quit, the launcher's own menus).
+- **Anything that needs `WRITE_SECURE_SETTINGS` or root** (HDMI power setting, animation speeds, pre-compiling, the GPU speed lock): optional extras, hidden or shown as "needs the PC setup" when the permission isn't there. Never a switch that silently does nothing.
+- **RetroArch:** the Games tab offers to download it from the official libretro site and hands it to Android's installer (or the need disappears if the emulator cores are built in later).
+- **Channels and guide:** built on the box from the welcome's country choice (port the logic of `build_channels.py`, or fetch a prebuilt list); no file push needed.
+- **Updates:** the launcher checks the GitHub release feed, shows "Update available", downloads, checks the signature matches, and hands over to Android's installer.
+
 ## Speed
 
 What we control, and what we don't, stated honestly:
@@ -482,6 +492,8 @@ Anthony: "an application version that ... makes it easy and connects with ADB ..
 The skill's scripts are the engine (one source of truth). Google's platform-tools are fetched from the official URL on first run rather than bundled (check the licence either way). Only the safe, predictable steps (install, configure, tune, verify); the judgement steps the skill does with an AI (auditing unknown apps, deciding what to remove) stay out, shown at most as a read-only report. It never flashes firmware.
 
 ## Things to settle with Anthony
+
+- **Own repository: approved by Anthony (2026-11-11).** The launcher moves to `antonretro/retro-launcher` (private until the first release, public only with his OK), with APK releases; `android-tv-box-skill` stays the box-makeover tool and its launcher step downloads the latest signed APK from that release (Projectivy stays as the fallback until the first release exists).
 
 - Whether to switch the box to 1080p if it turns out to be drawing at 720p.
 - When to remove Projectivy.
