@@ -54,8 +54,69 @@ class RetroKeys : AccessibilityService() {
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         if (e?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) e.packageName?.toString()?.let {
-            if (it != "com.android.systemui" && it != "android" && e.className?.toString() != QuickPanel::class.java.name) foreground = it
+            if (it != "com.android.systemui" && it != "android" && e.className?.toString() != QuickPanel::class.java.name) {
+                val was = foreground; foreground = it
+                if (it != was) entered(was)
+            }
         }
+    }
+
+    // ------------------------------------------------------------------ showing the way out
+    private val prefs get() = getSharedPreferences("keys", Context.MODE_PRIVATE)
+    private fun hasPad() = android.view.InputDevice.getDeviceIds().any { id -> android.view.InputDevice.getDevice(id)?.let { !it.isVirtual && (it.sources and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD } == true }
+    private fun hasMouse() = android.view.InputDevice.getDeviceIds().any { id -> android.view.InputDevice.getDevice(id)?.let { !it.isVirtual && (it.sources and android.view.InputDevice.SOURCE_MOUSE) == android.view.InputDevice.SOURCE_MOUSE } == true }
+
+    /** A new app came to the front: in a game, always a short hint; in any other app, a hint the first time only. */
+    private fun entered(was: String?) {
+        updateCorner()
+        if (inLauncher()) return
+        val way = if (hasPad()) "Xbox button or hold Start: menu and Home" else "Hold Back: menu and Home"
+        if (inGame()) { if (was?.startsWith("com.retroarch") != true) ui.postDelayed({ if (inGame()) hint(way) }, 1500) }
+        else { val k = "hinted:" + foreground; if (!prefs.getBoolean(k, false)) { prefs.edit().putBoolean(k, true).apply(); ui.postDelayed({ hint(way) }, 1500) } }
+    }
+
+    private var hintView: TextView? = null
+    private val hideHint = Runnable { hintView?.animate()?.alpha(0f)?.setDuration(Kit.t(400))?.withEndAction { hintView?.visibility = View.GONE }?.start() }
+    private fun hint(text: String) {
+        val h = hintView ?: Kit.text(this, 18f, true).also { t ->
+            t.gravity = Gravity.CENTER; t.setPadding(Kit.dpi(this, 24f), 0, Kit.dpi(this, 24f), 0)
+            t.background = GradientDrawable().apply { cornerRadius = Kit.dp(this@RetroKeys, 22f); setColor(Color.argb(215, 24, 26, 34)); setStroke(1, Kit.GLASS_EDGE) }
+            try {
+                wm.addView(t, WindowManager.LayoutParams(-2, Kit.dpi(this, 44f), WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = Kit.dpi(this@RetroKeys, 40f) })
+            } catch (e: Exception) { Perf.note("hint overlay failed: $e"); return }
+            hintView = t
+        }
+        h.text = text; h.visibility = View.VISIBLE; h.alpha = 0f
+        h.animate().alpha(1f).setDuration(Kit.t(300)).start()
+        ui.removeCallbacks(hideHint); ui.postDelayed(hideHint, 4500)
+    }
+
+    /** With a mouse plugged in, a small Home button sits in the top-right corner of every app and game. */
+    private var corner: TextView? = null
+    private fun updateCorner() {
+        val want = hasMouse() && !inLauncher() && foreground != null && !QuickPanel.showing
+        if (!want) { corner?.visibility = View.GONE; return }
+        val c = corner ?: Kit.text(this, 22f, true).also { t ->
+            t.text = "⌂"; t.gravity = Gravity.CENTER; t.alpha = .55f
+            t.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(200, 24, 26, 34)); setStroke(1, Kit.GLASS_EDGE) }
+            t.setOnClickListener { trigger("corner button") }
+            t.setOnHoverListener { v, ev -> if (ev.action == MotionEvent.ACTION_HOVER_ENTER) v.alpha = 1f else if (ev.action == MotionEvent.ACTION_HOVER_EXIT) v.alpha = .55f; false }
+            try {
+                wm.addView(t, WindowManager.LayoutParams(Kit.dpi(this, 44f), Kit.dpi(this, 44f), WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
+                    .apply { gravity = Gravity.TOP or Gravity.END; x = Kit.dpi(this@RetroKeys, 14f); y = Kit.dpi(this@RetroKeys, 14f) })
+            } catch (e: Exception) { Perf.note("corner overlay failed: $e"); return }
+            corner = t
+        }
+        c.visibility = View.VISIBLE
+    }
+
+    private val devices = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(id: Int) = updateCorner()
+        override fun onInputDeviceRemoved(id: Int) = updateCorner()
+        override fun onInputDeviceChanged(id: Int) {}
     }
 
     override fun onServiceConnected() {
@@ -65,6 +126,7 @@ class RetroKeys : AccessibilityService() {
         Perf.note("keys helper connected")
         alive = true; instance = this
         addEdge()
+        try { (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(devices, ui) } catch (_: Exception) {}
     }
 
     private val testMode get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()
@@ -75,6 +137,7 @@ class RetroKeys : AccessibilityService() {
     fun trigger(why: String) {
         if (testMode) Perf.note("quick panel trigger $why in $foreground")
         if (QuickPanel.showing) { QuickPanel.current?.goHome(); return }
+        corner?.visibility = View.GONE; hintView?.visibility = View.GONE
         val app = foreground
         if (app == null || app == packageName) { goHome(); return }
         try {
@@ -82,6 +145,8 @@ class RetroKeys : AccessibilityService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
         } catch (e: Exception) { goHome() }   // if the panel can't open over this app, Home is the safe answer
     }
+
+    fun panelClosed() { ui.postDelayed({ updateCorner() }, 300) }
 
     fun goHome() {
         if (!performGlobalAction(GLOBAL_ACTION_HOME))
@@ -177,7 +242,10 @@ class RetroKeys : AccessibilityService() {
         ui.removeCallbacks(hidePill); ui.postDelayed(hidePill, 3500)
     }
 
-    private fun removeEdge() { try { edge?.let { wm.removeView(it) }; pill?.let { wm.removeView(it) } } catch (_: Exception) {}; edge = null; pill = null }
+    private fun removeEdge() {
+        for (v in listOf(edge, pill, hintView, corner)) try { v?.let { wm.removeView(it) } } catch (_: Exception) {}
+        edge = null; pill = null; hintView = null; corner = null
+    }
 }
 
 /**
@@ -251,7 +319,7 @@ class QuickPanel : Activity() {
         paint()
     }
 
-    override fun onDestroy() { if (current === this) { showing = false; current = null }; super.onDestroy() }
+    override fun onDestroy() { if (current === this) { showing = false; current = null }; super.onDestroy(); RetroKeys.instance?.panelClosed() }
     override fun onStop() { super.onStop(); if (!isFinishing) finish() }   // never left behind under an app
 
     private fun button(label: String, wDp: Float, hDp: Float, size: Float = 21f) = Kit.text(this, size, true).apply { text = label; gravity = Gravity.CENTER; setPadding(Kit.dpi(this@QuickPanel, 8f), 0, Kit.dpi(this@QuickPanel, 8f), 0); tag = floatArrayOf(wDp, hDp) }

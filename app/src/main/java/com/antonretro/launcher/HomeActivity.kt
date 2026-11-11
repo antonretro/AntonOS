@@ -76,13 +76,31 @@ class HomeActivity : Activity() {
      */
     private fun reattachKeysHelper() {
         val me = "$packageName/${RetroKeys::class.java.name}"
-        val enabled = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: return
-        if (!enabled.split(':').any { it.equals(me, true) || it.equals("$packageName/.RetroKeys", true) }) return
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: ""
+        // Android drops the helper from this list when the app is reinstalled: put it back (we hold WRITE_SECURE_SETTINGS)
+        if (!enabled.split(':').any { it.equals(me, true) || it.equals("$packageName/.RetroKeys", true) }) safely("keys enable") {
+            Settings.Secure.putString(contentResolver, "enabled_accessibility_services", if (enabled.isBlank()) me else "$enabled:$me")
+            Settings.Secure.putInt(contentResolver, "accessibility_enabled", 1)
+            Perf.note("keys helper was off: switched back on")
+        }
         // the helper runs in our own process: if it hasn't connected a few seconds after start, it isn't bound
         ui.postDelayed({
-            if (!RetroKeys.alive) safely("keys rebind") { rebindKeys(enabled) }
-            else if (enabled.split(':').count { it == me } > 1) safely("keys tidy") { Settings.Secure.putString(contentResolver, "enabled_accessibility_services", enabled.split(':').distinct().joinToString(":")) }
+            val now = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: ""
+            if (!RetroKeys.alive) {
+                safely("keys rebind") { rebindKeys(now) }
+                ui.postDelayed({ if (!RetroKeys.alive) helperOff() }, 4000)
+            }
+            else if (now.split(':').count { it == me } > 1) safely("keys tidy") { Settings.Secure.putString(contentResolver, "enabled_accessibility_services", now.split(':').distinct().joinToString(":")) }
         }, 3000)
+    }
+
+    /** Said once per start, plainly: without the helper the Xbox button can't get you out of games and apps. */
+    private var helperWarned = false
+    private fun helperOff() {
+        if (helperWarned) return
+        helperWarned = true
+        Perf.note("keys helper still off after re-attach")
+        dialog.show("The exit button isn't working", "Retro Launcher's key helper is off, so the Xbox button can't bring you back from games and apps. Restarting the box usually fixes it. The Home button on the remote always works.", "OK" to {})
     }
 
     /** Never blank the setting (if the app died halfway the helper would stay off): change it by adding ourselves

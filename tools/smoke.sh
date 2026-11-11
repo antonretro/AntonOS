@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Retro Launcher smoke test: run after every install, before telling anyone it's ready.
 #   bash launcher/tools/smoke.sh [device] [--game]
-# Checks: the launcher starts without crashing, it is the Home app, Home brings it back after it was
+# Checks: the key helper (exit button) is running, the launcher starts without crashing, it is the Home app, Home brings it back after it was
 # killed (the "killed behind a game" case), and (with --game, sound muted) Home from inside a RetroArch
 # game returns to it three times in a row. Exit code 0 = all passed.
 set -u
@@ -17,6 +17,8 @@ focus() { a dumpsys window | grep mCurrentFocus | head -1; }
 crashed() { a "logcat -d -b crash 2>/dev/null; logcat -d" | grep -q "FATAL EXCEPTION" && echo yes || echo no; }
 
 a "logcat -c"
+bound() { a "dumpsys accessibility" | grep -q "label=Retro Launcher buttons" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
+check "key helper running" "$(bound)"
 a "cmd package set-home-activity $ACT" >/dev/null 2>&1
 home=$(a "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | tail -1 | tr -d '\r')
 check "Retro Launcher is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home goes to $home")"
@@ -53,12 +55,21 @@ if [ "${2:-}" = "--game" ]; then
   if [ -n "$PAD" ]; then
     press() { a "sendevent $PAD 1 $1 1; sendevent $PAD 0 0 0; sendevent $PAD 1 $1 0; sendevent $PAD 0 0 0"; }
     a "am force-stop com.retroarch.ra32"; a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 8
-    press 316; sleep 2; check "pad Guide in a game opens our pause menu" "$(focus | grep -q PauseActivity && echo ok || echo "$(focus)")"
+    press 316; sleep 2; check "pad Guide in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
     press 305; sleep 2; check "pad B resumes the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
+    press 316; sleep 2; press 316; sleep 3; check "pad Guide twice in a game goes straight Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
+    # a pad without a Guide button: Select + Start
+    a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 6
+    a "sendevent $PAD 1 314 1; sendevent $PAD 0 0 0; sendevent $PAD 1 315 1; sendevent $PAD 0 0 0; sendevent $PAD 1 315 0; sendevent $PAD 0 0 0; sendevent $PAD 1 314 0; sendevent $PAD 0 0 0"; sleep 2
+    check "pad Select+Start in a game opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
     a "input keyevent 3"; sleep 3; check "Home from the game" "$(focus | grep -q $PKG/ && echo ok || echo "$(focus)")"
+    # outside games: Guide over Android's own Settings
+    a "am start -n com.android.settings/.Settings" >/dev/null; sleep 3
+    press 316; sleep 2; check "pad Guide over Settings opens the quick panel" "$(focus | grep -q QuickPanel && echo ok || echo "$(focus)")"
+    press 304; sleep 3; check "then A (Go Home) goes Home" "$(focus | grep -q $PKG/.HomeActivity && echo ok || echo "$(focus)")"
   else echo "SKIP  no pad connected: Guide checks"; fi
   a "mv $CFG.smokebak $CFG"
-  check "key helper still switched on" "$(a "settings get secure enabled_accessibility_services" | grep -q RetroKeys && echo ok || echo off)"
+  check "key helper still running" "$(bound)"
   check "no crash after games" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 fi
 echo "$fails failure(s)"
