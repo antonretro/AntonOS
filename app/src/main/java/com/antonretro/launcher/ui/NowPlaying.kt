@@ -294,7 +294,9 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     // ------------------------------------------------------------------ the visualizer (Anthony's engine, bundled; no internet)
     private fun startVisualizer() {
         if (vis == null) try {
-            vis = WebVisualizer(context, ui, style).also { v ->
+            // the native engine; the web version only if the native library can't load on this device
+            val made: VisualizerHost = try { NativeVisualizer(context, ui, style) } catch (e: Throwable) { Perf.note("native visualizer unavailable: $e"); WebVisualizer(context, ui, style) }
+            vis = made.also { v ->
                 v.onReady = { names ->
                     bg.visibility = View.INVISIBLE   // the visualizer covers it: don't draw the wallpaper under it every frame
                     presets = names; preset = 0; refresh()

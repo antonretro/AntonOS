@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "com.antonretro.launcher"
-        minSdk = 21
+        minSdk = 25   // Android 7.1 (the box); the native visualizer library needs 25
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
@@ -50,6 +50,8 @@ android {
 
 dependencies {
     // the built-in player for TV, radio and videos (HLS streams from the channel list)
+    // Anthony's Retro Visualizer engine, native (C++ via JNI; armeabi-v7a + arm64-v8a), drawn in Now Playing
+    implementation(files("libs/retro-visualizer-0.1.0.aar"))
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")   // some channels in the list are DASH (.mpd)

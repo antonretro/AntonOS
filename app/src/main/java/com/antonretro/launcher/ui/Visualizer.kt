@@ -67,3 +67,51 @@ class WebVisualizer(ctx: Context, private val ui: Handler, private val style: St
     override fun loadClassicPack(path: String) = web.evaluateJavascript("loadClassicPack(${org.json.JSONObject.quote(path)})", null)
     override fun release() { pause(); web.destroy() }
 }
+
+/**
+ * Anthony's Retro Visualizer engine in native code (the retro-visualizer AAR: C++ over JNI, its own SurfaceView,
+ * 30 fps). Bit-identical to the web version and several times cheaper on the box.
+ */
+class NativeVisualizer(ctx: Context, private val ui: Handler, style: String) : VisualizerHost {
+    override var onReady: ((List<String>) -> Unit)? = null
+    private val vis = com.antonretro.visualizer.VisualizerView(ctx).apply {
+        setFilter(com.antonretro.visualizer.VisualizerView.FILTER_LINEAR)
+        isFocusable = false; isFocusableInTouchMode = false
+    }
+    private val engine get() = vis.engine
+    /** the engine's own preset numbers, in the order shown in the menu */
+    private var indexes: List<Int> = emptyList()
+    override val view: View get() = vis
+
+    init {
+        engine.setVisualizer(kind(style))
+        ui.post { onReady?.invoke(names()) }
+    }
+    private fun kind(style: String) = if (style == "battery") com.antonretro.visualizer.RetroVisualizer.PLASMA else com.antonretro.visualizer.RetroVisualizer.SPECTRUM
+    private fun names(): List<String> {
+        val p = try { engine.listPresets() } catch (e: Exception) { emptyList() }
+        indexes = p.map { it.index }
+        return p.map { it.title }.ifEmpty { listOf("Random") }
+    }
+
+    private var shorts = ShortArray(0)
+    override fun feedPcm(pcm: ByteArray, channels: Int, rate: Int) {
+        val n = pcm.size / 2; if (n == 0) return
+        // the engine takes interleaved 16-bit stereo: mono is doubled, anything above stereo keeps its first two channels
+        val frames = n / channels.coerceAtLeast(1)
+        if (shorts.size < frames * 2) shorts = ShortArray(frames * 2)
+        val bb = java.nio.ByteBuffer.wrap(pcm).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        for (f in 0 until frames) {
+            val l = bb.get(f * channels); val r = if (channels >= 2) bb.get(f * channels + 1) else l
+            shorts[f * 2] = l; shorts[f * 2 + 1] = r
+        }
+        try { engine.feedPcm(shorts, frames, rate) } catch (_: Exception) {}
+    }
+    override fun setVisualizer(style: String, then: (List<String>) -> Unit) { engine.setVisualizer(kind(style)); then(names()) }
+    override fun setPreset(index: Int) { indexes.getOrNull(index)?.let { engine.setPreset(it) } }
+    override fun resize(w: Int, h: Int) {}
+    override fun pause() { engine.pause(); vis.stop() }
+    override fun resume() { vis.start(); engine.resume() }
+    override fun loadClassicPack(path: String) { try { engine.loadClassicPack(path) } catch (_: Exception) {} }
+    override fun release() { vis.release() }
+}
