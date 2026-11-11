@@ -24,6 +24,28 @@ object Backdrop {
         Scene("Midnight", 0xFF000007.toInt(), 0xFF141E46.toInt(), 0xFFC9D6FF.toInt(), 0xFF101833.toInt(), 0xFF0A1024.toInt(), 0xFF05080F.toInt(), true, 0.2f),
     )
 
+    /** Real places around the world (Unsplash, see CREDITS.md): assets/wallpapers, 1280x720, captions in credits.tsv. */
+    class Photo(val file: String, val place: String, val by: String)
+    var PHOTOS: List<Photo> = emptyList(); private set
+    fun loadPhotos(ctx: android.content.Context) {
+        if (PHOTOS.isNotEmpty()) return
+        PHOTOS = try { ctx.assets.open("wallpapers/credits.tsv").bufferedReader().readLines().mapNotNull { l -> l.split('\t').takeIf { it.size >= 3 }?.let { Photo(it[0], it[1], it[2]) } } } catch (e: Exception) { emptyList() }
+    }
+    /** One photo at screen size (for the wallpaper and the screensaver). */
+    fun photo(ctx: android.content.Context, i: Int, w: Int, h: Int): Bitmap? = try {
+        val p = PHOTOS[((i % PHOTOS.size) + PHOTOS.size) % PHOTOS.size]
+        val b = ctx.assets.open("wallpapers/" + p.file).use { BitmapFactory.decodeStream(it) }
+        if (b.width == w && b.height == h) b else Bitmap.createScaledBitmap(b, w, h, true)
+    } catch (e: Exception) { null }
+    fun buildPhoto(ctx: android.content.Context, i: Int, w: Int, h: Int): Boolean {
+        val bmp = photo(ctx, i, w, h) ?: return false
+        screenW = w; screenH = h; sharp = bmp
+        val small = Bitmap.createScaledBitmap(bmp, w / 8, h / 8, true)
+        blurred = boxBlur(boxBlur(boxBlur(small, 3), 3), 3)
+        blurredDim = blurred!!.copy(Bitmap.Config.ARGB_8888, true).also { Canvas(it).drawColor(Kit.DIM_SCROLLED) }
+        return true
+    }
+
     var sharp: Bitmap? = null; private set
     var blurred: Bitmap? = null; private set
     /** Blurred and darkened: the whole backdrop when a grid or list is showing (one full-screen layer). */

@@ -137,8 +137,11 @@ class HomeActivity : Activity() {
         if (store.hiddenTabs.remove("Videos")) { store.hiddenTabs.add("Media"); store.save() }
         val dm = resources.displayMetrics
         screenW = maxOf(dm.widthPixels, dm.heightPixels); screenH = minOf(dm.widthPixels, dm.heightPixels)
-        if (store.wallpaper !in 0 until (Backdrop.SCENES.size + Drift.PALETTES.size)) store.wallpaper = 0
-        safely("wallpaper") { if (store.wallpaper < Backdrop.SCENES.size) Backdrop.build(store.wallpaper, screenW, screenH) }
+        Backdrop.loadPhotos(this)
+        // world photos are the default now (Anthony): move older saves to them once
+        if (store.wallVersion < 2) { store.wallVersion = 2; store.wallpaper = 0; store.save() }
+        if (store.wallpaper !in 0 until wallpaperCount) store.wallpaper = 0
+        safely("wallpaper") { buildWall(store.wallpaper) }
         if (Backdrop.blurred == null) Backdrop.build(0, screenW, screenH)
         buildViews()
         setContentView(root)
@@ -146,7 +149,7 @@ class HomeActivity : Activity() {
         hideSystemBars()
         // overlays exist before anything can ask for them
         keyboard = Keyboard(this); dialog = Dialog(this)
-        saver = Screensaver(this) { i -> Backdrop.render(i, screenW, screenH) }
+        saver = Screensaver(this) { i -> Backdrop.photo(this, i, screenW, screenH) ?: Backdrop.render(i, screenW, screenH) }
         yt = YouTubeRepo(filesDir)
         Images.init(this)
         buildScreens()
@@ -156,6 +159,7 @@ class HomeActivity : Activity() {
         safely("tabs") { applyHiddenTabs() }
         showTab("Home", animate = false)
         ui.postDelayed(idleCheck, 15_000)
+        ui.postDelayed(worldTimer, 30 * 60_000L)
         safely("youtube") { rebuildYouTube() }
         safely("inputs") {
             (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(inputListener, ui)
@@ -290,7 +294,7 @@ class HomeActivity : Activity() {
             SRow("Reduce motion", { "Fewer animations, everything appears at once" }, toggle = { store.reduceMotion }, onClick = { store.reduceMotion = !store.reduceMotion; Kit.motion = if (store.reduceMotion) 0.01f else 1f; store.save() }),
             SRow("Screen size and position", { "Fit the picture to your TV" }, onClick = go(Settings.ACTION_DISPLAY_SETTINGS)),
         ) + (0 until wallpaperCount).map { i ->
-            SRow("Wallpaper: " + wallpaperName(i), { if (i >= Backdrop.SCENES.size) "Moves slowly" else null }, value = { if (store.wallpaper == i) "✓ In use" else "" }, onClick = { setWallpaper(i) })
+            SRow("Wallpaper: " + wallpaperName(i), { when { i == 0 -> "A new place every 30 minutes"; isDrift(i) -> "Moves slowly"; i <= Backdrop.PHOTOS.size -> "Photo: " + Backdrop.PHOTOS[i - 1].by + " (Unsplash)"; else -> null } }, value = { if (store.wallpaper == i) "✓ In use" else "" }, onClick = { setWallpaper(i) })
         } },
         SPage("power", "Power & TV") { listOf(
             SRow("Keep the box on when the TV turns off", { "When on, the TV remote can't control the box over HDMI" }, toggle = { hdmiControl() == 0 }, onClick = { setHdmiControl(if (hdmiControl() == 0) 1 else 0) }),
@@ -504,7 +508,7 @@ class HomeActivity : Activity() {
         return listOf(
             Item.Action("set:wifi", "Wi-Fi & Internet", "", "wifi", intent(Settings.ACTION_WIFI_SETTINGS)),
             Item.Action("set:picture", "Picture", "", "image", intent(Settings.ACTION_DISPLAY_SETTINGS)),
-            Item.Action("set:wall", "Wallpaper", Backdrop.SCENES[store.wallpaper % Backdrop.SCENES.size].name, "image") { _ -> nextWallpaper() },
+            Item.Action("set:wall", "Wallpaper", wallpaperName(store.wallpaper), "image") { _ -> nextWallpaper() },
             Item.Action("set:sound", "Sound", "", "sound", intent(Settings.ACTION_SOUND_SETTINGS)),
             Item.Action("set:apps", "Apps", "", "apps", intent(Settings.ACTION_APPLICATION_SETTINGS)),
             Item.Action("set:storage", "Storage", "", "usb", intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)),
@@ -1568,14 +1572,46 @@ class HomeActivity : Activity() {
         safeStart(i)
     }
 
-    private val wallpaperCount get() = Backdrop.SCENES.size + Drift.PALETTES.size
-    private fun wallpaperName(i: Int) = if (i < Backdrop.SCENES.size) Backdrop.SCENES[i].name else Drift.PALETTES[i - Backdrop.SCENES.size].name
+    // wallpapers: 0 world photos (rotating), then each photo on its own, then the drawn scenes, then the moving colours
+    private val wallpaperCount get() = 1 + Backdrop.PHOTOS.size + Backdrop.SCENES.size + Drift.PALETTES.size
+    private fun isDrift(i: Int) = i >= 1 + Backdrop.PHOTOS.size + Backdrop.SCENES.size
+    private fun wallpaperName(i: Int) = when {
+        i == 0 -> "World photos"
+        i <= Backdrop.PHOTOS.size -> Backdrop.PHOTOS[i - 1].place
+        !isDrift(i) -> Backdrop.SCENES[i - 1 - Backdrop.PHOTOS.size].name
+        else -> Drift.PALETTES[i - 1 - Backdrop.PHOTOS.size - Backdrop.SCENES.size].name
+    }
+    /** Builds the still picture (and its glass) for wallpaper [i]; moving colours build theirs in applyWallpaper. */
+    private fun buildWall(i: Int) {
+        val p = Backdrop.PHOTOS.size
+        when {
+            i == 0 && p > 0 -> Backdrop.buildPhoto(this, store.worldIndex, screenW, screenH)
+            i in 1..p -> Backdrop.buildPhoto(this, i - 1, screenW, screenH)
+            !isDrift(i) -> Backdrop.build(maxOf(0, i - 1 - p), screenW, screenH)
+        }
+    }
+    /** World photos: the next place, cross-faded slowly (on waking, and every 30 minutes on the launcher). */
+    private fun nextWorldPhoto() {
+        if (store.wallpaper != 0 || Backdrop.PHOTOS.isEmpty()) return
+        val old = Backdrop.sharp
+        store.worldIndex = (store.worldIndex + 1) % Backdrop.PHOTOS.size; store.worldAt = System.currentTimeMillis(); store.save()
+        if (!Backdrop.buildPhoto(this, store.worldIndex, screenW, screenH)) return
+        val now = Backdrop.sharp
+        if (old != null && now != null && bgSharp.visibility == View.VISIBLE) {
+            val t = android.graphics.drawable.TransitionDrawable(arrayOf(android.graphics.drawable.BitmapDrawable(resources, old), android.graphics.drawable.BitmapDrawable(resources, now)))
+            t.isCrossFadeEnabled = true; bgSharp.setImageDrawable(t); t.startTransition(2500)
+            ui.postDelayed({ if (Backdrop.sharp === now) bgSharp.setImageBitmap(now) }, 2700)
+        } else bgSharp.setImageBitmap(now)
+        bgBlur.setImageBitmap(Backdrop.blurredDim)
+        root.invalidate(); invalidateAll(root)
+    }
+    private val worldTimer = object : Runnable { override fun run() { if (resumed && !saver.showing && game == null) nextWorldPhoto(); ui.postDelayed(this, 30 * 60_000L) } }
 
     private fun nextWallpaper() = setWallpaper((store.wallpaper + 1) % wallpaperCount)
 
     private fun setWallpaper(i: Int) {
         store.wallpaper = i; store.save()
-        if (i < Backdrop.SCENES.size) Backdrop.build(i, screenW, screenH)
+        if (!isDrift(i)) buildWall(i)
         applyWallpaper()
         root.invalidate(); invalidateAll(root)
     }
@@ -1583,11 +1619,11 @@ class HomeActivity : Activity() {
     /** Photo-style scene, or a moving colour wallpaper drawn by DriftView. */
     private fun applyWallpaper() {
         val i = store.wallpaper.coerceIn(0, wallpaperCount - 1)
-        if (i < Backdrop.SCENES.size) {
+        if (!isDrift(i)) {
             drift.stop(); drift.visibility = View.GONE
             bgSharp.visibility = if (scrolledShown) View.INVISIBLE else View.VISIBLE; bgSharp.setImageBitmap(Backdrop.sharp)
         } else {
-            drift.palette = Drift.PALETTES[i - Backdrop.SCENES.size]
+            drift.palette = Drift.PALETTES[i - 1 - Backdrop.PHOTOS.size - Backdrop.SCENES.size]
             Backdrop.buildFromSmall(drift.snapshot(), screenW, screenH)
             bgSharp.setImageDrawable(null); bgSharp.visibility = View.GONE
             drift.visibility = View.VISIBLE; drift.start()
@@ -1606,7 +1642,7 @@ class HomeActivity : Activity() {
     }
     private var resumed = false
     private fun startSaver() { saver.clock24 = store.clock24; saver.bringToFront(); saver.show(store.saverPhotos); drift.stop() }
-    private fun stopSaver() { saver.hide(); if (store.wallpaper >= Backdrop.SCENES.size) drift.start() }
+    private fun stopSaver() { saver.hide(); if (isDrift(store.wallpaper)) drift.start() }
     private fun invalidateAll(v: View) { v.invalidate(); if (v is ViewGroup) for (i in 0 until v.childCount) invalidateAll(v.getChildAt(i)) }
 
     // ---------------------------------------------------------------- Home key, coming back
@@ -1642,7 +1678,9 @@ class HomeActivity : Activity() {
         RetroKeys.launcherShowing = true; RetroKeys.instance?.launcherChanged()
         game?.hostPause(false)
         calmKeys()
-        if (store.wallpaper >= Backdrop.SCENES.size && !saver.showing) drift.start()
+        if (isDrift(store.wallpaper) && !saver.showing) drift.start()
+        // world photos: waking up after half an hour or more shows a new place
+        if (store.wallpaper == 0 && System.currentTimeMillis() - store.worldAt > 30 * 60_000L) ui.postDelayed({ safely("world photo") { nextWorldPhoto() } }, 400)
         val day = (System.currentTimeMillis() / 86_400_000L).toInt()
         if (store.dailyWallpaper && store.wallpaperDay != day) { store.wallpaperDay = day; setWallpaper((store.wallpaper + 1) % wallpaperCount) }
         hideSystemBars()

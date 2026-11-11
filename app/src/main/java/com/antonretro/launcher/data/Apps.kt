@@ -86,6 +86,10 @@ class Store(ctx: Context) {
     var launches = mutableMapOf<String, Int>()
     var recent = mutableListOf<String>()
     var wallpaper = 0
+    /** 2: wallpaper 0 is the rotating world photos (older saves are moved to it once) */
+    var wallVersion = 0
+    var worldIndex = 0
+    var worldAt = 0L
     var favourites = mutableListOf<String>()      // channel urls, in the order starred
     var recentChannels = mutableListOf<String>()  // newest first
     var lastTv: String? = null
@@ -118,7 +122,7 @@ class Store(ctx: Context) {
             hidden = o.optJSONArray("hidden").strings().toMutableSet()
             recent = o.optJSONArray("recent").strings().toMutableList()
             o.optJSONObject("launches")?.let { l -> l.keys().forEach { launches[it] = l.optInt(it) } }
-            wallpaper = o.optInt("wallpaper", 0)
+            wallpaper = o.optInt("wallpaper", 0); wallVersion = o.optInt("wallVersion", 0); worldIndex = o.optInt("worldIndex", 0); worldAt = o.optLong("worldAt", 0L)
             favourites = o.optJSONArray("favourites").strings().toMutableList()
             recentChannels = o.optJSONArray("recentChannels").strings().toMutableList()
             lastTv = o.optString("lastTv").ifEmpty { null }
@@ -139,7 +143,7 @@ class Store(ctx: Context) {
         val o = JSONObject()
             .put("version", 1)
             .put("dock", JSONArray(dock)).put("hidden", JSONArray(hidden.toList())).put("recent", JSONArray(recent))
-            .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
+            .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper).put("wallVersion", wallVersion).put("worldIndex", worldIndex).put("worldAt", worldAt)
             .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
             .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion).put("squareCovers", squareCovers)
             .put("numbers", JSONObject(numbers as Map<*, *>)).put("hiddenGroups", JSONArray(hiddenGroups.toList())).put("hiddenChannels", JSONArray(hiddenChannels.toList()))

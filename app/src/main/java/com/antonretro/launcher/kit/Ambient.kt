@@ -67,6 +67,9 @@ class DriftView(ctx: Context) : ImageView(ctx) {
  */
 @SuppressLint("ViewConstructor")
 class Screensaver(ctx: Context, private val sceneBitmap: (Int) -> Bitmap) : FrameLayout(ctx) {
+    /** where the photo was taken and who took it, small in the corner */
+    private val caption = Kit.text(ctx, 15f, false, 0xCCFFFFFF.toInt())
+    private fun pictures() = (if (Backdrop.PHOTOS.isNotEmpty()) Backdrop.PHOTOS.indices else Backdrop.SCENES.indices).shuffled().toMutableList()
     private val ui = Handler(Looper.getMainLooper())
     private val a = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val b = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
@@ -87,6 +90,8 @@ class Screensaver(ctx: Context, private val sceneBitmap: (Int) -> Bitmap) : Fram
         Kit.shadowText(time); Kit.shadowText(date)
         clockBox.addView(time); clockBox.addView(date)
         addView(clockBox, LayoutParams(-2, -2))
+        Kit.shadowText(caption)
+        addView(caption, LayoutParams(-2, -2, android.view.Gravity.BOTTOM or android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, 48f); bottomMargin = Kit.dpi(ctx, 32f) })
     }
 
     fun show(usePhotos: Boolean) {
@@ -94,7 +99,8 @@ class Screensaver(ctx: Context, private val sceneBitmap: (Int) -> Bitmap) : Fram
         visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(1200).start()
         a.visibility = if (photos) View.VISIBLE else View.GONE; b.visibility = a.visibility
         drift.visibility = if (photos) View.GONE else View.VISIBLE
-        if (photos) { order = Backdrop.SCENES.indices.shuffled().toMutableList(); nextPhoto() } else { drift.palette = Drift.PALETTES.random(); drift.start() }
+        caption.visibility = if (photos && Backdrop.PHOTOS.isNotEmpty()) View.VISIBLE else View.GONE
+        if (photos) { order = pictures(); nextPhoto() } else { drift.palette = Drift.PALETTES.random(); drift.start() }
         tickClock(); moveClock()
     }
 
@@ -104,9 +110,11 @@ class Screensaver(ctx: Context, private val sceneBitmap: (Int) -> Bitmap) : Fram
     }
 
     private fun nextPhoto() {
-        if (order.isEmpty()) order = Backdrop.SCENES.indices.shuffled().toMutableList()
+        if (order.isEmpty()) order = pictures()
         val back = if (front === a) b else a
-        back.setImageBitmap(sceneBitmap(order.removeAt(0)))
+        val i = order.removeAt(0)
+        back.setImageBitmap(sceneBitmap(i))
+        Backdrop.PHOTOS.getOrNull(i)?.let { p -> caption.animate().alpha(0f).setDuration(600).withEndAction { caption.text = p.place + "  ·  Photo: " + p.by + " / Unsplash"; caption.animate().alpha(1f).setDuration(1200).start() }.start() }
         back.scaleX = 1.04f; back.scaleY = 1.04f; back.translationX = 0f
         back.animate().alpha(1f).setDuration(2500).start()
         // slow pan and zoom for the whole time it's showing
