@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
  * shown (never full size), keeps a memory cache and a disk cache. No big image library needed.
  */
 object Images {
-    private val mem = object : LruCache<String, Bitmap>(6 * 1024 * 1024) { override fun sizeOf(k: String, b: Bitmap) = b.byteCount }
+    private val mem = object : LruCache<String, Bitmap>(4 * 1024 * 1024) { override fun sizeOf(k: String, b: Bitmap) = b.byteCount }
     private val pool = Executors.newFixedThreadPool(3)
     private val ui = Handler(Looper.getMainLooper())
     private val failed = HashSet<String>()
@@ -45,7 +45,10 @@ object Images {
                     val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeFile(f.path, o)
                     var s = 1; while (o.outWidth / (s * 2) >= maxW && o.outHeight / (s * 2) >= maxH) s *= 2
-                    bmp = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = s })
+                    val raw = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = s })
+                    // shrink to the size it is shown at (never keep more pixels than the card has)
+                    bmp = raw?.let { r -> val k = minOf(maxW.toFloat() / r.width, maxH.toFloat() / r.height, 1f)
+                        if (k < .95f) Bitmap.createScaledBitmap(r, maxOf(1, (r.width * k).toInt()), maxOf(1, (r.height * k).toInt()), true).also { if (it !== r) r.recycle() } else r }
                 }
             } catch (_: Exception) {}
             val b = bmp

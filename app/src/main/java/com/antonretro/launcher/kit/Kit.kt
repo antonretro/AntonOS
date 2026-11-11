@@ -85,5 +85,8 @@ object Kit {
         if (android.os.Build.VERSION.SDK_INT >= 24) forceHasOverlappingRendering(false)
     }
 
-    fun shadowText(tv: TextView) = tv.setShadowLayer(12f, 0f, 2f, Color.argb(120, 0, 0, 0))
+    /** Soft text shadows are expensive to redraw while text fades or moves on the Mali-450, so they're only used
+     *  when shadowsOn; the wallpapers' built-in darker bands keep white text readable without them. */
+    @JvmStatic var shadowsOn = true   // measured: turning them off made no difference
+    fun shadowText(tv: TextView) { if (shadowsOn) tv.setShadowLayer(12f, 0f, 2f, Color.argb(120, 0, 0, 0)) }
 }

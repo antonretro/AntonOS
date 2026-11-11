@@ -40,7 +40,6 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         addView(card, LayoutParams(cw, ch))
         ring.background = FocusRing(Kit.dp(ctx, Kit.CARD_RADIUS))
         ring.alpha = 0f
-        ring.setLayerType(LAYER_TYPE_HARDWARE, null)
         addView(ring, LayoutParams(cw, ch))
         ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
         label.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
@@ -110,7 +109,8 @@ class CardFace(ctx: Context) : View(ctx) {
             override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, radius)
         }
         clipToOutline = true
-        setLayerType(LAYER_TYPE_HARDWARE, null)   // drawn once, then only transformed
+        // no per-card graphics layer: on the Mali-450 drawing the card directly is cheaper than keeping
+        // ~100 layers in graphics memory (36 MB) and compositing them
     }
 
     override fun onDraw(c: Canvas) {
@@ -186,7 +186,7 @@ object ArtMaker {
     fun fromBanner(d: Drawable, wPx: Int, hPx: Int): Art? {
         val iw = d.intrinsicWidth; val ih = d.intrinsicHeight
         if (iw < wPx * 0.7f || ih <= 0) return null   // too small: would look blurry
-        val b = toBitmap(d, wPx * 2, hPx * 2)
+        val b = toBitmap(d, wPx, hPx)   // exactly the size shown: a 2x copy costs four times the memory
         return Art(b, 0xFF222222.toInt(), 0xFF111111.toInt())
     }
 

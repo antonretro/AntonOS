@@ -28,6 +28,7 @@ object Backdrop {
     var blurred: Bitmap? = null; private set
     /** Blurred and darkened: the whole backdrop when a grid or list is showing (one full-screen layer). */
     var blurredDim: Bitmap? = null; private set
+    var lowColour = false   // tried 16-bit: no speed gain on this box, so full colour
     var screenW = 1280; private set
     var screenH = 720; private set
 
@@ -48,7 +49,9 @@ object Backdrop {
         screenW = w; screenH = h
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         draw(Canvas(bmp), SCENES[index % SCENES.size], w.toFloat(), h.toFloat())
-        sharp = bmp
+        // the full-screen picture is redrawn every frame: 16-bit with dithering halves the memory traffic on the
+        // Mali-450 (the dithering hides colour bands in the smooth skies)
+        sharp = if (lowColour) Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565).also { Canvas(it).drawBitmap(bmp, 0f, 0f, Paint(Paint.DITHER_FLAG)) } else bmp
         // glass source: shrink 8x, blur a few passes, keep it small; drawn scaled with filtering
         val sw = w / 8; val sh = h / 8
         val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)

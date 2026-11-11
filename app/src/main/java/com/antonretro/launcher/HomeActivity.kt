@@ -734,11 +734,14 @@ class HomeActivity : Activity() {
         else -> null
     }
 
+    /** Speed experiments only: words in RetroLauncher/.perf-exp switch parts of Home off for measuring. */
+    private val perfExp: String by lazy { try { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.perf-exp").readText() } catch (e: Exception) { "" } }
+
     private fun rebuildHome() {
         val dock = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }
         val playing = store.recentGames.mapNotNull { itemFor(it) }.take(6)
-        (screens["Home"] as RowsScreen).setRows(listOf(
-            Row(null, dock, glass = true),
+        (screens["Home"] as RowsScreen).setRows(if ("nokeep" in perfExp) listOf(Row(null, dock, glass = "noglass" !in perfExp)) else listOf(
+            Row(null, dock, glass = "noglass" !in perfExp),
             Row("Keep watching", homeExtra, alwaysLabel = true),
             Row("Keep playing", playing, alwaysLabel = true),
             Row("Recently used", homeRecent.filter { r -> dock.none { it.key == r.key } }, alwaysLabel = true)))
@@ -919,7 +922,7 @@ class HomeActivity : Activity() {
             val s = item.rom.system
             val dark = Color.rgb(Color.red(s.colour) / 4, Color.green(s.colour) / 4, Color.blue(s.colour) / 4)
             cell.card.art = Art(null, s.colour, dark, null, null, bigText = item.rom.title, badge = s.badge, badgeColor = 0x99000000.toInt())
-            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp) * 2, Kit.dpi(this, cell.hDp) * 2) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
+            Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
             return
         }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
@@ -955,21 +958,37 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- top shelf + backdrop
     private var shelfKey: String? = null
+    private var shelfTitle: TextView? = null
+    private var shelfSub: TextView? = null
+
+    /**
+     * The big title above the dock. One title and one line under it, created once: on a move the text dips out
+     * (90 ms), changes and comes back (220 ms). No new layers per move: stacking cross-fading layers cost the
+     * Mali-450 most of each frame when moving quickly.
+     */
     private fun updateShelf(force: Boolean = false) {
         val s = screens[current] ?: return
         val item = if (s.usesShelf) s.shelfItem() else null
         if (!force && item?.key == shelfKey) return
         shelfKey = item?.key
-        for (i in 0 until shelf.childCount) { val old = shelf.getChildAt(i); old.animate().alpha(0f).setDuration(Kit.t(Kit.T_FADE)).withEndAction { shelf.removeView(old) }.start() }
-        if (item == null) return
-        val layer = FrameLayout(this).apply { alpha = 0f }
-        // (no full-screen glow: on the Mali-450 every full-screen shader costs ~2 ms a frame)
-        val title = Kit.text(this, Kit.SHELF_TITLE, true).apply { text = item.title; Kit.shadowText(this) }
-        val sub = Kit.text(this, Kit.SHELF_SUB, false, 0xD9FFFFFF.toInt()).apply { text = "Press OK to open"; Kit.shadowText(this) }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(title, LinearLayout.LayoutParams(-1, -2)); addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 9f) }) }
-        layer.addView(box, FrameLayout.LayoutParams(Kit.dpi(this, 760f), -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); bottomMargin = Kit.dpi(this@HomeActivity, 50f) })
-        shelf.addView(layer, -1, -1)
-        layer.animate().alpha(1f).setDuration(Kit.t(Kit.T_FADE)).withLayer().start()
+        if ("noshelf" in perfExp) return
+        val title = shelfTitle ?: Kit.text(this, Kit.SHELF_TITLE, true).also { t ->
+            Kit.shadowText(t)
+            val sub = Kit.text(this, Kit.SHELF_SUB, false, 0xD9FFFFFF.toInt()).apply { Kit.shadowText(this) }
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(t, LinearLayout.LayoutParams(-1, -2)); addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 9f) }) }
+            shelf.addView(box, FrameLayout.LayoutParams(Kit.dpi(this, 760f), -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); bottomMargin = Kit.dpi(this@HomeActivity, 50f) })
+            shelfTitle = t; shelfSub = sub
+        }
+        val sub = shelfSub!!
+        val newTitle = item?.title ?: ""; val newSub = when (item) { null -> ""; is Item.Ch -> "Channel ${numberOf(item.ch)}  ·  Press OK to watch"; is Item.Game -> "Press OK to play"; else -> "Press OK to open" }
+        for (v in listOf(title, sub)) v.animate().cancel()
+        title.animate().alpha(0f).translationX(-Kit.dp(this, 8f)).setDuration(Kit.t(90)).withEndAction {
+            title.text = newTitle; sub.text = newSub
+            title.translationX = Kit.dp(this, 10f); sub.translationX = Kit.dp(this, 10f)
+            title.animate().alpha(1f).translationX(0f).setDuration(Kit.t(220)).setInterpolator(Kit.EASE).start()
+            sub.animate().alpha(1f).translationX(0f).setStartDelay(Kit.t(40)).setDuration(Kit.t(220)).setInterpolator(Kit.EASE).start()
+        }.start()
+        sub.animate().alpha(0f).setDuration(Kit.t(90)).start()
     }
 
     private fun updateScrolled() {
@@ -993,6 +1012,8 @@ class HomeActivity : Activity() {
             // the old tab leaves at once; only the new one moves (half the drawing per frame)
             old.view.animate().cancel(); old.view.visibility = View.GONE
         }
+        (old as? RowsScreen)?.let { if (it !== new) it.layers = false }
+        (new as? RowsScreen)?.layers = true
         current = name; tabIdx = tabs.indexOf(name)
         Perf.note("state tab=$name")
         // pick up games and videos added since (copied over USB or ADB) every time the tab opens

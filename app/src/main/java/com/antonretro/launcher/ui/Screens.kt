@@ -89,6 +89,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             val poolSize = minOf(row.items.size, visible + 1)
             for (pi in 0 until poolSize) {
                 val cell = CardCell(ctx, w, h, row.alwaysLabel)
+                if (layers) cell.card.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 cell.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { focusAt(ri, windows[ri] + pi, mouse = true); onHoverFocus?.invoke() }; false }
                 cell.setOnClickListener { focusAt(ri, windows[ri] + pi); ok() }
                 cell.setOnLongClickListener { focusAt(ri, windows[ri] + pi); longOk(); true }
@@ -186,6 +187,11 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
     override fun longOk() { val c = currentCell() ?: return; val i = currentItem() ?: return; onLong?.invoke(i, c) }
     fun hasItems() = rows.isNotEmpty()
     fun currentRowItems(): List<Item>? = rows.getOrNull(fr)?.items
+
+    /** Cards on the tab being shown keep a graphics layer (drawn once, then only moved); the other tabs
+     *  give theirs back, so graphics memory stays small and moving stays cheap. */
+    var layers = false
+        set(on) { field = on; for (list in cells) for (c in list) c.card.setLayerType(if (on) View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE, null) }
     fun setEmptyText(t: String) { empty?.text = t }
     /** For the start-up intro: the views that rise into place, in order. */
     fun introViews(): List<View> = (cells.getOrNull(0) ?: emptyList<View>()) + rowViews.drop(1)
