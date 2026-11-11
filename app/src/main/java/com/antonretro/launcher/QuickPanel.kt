@@ -44,6 +44,11 @@ class RetroKeys : AccessibilityService() {
         @Volatile var instance: RetroKeys? = null
         /** The app that was in front just before Retro Launcher came back (so Home knows it came from a game). */
         @Volatile var beforeLauncher: String? = null
+        /** set by the launcher while one of its own screens is in front (no Home pill there) */
+        @Volatile var launcherShowing = false
+        /** last time a real mouse moved (the launcher and the top-edge strip report it); the pill is for mouse users only */
+        @Volatile var lastMouse = 0L
+        fun mouseRecent() = android.os.SystemClock.uptimeMillis() - lastMouse < 120_000
         const val HOLD_MS = 900L
     }
     private val ui = Handler(Looper.getMainLooper())
@@ -59,7 +64,7 @@ class RetroKeys : AccessibilityService() {
             val cls = e.className?.toString() ?: ""
             // our own overlays (hint, corner button, pill) are windows of this package too: they must not count as "the launcher is in front"
             val ownOverlay = it == packageName && !cls.startsWith("com.antonretro")
-            if (it != "com.android.systemui" && it != "android" && cls != QuickPanel::class.java.name && !ownOverlay) {
+            if (it != "com.android.systemui" && it != "android" && cls != QuickPanel::class.java.name && cls != GameOverlay::class.java.name && !ownOverlay) {
                 val was = foreground; foreground = it
                 if (it == packageName && was != null && was != packageName) beforeLauncher = was
                 if (it != was) entered(was)
@@ -102,8 +107,11 @@ class RetroKeys : AccessibilityService() {
 
     /** With a mouse plugged in, a small Home button sits in the top-right corner of every app and game. */
     private var corner: TextView? = null
+    private val recheckCorner = Runnable { updateCorner() }
+    fun launcherChanged() { ui.post { updateCorner(); if (launcherShowing) { pill?.visibility = View.GONE } } }
     private fun updateCorner() {
-        val want = hasMouse() && !inLauncher() && foreground != null && !QuickPanel.showing
+        val want = mouseRecent() && !launcherShowing && !inLauncher() && foreground != null && !QuickPanel.showing && !GameOverlay.showing
+        ui.removeCallbacks(recheckCorner); if (want) ui.postDelayed(recheckCorner, 30_000)
         if (!want) { corner?.visibility = View.GONE; return }
         val c = corner ?: Kit.text(this, 22f, true).also { t ->
             t.text = "⌂"; t.gravity = Gravity.CENTER; t.alpha = .55f
@@ -145,8 +153,8 @@ class RetroKeys : AccessibilityService() {
         if (testMode) Perf.note("quick panel trigger $why in $foreground")
         if (QuickPanel.showing) { QuickPanel.current?.goHome(); return }
         corner?.visibility = View.GONE; hintView?.visibility = View.GONE
-        // in a game every trigger leads to the one game Home Menu, which lives in Retro Launcher: just go Home
-        if (inGame()) { goHome(); return }
+        // in a game every trigger opens the game Home Menu on top of the paused game
+        if (inGame()) { showGameMenu(); return }
         val app = foreground
         if (app == null || app == packageName) { goHome(); return }
         try {
@@ -156,6 +164,13 @@ class RetroKeys : AccessibilityService() {
     }
 
     fun panelClosed() { ui.postDelayed({ updateCorner() }, 300) }
+
+    /** The game Home Menu over the running game; if it can't open, Home is the safe answer. */
+    fun showGameMenu() {
+        if (GameOverlay.showing) { GameOverlay.current?.resumeGame(); return }
+        try { startActivity(Intent(this, GameOverlay::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)) }
+        catch (e: Exception) { Perf.note("game menu over the game failed: $e"); goHome() }
+    }
 
     fun goHome() {
         if (!performGlobalAction(GLOBAL_ACTION_HOME))
@@ -168,6 +183,13 @@ class RetroKeys : AccessibilityService() {
     override fun onKeyEvent(e: KeyEvent): Boolean {
         val code = e.keyCode; val down = e.action == KeyEvent.ACTION_DOWN
         if (down && testMode) Perf.note("keys helper saw $code in $foreground")
+        // the game menu over a game: Home or the Xbox button again goes back into the game (like a console)
+        if (GameOverlay.showing) {
+            if (code == KeyEvent.KEYCODE_HOME || code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) GameOverlay.current?.resumeGame(); return true }
+            return false
+        }
+        // in a game, Home opens the menu over it instead of leaving (consumed here, so Android never goes Home)
+        if (code == KeyEvent.KEYCODE_HOME && inGame()) { if (down && e.repeatCount == 0) showGameMenu(); return true }
         if (QuickPanel.showing) {
             // the panel handles its own keys; a trigger pressed again means "just go Home"
             if (code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) trigger("Guide again"); return true }
@@ -225,7 +247,9 @@ class RetroKeys : AccessibilityService() {
         if (edge != null) return
         try {
             val strip = View(this)
-            strip.setOnHoverListener { _, ev -> if (ev.action == MotionEvent.ACTION_HOVER_ENTER && !inLauncher() && !QuickPanel.showing) showPill(); false }
+            strip.setOnHoverListener { _, ev ->
+                if (ev.action == MotionEvent.ACTION_HOVER_ENTER) { lastMouse = android.os.SystemClock.uptimeMillis(); if (!launcherShowing && !inLauncher() && !QuickPanel.showing && !GameOverlay.showing) { showPill(); updateCorner() } }
+                false }
             wm.addView(strip, WindowManager.LayoutParams(-1, 2, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP })

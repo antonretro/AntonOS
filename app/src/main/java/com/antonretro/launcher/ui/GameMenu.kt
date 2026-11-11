@@ -25,7 +25,7 @@ import java.io.File
  * controllers; big choices on the right (Resume first). Lives inside Retro Launcher, so it needs no overlay.
  */
 @SuppressLint("ViewConstructor")
-class GameMenu(ctx: Context) : FrameLayout(ctx) {
+class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayout(ctx) {
     var onResume: ((Rom) -> Unit)? = null
     var onLeave: ((Rom) -> Unit)? = null
     var onRestart: ((Rom) -> Unit)? = null          // relaunch the game (after options were written)
@@ -56,8 +56,9 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
 
     init {
         visibility = View.GONE; isClickable = true
-        addView(ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; Backdrop.blurredDim?.let { setImageBitmap(it) } }, -1, -1)
-        addView(View(ctx).apply { setBackgroundColor(Color.argb(140, 6, 8, 14)) }, -1, -1)
+        // over the game: the paused game stays visible behind a dark veil; in the launcher: the blurred wallpaper
+        if (!overGame) addView(ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; Backdrop.blurredDim?.let { setImageBitmap(it) } }, -1, -1)
+        addView(View(ctx).apply { setBackgroundColor(if (overGame) Color.argb(200, 6, 8, 14) else Color.argb(140, 6, 8, 14)) }, -1, -1)
         val left = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         artBox.background = GlassDrawable(artBox, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         artBox.setPadding(Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f))

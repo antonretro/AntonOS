@@ -165,6 +165,8 @@ class HomeActivity : Activity() {
         ui.postDelayed({ safely("videos") { rebuildVideos() } }, 1200)
         safely("apps") { loadApps { safely("intro") { if (wantIntro()) playIntro() } } }
         safely("channels") { loadChannels() }
+        // started fresh with something to open (a Recent card in the quick panel, or a test): open it once the lists are loaded
+        intent?.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open at start") { openKey(key) } }, 3000) }
         ui.postDelayed({ maybeRefreshGuide(12 * HOUR) }, 60_000)
         ui.postDelayed(guideTimer, 30_000)
         safely("keys helper") { reattachKeysHelper() }
@@ -604,15 +606,27 @@ class HomeActivity : Activity() {
         if (game != null) return
         val g = when (id) { else -> com.antonretro.launcher.games.TotemTide(this) }
         // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
-        g.onQuit = { closeGame() }
+        g.onQuit = { closeGame(); showTab("Games") }
         root.addView(g, -1, -1); dialog.bringToFront()
         game = g; coverHome(true); g.start()
         store.noteLaunch("bi:$id")
     }
 
+    /** What the game menu over a RetroArch game asked for. */
+    private fun gameAction(act: String, key: String?) {
+        val rom = key?.let { itemFor(it) as? Item.Game }?.rom ?: com.antonretro.launcher.GameOverlay.lastRom(this)
+        Perf.note("game action $act rom=${rom?.title}")
+        when (act) {
+            "leave" -> { gameAway = null; RetroKeys.beforeLauncher = null; ui.postDelayed({ endEngine() }, 700); showTab("Games"); rom?.let { notice("Game closed", it.title) } }
+            "restart" -> { RetroKeys.beforeLauncher = null; ui.postDelayed({ endEngine(); ui.postDelayed({ rom?.let { playGame(it, null) } }, 900) }, 600) }
+            "settings" -> { RetroKeys.beforeLauncher = null; showTab("Settings"); settingsScreen.open("Games") }
+        }
+        calmKeys()
+    }
+
     private fun closeGame() {
         val g = game ?: return
-        game = null; g.release(); root.removeView(g); coverHome(false)
+        game = null; g.release(); root.removeView(g); coverHome(false); calmKeys()
         if (dialog.showing) dialog.hide()
     }
 
@@ -645,7 +659,8 @@ class HomeActivity : Activity() {
             is Item.App -> safeStart(Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
             is Item.Ch -> { val l = byNumber(item.ch.radio); openPlayer(l, l.indexOfFirst { it.url == item.ch.url }.coerceAtLeast(0)) }
             is Item.Game -> playGame(item.rom, null)
-            else -> {}
+            // the game library may still be loading (just after a restart): open the game straight from its file
+            else -> if (key.startsWith("rom:")) java.io.File(key.removePrefix("rom:")).let { f -> GameRepo.systemFor(f, f.parentFile?.name)?.let { playGame(Rom(f, it), null) } }
         }
     }
 
@@ -1242,6 +1257,12 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- input: remote, controller, mouse
     private var downAt = 0L; private var longFired = false
+    /** After a game opens, closes or shows its menu, keys are ignored briefly, and a button release only counts
+     *  if its press was seen here: the press that chose "Leave" must not land as OK on the game's card and
+     *  start it again (that sent Anthony straight back into the game). */
+    private var keysCalmUntil = 0L
+    private var gamePausedAt = 0L
+    private fun calmKeys(ms: Long = 400) { keysCalmUntil = SystemClock.uptimeMillis() + ms; downAt = 0L; longFired = false }
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
@@ -1250,6 +1271,7 @@ class HomeActivity : Activity() {
         if (::saver.isInitialized && saver.showing) { if (e.action == KeyEvent.ACTION_UP) stopSaver(); return true }   // any key just wakes it
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
         // the controller's Guide/Xbox button = Home, from anywhere (before any panel can swallow it)
+        if (SystemClock.uptimeMillis() < keysCalmUntil) return true
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         // channel numbers: digits in the TV or Radio tab, or while watching
@@ -1272,7 +1294,7 @@ class HomeActivity : Activity() {
             if (e.action == KeyEvent.ACTION_DOWN) {
                 if (e.repeatCount == 0) { downAt = e.eventTime; longFired = false }
                 else if (!longFired && e.eventTime - downAt > 600) { longFired = true; if (!inTabBar) screens[current]?.longOk() }
-            } else if (e.action == KeyEvent.ACTION_UP && !longFired) onOk()
+            } else if (e.action == KeyEvent.ACTION_UP && !longFired && downAt != 0L) { downAt = 0L; onOk() }
             return true
         }
         if (e.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(e)
@@ -1340,6 +1362,7 @@ class HomeActivity : Activity() {
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
+        if (ev.isFromSource(InputDevice.SOURCE_MOUSE) && (ev.action == MotionEvent.ACTION_HOVER_MOVE || ev.action == MotionEvent.ACTION_SCROLL)) RetroKeys.lastMouse = lastInput
         if (::saver.isInitialized && saver.showing && ev.action != MotionEvent.ACTION_HOVER_MOVE) { stopSaver(); return true }
         return super.dispatchGenericMotionEvent(ev)
     }
@@ -1465,6 +1488,15 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
+        calmKeys()
+        // from the game menu shown over a RetroArch game
+        Perf.note("new intent action=${intent.action} rl_game=${intent.getStringExtra("rl_game")} rl_open=${intent.getStringExtra("rl_open")}")
+        intent.getStringExtra("rl_game")?.let { act -> gameAction(act, intent.getStringExtra("rl_rom")); return }
+        // Home or the Xbox button in a built-in game: its own pause menu (pressed again on the menu: leave)
+        game?.let { g -> if (Intent.ACTION_MAIN == intent.action && intent.getStringExtra("rl_open") == null) {
+            // Android pauses us just before delivering Home, and that pause already paused the game: that's still the first press
+            val firstPress = g.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY || SystemClock.uptimeMillis() - gamePausedAt < 800
+            if (firstPress) { g.pauseGame(); return } else { closeGame(); showTab("Games"); return } } }
         // Home again while the game's Home Menu is up: back to the game (like a console)
         if (Intent.ACTION_MAIN == intent.action && intent.getStringExtra("rl_open") == null && ::gameMenu.isInitialized && gameMenu.showing && gameMenu.alpha > 0f) {
             // a paused game: Home again goes back into it; a game that has closed: Home just means Home
@@ -1476,11 +1508,13 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.pauseGame() }
+    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() } }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
 
     override fun onResume() {
         super.onResume()
         resumed = true; lastInput = SystemClock.uptimeMillis()
+        RetroKeys.launcherShowing = true; RetroKeys.instance?.launcherChanged()
+        calmKeys()
         if (store.wallpaper >= Backdrop.SCENES.size && !saver.showing) drift.start()
         val day = (System.currentTimeMillis() / 86_400_000L).toInt()
         if (store.dailyWallpaper && store.wallpaperDay != day) { store.wallpaperDay = day; setWallpaper((store.wallpaper + 1) % wallpaperCount) }
@@ -1497,7 +1531,11 @@ class HomeActivity : Activity() {
             val fromGame = if (RetroKeys.alive) before?.startsWith("com.retroarch") == true else homeFromGame
             val rom = gameAway ?: store.recentGames.firstOrNull()?.let { itemFor(it) as? Item.Game }?.rom
             if (fromGame) Perf.note("back from game: before=$before rom=${rom?.title}")
-            if (fromGame && rom != null && !gameMenu.showing) { RetroKeys.beforeLauncher = null; gameMenu.show(rom, gameAlive = pressed) }
+            if (fromGame && rom != null && !gameMenu.showing) {
+                RetroKeys.beforeLauncher = null
+                if (pressed) { gameMenu.show(rom, gameAlive = true); calmKeys() }    // paused behind us (helper off, or Home got through)
+                else { gameAway = null; if (current != "Games") showTab("Games"); calmKeys(); notice("Game closed", rom.title) }
+            }
             if (!fromGame) gameAway = null
             homeFromGame = false
         }, 450)
