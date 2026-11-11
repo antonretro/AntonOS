@@ -5,7 +5,7 @@ A warm late-90s style start-up: a swelling detuned-saw pad on an Eb major 9 chor
 a rising FM-bell arpeggio over it, a soft airy whoosh, and a small reverb.
 Writes app/src/main/res/raw/startup_chime.ogg (needs ffmpeg on PATH).
 
-  python launcher/tools/make_chime.py
+  python tools/make_chime.py
 """
 import os, subprocess, sys, tempfile, wave
 import numpy as np

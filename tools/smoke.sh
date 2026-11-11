@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Retro Launcher smoke test: run after every install, before telling anyone it's ready.
-#   bash launcher/tools/smoke.sh [device] [--game]
+#   bash tools/smoke.sh [device] [--game]
 # Checks: the key helper (exit button) is running, the launcher starts without crashing, it is the Home app, Home brings it back after it was
 # killed (the "killed behind a game" case), and (with --game, sound muted) Home from inside a RetroArch
 # game returns to it three times in a row. Exit code 0 = all passed.

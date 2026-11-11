@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # "Back to Home" checklist over ADB, for the remote and an Xbox-style pad (sound muted, test mode on).
-#   bash launcher/tools/hometest.sh [device]
+#   bash tools/hometest.sh [device]
 # Remote: Back = 4, Home = 3. Pad: B = 97 (Back), Guide = 110 (Home). Menu (82) opens a card's options.
 set -u
 [ -f "$(dirname "$0")/box.env" ] && . "$(dirname "$0")/box.env"   # your box address and adb, kept out of git

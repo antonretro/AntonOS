@@ -2,9 +2,9 @@
 """Retro Launcher speed check: runs PLAN.md's speed budget over ADB and prints pass/fail.
 
 Usage (PC, box on the network):
-  python launcher/tools/speedcheck.py --device <box-ip>:5555 --screenshot-only
-  python launcher/tools/speedcheck.py --device <box-ip>:5555 --yes
-  python launcher/tools/speedcheck.py --device <box-ip>:5555 --yes --compile-test
+  python tools/speedcheck.py --device <box-ip>:5555 --screenshot-only
+  python tools/speedcheck.py --device <box-ip>:5555 --yes
+  python tools/speedcheck.py --device <box-ip>:5555 --yes --compile-test
 
 Safety: this script presses keys and starts apps on the TV. Without --yes it only
 takes a screenshot (saved next to this script as last-screen.png) so you can check

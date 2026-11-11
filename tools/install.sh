@@ -2,7 +2,7 @@
 # Install Retro Launcher on the box. ALWAYS use this, never a bare `adb install`:
 # Android switches the key helper (the Xbox button / exit panel) off when the app is reinstalled, and a box
 # without it can trap you in a game. This puts it back and fails loudly if it isn't running afterwards.
-#   bash launcher/tools/install.sh [device] [apk]
+#   bash tools/install.sh [device] [apk]
 set -u
 [ -f "$(dirname "$0")/box.env" ] && . "$(dirname "$0")/box.env"   # your box address and adb, kept out of git
 DEV="${1:-${BOX:?set BOX=<box-ip>:5555 in tools/box.env}}"
