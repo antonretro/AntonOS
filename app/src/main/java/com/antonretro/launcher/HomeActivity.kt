@@ -1308,6 +1308,8 @@ class HomeActivity : Activity() {
             // mouse wheel: up/down scrolls rows, sideways (or Shift+wheel) scrolls along a row
             val v = e.getAxisValue(MotionEvent.AXIS_VSCROLL); val h = e.getAxisValue(MotionEvent.AXIS_HSCROLL)
             val shift = e.metaState and KeyEvent.META_SHIFT_ON != 0
+            // something open on top (guide, game menu, dialog, keyboard, player): the wheel goes to it, as arrow keys
+            if (overlayOpen()) { if (v != 0f) arrow(if (v < 0) 1 else -1, 0) else if (h != 0f) arrow(0, if (h < 0) 1 else -1); return true }
             if (inTabBar && v != 0f) { inTabBar = false; screens[current]?.enter(); drawTabs() }
             if (h != 0f || (shift && v != 0f)) { screens[current]?.move(0, if ((if (h != 0f) h else v) < 0) 1 else -1); return true }
             if (v != 0f) { screens[current]?.move(if (v < 0) 1 else -1, 0); return true }
@@ -1323,12 +1325,24 @@ class HomeActivity : Activity() {
     }
 
     private var stickDir = 0 to 0
-    private val stickRepeat = object : Runnable { override fun run() { if (stickDir != (0 to 0)) { move(stickDir.second, stickDir.first); ui.postDelayed(this, 140) } } }
+    private val stickRepeat = object : Runnable { override fun run() { if (stickDir != (0 to 0)) { arrow(stickDir.second, stickDir.first); ui.postDelayed(this, 140) } } }
     private fun stick(dx: Int, dy: Int) {
         if ((dx to dy) == stickDir) return
         stickDir = dx to dy; ui.removeCallbacks(stickRepeat)
-        if (dx != 0 || dy != 0) { move(dy, dx); ui.postDelayed(stickRepeat, 380) }
+        if (dx != 0 || dy != 0) { arrow(dy, dx); ui.postDelayed(stickRepeat, 380) }
     }
+
+    /** The pad's D-pad/stick and the mouse wheel arrive as motion: turn them into real arrow keys, so they reach
+     *  whatever is on top (the guide, the game menu, a dialog, the player) exactly like the remote does.
+     *  (Before, they moved the tab underneath, and the guide looked frozen with a pad.) */
+    private fun arrow(dr: Int, dc: Int) {
+        val code = when { dr < 0 -> KeyEvent.KEYCODE_DPAD_UP; dr > 0 -> KeyEvent.KEYCODE_DPAD_DOWN; dc < 0 -> KeyEvent.KEYCODE_DPAD_LEFT; else -> KeyEvent.KEYCODE_DPAD_RIGHT }
+        val t = SystemClock.uptimeMillis()
+        dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0))
+    }
+
+    private fun overlayOpen() = (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
+        (::dialog.isInitialized && dialog.showing) || (::keyboard.isInitialized && keyboard.showing) || (::player.isInitialized && player.showing)
 
     // ---------------------------------------------------------------- opening things
     private fun open(item: Item, cell: CardCell) {

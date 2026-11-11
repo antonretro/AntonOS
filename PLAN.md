@@ -227,6 +227,10 @@ Anthony: "I want this menu to have flavor ... you can install themes". This affe
 - **Installing:** a theme pack is a zip with `theme.json` and assets, installed from a USB drive, Downloads or Files, validated strictly (size limits, only known keys, images and sounds decoded safely, nothing executable). Later a small gallery read from a folder in the GitHub repo. Format documented in `launcher/themes/THEME-FORMAT.md`.
 - Themes combine with the three home styles and the wallpaper picker. No copies of other platforms' themes, logos or sounds.
 
+### Voice control (late, optional)
+
+Anthony: "you can speak to it ... if it's not quite sure what you said, it will ask you to repeat ... I want to watch Bob the Sponge, or I want to listen to this music ... a cool animation, and then open the thing". A microphone button on Home (and a long press of a remote button) opens a listening card with a live sound-level animation; what was heard appears as text, then the launcher does it: open a channel by name ("watch Bob l'éponge"), a station, a game, an app, a video, play music by artist or album, go to a tab, search YouTube. When it isn't sure (low confidence, or two close matches), it says so and asks to repeat, or shows the two best matches to pick from. Microphone: the Logitech webcam already plugged into the box (046d:080a) has one; a USB microphone or the phone page's mic also work. Recognition: this box has no Google speech service, so use an offline recogniser (e.g. Vosk with a small English model, about 50 MB, checked for speed and memory on the 1 GB box) and a small fixed grammar built from the box's own channel, game and app names, so it understands those names well. The phone page's mic needs https (same constraint as the motion pointer). Off until switched on in Settings; nothing is recorded or sent anywhere.
+
 ### Web browser (built in)
 
 The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. Retro Launcher gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.
