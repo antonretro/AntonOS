@@ -44,8 +44,11 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {
         title.text = t; body.text = b
         buttons.removeAllViews(); btns.clear(); actions = choices.map { it.second }
-        // side by side only when they fit the box (about 34 characters in all); otherwise one per line
-        vertical = choices.size > 3 || choices.sumOf { it.first.length } > 34
+        // side by side only when every label really fits: measured, not guessed (a guess once cut "Leave the game" short).
+        // Each button is its text plus 28 dp padding on both sides and 8 dp margin on both sides; the box has 540 dp inside.
+        val probe = Kit.text(context, 21f, true)
+        val need = choices.sumOf { (probe.paint.measureText(it.first) + Kit.dp(context, 28f * 2 + 8f * 2) * 1.06f).toDouble() }
+        vertical = choices.size > 3 || need > Kit.dp(context, 540f)
         buttons.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         for ((i, c) in choices.withIndex()) {
             val tv = Kit.text(context, 21f, true).apply { text = c.first; gravity = Gravity.CENTER; setPadding(Kit.dpi(context, 28f), 0, Kit.dpi(context, 28f), 0) }

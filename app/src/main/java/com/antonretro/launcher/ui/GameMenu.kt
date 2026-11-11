@@ -78,7 +78,11 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
     }
 
     // ------------------------------------------------------------------ open
-    fun show(r: Rom) {
+    /** true: the game is paused behind us (Home again resumes it). false: it has closed (Home just stays Home). */
+    var alive = true; private set
+
+    fun show(r: Rom, gameAlive: Boolean = true) {
+        alive = gameAlive
         rom = r; changed = false; applying.visibility = View.GONE
         title.text = r.title; system.text = r.system.shelf
         art.setImageDrawable(GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(r.system.colour, Color.BLACK)).apply { cornerRadius = Kit.dp(context, 14f) })
@@ -119,8 +123,9 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
         paint()
     }
 
-    private fun mainPage() = setPage("main", "Paused", "Your game waits right where you left it.", listOf(
-        MRow({ "Resume" }, ok = { resume() }),
+    private fun mainPage() = setPage("main", if (alive) "Paused" else "Game closed",
+        if (alive) "Your game waits right where you left it." else "Play again starts it from its last save.", listOf(
+        MRow({ if (alive) "Resume" else "Play again" }, ok = { resume() }),
         MRow({ "Leave game" }, ok = { leavePage() }),
         MRow({ "Game options" }, ok = { optionsPage() }),
         MRow({ "Controls" }, ok = { controlsPage() }),

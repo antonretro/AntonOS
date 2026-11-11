@@ -579,6 +579,7 @@ class HomeActivity : Activity() {
                 roms = found
                 val byKey: Map<String, Item> = found.associate { it.key to Item.Game(it) } + androidGames.associateBy { it.key }
                 val rows = ArrayList<Row>()
+                rows.add(Row("Built-in games", builtInGames, alwaysLabel = true))
                 val keep = store.recentGames.mapNotNull { byKey[it] }
                 if (keep.isNotEmpty()) rows.add(Row("Keep playing", keep, alwaysLabel = true))
                 if (androidGames.isNotEmpty()) rows.add(Row("Android games", androidGames, alwaysLabel = true))
@@ -595,6 +596,48 @@ class HomeActivity : Activity() {
      * panel, in our own app, offers what to do with it. No overlay and no key helper needed. Stay on Home is
      * first, so Home then OK always gets you out.
      */
+    // ---------------------------------------------------------------- built-in games (our own, drawn on a Canvas)
+    private val builtInGames: List<Item> by lazy { listOf(Item.Action("bi:tiki", "Totem Tide", "Swap the masks, stop the tide", "tiki") { openBuiltIn("tiki") }) }
+    private var game: com.antonretro.launcher.games.PixelGame? = null
+
+    private fun openBuiltIn(id: String) {
+        if (game != null) return
+        val g = when (id) { else -> com.antonretro.launcher.games.TotemTide(this) }
+        g.onPauseAsk = {
+            g.paused = true
+            if (!dialog.showing) dialog.show("Paused", "Totem Tide",
+                "Resume" to { g.paused = false },
+                "Start again" to { g.restart(); g.paused = false },
+                "Leave the game" to { closeGame() })
+        }
+        root.addView(g, -1, -1); dialog.bringToFront()
+        game = g; coverHome(true); g.start()
+        store.noteLaunch("bi:$id")
+    }
+
+    private fun closeGame() {
+        val g = game ?: return
+        game = null; g.release(); root.removeView(g); coverHome(false)
+        if (dialog.showing) dialog.hide()
+    }
+
+    /** A card cover drawn from the game's own sprites: three masks big and sharp on a dark jungle gradient. */
+    private fun builtInCover(key: String, w: Int, h: Int): android.graphics.Bitmap {
+        val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF14424A.toInt(), 0xFF061214.toInt(), android.graphics.Shader.TileMode.CLAMP) })
+        try {
+            val sheet = assets.open("games/tiki/tiles.png").use { android.graphics.BitmapFactory.decodeStream(it) }
+            val sharp = android.graphics.Paint().apply { isFilterBitmap = false }
+            val s = (h * .42f / 14).toInt().coerceAtLeast(1); val size = 14 * s; val gap = s * 2
+            val total = size * 3 + gap * 2; var x = (w - total) / 2; val y = (h * .14f).toInt()
+            for (v in listOf(0, 3, 1)) { c.drawBitmap(sheet, android.graphics.Rect(v * 14, 0, v * 14 + 14, 14), android.graphics.Rect(x, y, x + size, y + size), sharp); x += size + gap }
+        } catch (_: Exception) {}
+        val t = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; typeface = Kit.font(this@HomeActivity, true); textSize = h * .17f }
+        c.drawText("Totem Tide", (w - t.measureText("Totem Tide")) / 2, h * .9f, t)
+        return b
+    }
+
     private lateinit var gameMenu: GameMenu
     /** Ends the paused game engine (Android lets the launcher do that while it is in the background). */
     private fun endEngine() { try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (_: Exception) {} }
@@ -1085,6 +1128,7 @@ class HomeActivity : Activity() {
             Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
             return
         }
+        if (item.key.startsWith("bi:")) { cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }
         if (item.key == "tv:guide") { cell.card.art = Art(null, 0xFF3B6FD9.toInt(), 0xFF121A33.toInt(), null, null, bigText = "TV Guide", badge = if (Guide.channelCount > 0) "${Guide.channelCount} CHANNELS" else null, badgeColor = 0x99000000.toInt()); return }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
         if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
@@ -1221,6 +1265,7 @@ class HomeActivity : Activity() {
         if (digits.isNotEmpty() && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::gameMenu.isInitialized && gameMenu.showing) return gameMenu.onKey(e)
+        game?.let { g -> if (!(::keyboard.isInitialized && keyboard.showing)) { g.key(e); return true } }
         if (::guide.isInitialized && guide.showing && guide.alpha > 0f) return guide.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true
@@ -1274,6 +1319,7 @@ class HomeActivity : Activity() {
         if (introRunning) introSkip?.invoke()
         if (::saver.isInitialized && saver.showing) stopSaver()
         if (::guide.isInitialized && guide.showing) guide.hide()
+        closeGame()
         if (::player.isInitialized && player.showing) player.close(keepRadio = true)
         if (::dialog.isInitialized && dialog.showing) dialog.hide()
         if (::keyboard.isInitialized && keyboard.showing) keyboard.close()
@@ -1341,7 +1387,7 @@ class HomeActivity : Activity() {
         dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0))
     }
 
-    private fun overlayOpen() = (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
+    private fun overlayOpen() = game != null || (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
         (::dialog.isInitialized && dialog.showing) || (::keyboard.isInitialized && keyboard.showing) || (::player.isInitialized && player.showing)
 
     // ---------------------------------------------------------------- opening things
@@ -1409,7 +1455,7 @@ class HomeActivity : Activity() {
     private val idleCheck = object : Runnable {
         override fun run() {
             val mins = store.saverMinutes
-            if (mins > 0 && resumed && !saver.showing && !(::player.isInitialized && player.showing) && !(::guide.isInitialized && guide.showing) && !dialog.showing && !keyboard.showing &&
+            if (mins > 0 && resumed && !saver.showing && !(::player.isInitialized && player.showing) && !(::guide.isInitialized && guide.showing) && game == null && !dialog.showing && !keyboard.showing &&
                 SystemClock.uptimeMillis() - lastInput > mins * 60_000L) startSaver()
             ui.postDelayed(this, 15_000)
         }
@@ -1425,13 +1471,17 @@ class HomeActivity : Activity() {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
         // Home again while the game's Home Menu is up: back to the game (like a console)
-        if (Intent.ACTION_MAIN == intent.action && intent.getStringExtra("rl_open") == null && ::gameMenu.isInitialized && gameMenu.showing && gameMenu.alpha > 0f) { gameMenu.resume(); return }
+        if (Intent.ACTION_MAIN == intent.action && intent.getStringExtra("rl_open") == null && ::gameMenu.isInitialized && gameMenu.showing && gameMenu.alpha > 0f) {
+            // a paused game: Home again goes back into it; a game that has closed: Home just means Home
+            if (gameMenu.alive) { gameMenu.resume(); return }
+            gameMenu.hide(); RetroKeys.beforeLauncher = null
+        }
         if (Intent.ACTION_MAIN == intent.action) { goHome(); homePressed = intent.getStringExtra("rl_open") == null; if (gameAway != null) homeFromGame = true }   // Home always means the Home tab, from anywhere
         intent.getStringExtra("rl_open")?.let { key -> ui.postDelayed({ safely("open recent") { openKey(key) } }, 250) }
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; drift.stop() }
+    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { it.paused = true; it.onPauseAsk?.invoke() } }
 
     override fun onResume() {
         super.onResume()
@@ -1446,12 +1496,13 @@ class HomeActivity : Activity() {
         // app was in front before us; without it, fall back to remembering the last game we started.
         // back from a game, by Home, the Xbox button, Select+Start or the game closing: the game's Home Menu.
         // The key helper knows which app was in front before us; without it, remember the last game we started.
+        val pressed = homePressed
         ui.postDelayed({
             val before = RetroKeys.beforeLauncher
             val fromGame = if (RetroKeys.alive) before?.startsWith("com.retroarch") == true else homeFromGame
             val rom = gameAway ?: store.recentGames.firstOrNull()?.let { itemFor(it) as? Item.Game }?.rom
             if (fromGame) Perf.note("back from game: before=$before rom=${rom?.title}")
-            if (fromGame && rom != null && !gameMenu.showing) { RetroKeys.beforeLauncher = null; gameMenu.show(rom) }
+            if (fromGame && rom != null && !gameMenu.showing) { RetroKeys.beforeLauncher = null; gameMenu.show(rom, gameAlive = pressed) }
             if (!fromGame) gameAway = null
             homeFromGame = false
         }, 450)
