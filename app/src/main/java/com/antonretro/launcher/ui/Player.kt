@@ -148,13 +148,22 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private fun testMuted() = java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()
 
     /** Created once at start-up so the first channel doesn't pay for it. */
+    /** Settings → TV: start fast or smoother, and the picture quality limit. Applies from the next channel. */
+    var smooth = false
+    var maxHeight = 1080
+    fun reconfigure(smooth: Boolean, maxHeight: Int) {
+        if (smooth == this.smooth && maxHeight == this.maxHeight) return
+        this.smooth = smooth; this.maxHeight = maxHeight
+        if (!showing && !playing) { player?.release(); player = null }
+    }
+
     fun prepare() {
         if (player != null) return
         val load = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(3000, 20000, 900, 1800)      // start fast, then build a cushion
+            .apply { if (smooth) setBufferDurationsMs(8000, 30000, 2500, 5000) else setBufferDurationsMs(3000, 20000, 900, 1800) }   // start fast, or wait a little for fewer pauses
             .setPrioritizeTimeOverSizeThresholds(true).build()
         val tracks = DefaultTrackSelector(context).apply {
-            setParameters(buildUponParameters().setMaxVideoSize(1920, 1080).setMaxVideoFrameRate(60).setExceedRendererCapabilitiesIfNecessary(false))
+            setParameters(buildUponParameters().setMaxVideoSize(maxHeight * 16 / 9, maxHeight).setMaxVideoFrameRate(60).setExceedRendererCapabilitiesIfNecessary(false))
         }
         val http = DefaultHttpDataSource.Factory().setUserAgent("RetroLauncher/1 (Android TV)")
             .setConnectTimeoutMs(6000).setReadTimeoutMs(8000).setAllowCrossProtocolRedirects(true)

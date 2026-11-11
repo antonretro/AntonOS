@@ -180,6 +180,7 @@ class HomeActivity : Activity() {
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
             onStar = { c -> star(c) }
         }
+        applyPlayerSettings()
         for ((name, s) in screens) {
             s.view.visibility = View.GONE
             stage.addView(s.view, -1, -1)
@@ -222,6 +223,7 @@ class HomeActivity : Activity() {
             SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your dock, hidden apps and tabs go back to how they started. Your channels and games stay.",
                 "Reset" to { store.dock.clear(); store.hidden.clear(); store.hiddenTabs.clear(); store.save(); applyHiddenTabs(); loadApps(); notice("Home screen reset", "") }, "Cancel" to {}) }),
         ) },
+        SPage("tv", "TV & Radio") { tvRows() },
         SPage("game", "Games") { gameRows() },
         SPage("apps", "Apps") { appRows() },
         SPage("usb", "Storage") { storageRows() },
@@ -304,6 +306,26 @@ class HomeActivity : Activity() {
         return out
     }
 
+    private fun applyPlayerSettings() { if (::player.isInitialized) player.reconfigure(store.playerSmooth, if (store.quality == 1) 720 else 1080) }
+
+    private fun tvRows(): List<SRow> {
+        val out = ArrayList<SRow>()
+        val qualities = listOf("Automatic", "Save data (720p)", "Best (1080p)")
+        out.add(SRow("Channel list", { "${ChannelRepo.tv.size} TV channels, ${ChannelRepo.radio.size} radio stations" }, value = { "RetroLauncher/channels.m3u" }))
+        out.add(SRow("Reload the channel list", { "After putting a new list on the box" }, onClick = { loadChannels(); notice("Channel list reloaded", "") }))
+        out.add(SRow("Starting a channel", { if (store.playerSmooth) "Waits a little longer, then fewer pauses" else "Picture comes up as fast as possible" }, value = { if (store.playerSmooth) "Smoother" else "Faster" },
+            onClick = { store.playerSmooth = !store.playerSmooth; store.save(); applyPlayerSettings() }))
+        out.add(SRow("Picture quality", value = { qualities[store.quality.coerceIn(0, 2)] }, onClick = { store.quality = (store.quality + 1) % 3; store.save(); applyPlayerSettings() }))
+        out.add(SRow("TV Guide", { "What's on now and next: coming soon" }))
+        val byUrl = (ChannelRepo.tv + ChannelRepo.radio).associateBy { it.url }
+        for (u in store.favourites) byUrl[u]?.let { c -> out.add(SRow("★  " + c.name, { "Favourite · " + c.country }, value = { "Remove" }, onClick = { star(c) })) }
+        for ((g, chans) in ChannelRepo.groups(ChannelRepo.tv) + ChannelRepo.groups(ChannelRepo.radio).map { ("Radio - " + it.first) to it.second }) {
+            out.add(SRow("Show $g", { "${chans.size} channels" }, toggle = { g !in store.hiddenGroups }, onClick = { if (!store.hiddenGroups.remove(g)) store.hiddenGroups.add(g); store.save(); rebuildChannelRows() }))
+        }
+        for (u in store.hiddenChannels) byUrl[u]?.let { c -> out.add(SRow(c.name, { "Hidden channel · " + c.country }, value = { "Show again" }, onClick = { store.hiddenChannels.remove(u); store.save(); rebuildChannelRows() })) }
+        return out
+    }
+
     /** Library-wide game options, written straight into the tuned retroarch.cfg. */
     private fun gameRows(): List<SRow> {
         fun on(k: String) = RetroConfig.get(k) == "true"
@@ -317,8 +339,25 @@ class HomeActivity : Activity() {
                 onClick = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; val i = shapes.indexOfFirst { it.first == v }; RetroConfig.set("aspect_ratio_index", shapes[(i + 1) % shapes.size].first) }),
             SRow("Smooth picture", { "Off gives sharp, blocky pixels" }, toggle = { on("video_smooth") }, onClick = { flip("video_smooth") }),
             SRow("Show messages in games", { "Small notes like \"Saved\"" }, toggle = { on("video_font_enable") }, onClick = { flip("video_font_enable") }),
-            SRow("Controllers", { "Plug in and play: controllers set themselves up" }),
+            SRow("Whole-pixel scaling", { "Every pixel the same size; may leave a border" }, toggle = { on("video_scale_integer") }, onClick = { flip("video_scale_integer") }),
+            SRow("Rewind", { "Hold a button to go back a few seconds (uses more power)" }, toggle = { on("rewind_enable") }, onClick = { flip("rewind_enable") }),
+            SRow("Game volume", value = { when (RetroConfig.get("audio_volume")?.toFloatOrNull() ?: 0f) { in -100f..-3f -> "Quieter"; in 3f..100f -> "Louder"; else -> "Normal" } },
+                onClick = { val v = RetroConfig.get("audio_volume")?.toFloatOrNull() ?: 0f; RetroConfig.set("audio_volume", if (v < -3f) "0.000000" else if (v < 3f) "6.000000" else "-6.000000") }),
+        ) + controllerGameRows() + GameRepo.SYSTEMS.distinctBy { it.shelf }.map { sys ->
+            SRow(sys.shelf, { "Engine: " + sys.core.substringBefore("_libretro").replace('_', ' ') }, value = { "${roms.count { it.system == sys }} games" })
+        } + listOf(
+            SRow("PlayStation BIOS", { "PlayStation games need a BIOS file in RetroLauncher/BIOS" }, value = {
+                val f = listOf("scph5501.bin", "scph1001.bin", "scph7001.bin", "scph5500.bin", "scph5502.bin").firstOrNull { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/BIOS/$it").exists() }
+                f?.let { "Found ($it)" } ?: "Not found" }),
+            SRow("Games folder", value = { "RetroLauncher/Games" }),
+            SRow("Look for new games", onClick = { rebuildGames(); ui.postDelayed({ notice("Games updated", "${roms.size} games in your library") }, 1200) }),
         )
+    }
+
+    private fun controllerGameRows(): List<SRow> {
+        val pads = InputDevice.getDeviceIds().toList().mapNotNull { id -> InputDevice.getDevice(id) }.filter { d -> !d.isVirtual && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (d.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) }
+        if (pads.isEmpty()) return listOf(SRow("Controllers", { "None connected. Plug one in: it sets itself up" }))
+        return pads.mapIndexed { i, d -> SRow("Player ${i + 1}: " + d.name.trim(), { "Set up automatically" }) }
     }
 
     private fun appRows(): List<SRow> = repo.apps.map { a ->
@@ -567,13 +606,17 @@ class HomeActivity : Activity() {
         val tv = ChannelRepo.tv; val radio = ChannelRepo.radio
         val byUrl = (tv + radio).associateBy { it.url }
         fun rows(list: List<Channel>, radioTab: Boolean): List<Row> {
-            val favs = store.favourites.mapNotNull { byUrl[it] }.filter { it.radio == radioTab }
+            val favs = store.favourites.mapNotNull { byUrl[it] }.filter { it.radio == radioTab && it.url !in store.hiddenChannels }
             val recent = store.recentChannels.mapNotNull { byUrl[it] }.filter { it.radio == radioTab }
             val out = ArrayList<Row>()
             if (!radioTab) store.lastTv?.let { byUrl[it] }?.let { out.add(Row("Keep watching", listOf(Item.Ch(it)), alwaysLabel = true)) }
             if (favs.isNotEmpty()) out.add(Row("Favourites", favs.map { Item.Ch(it) }, alwaysLabel = true))
             if (recent.isNotEmpty()) out.add(Row("Recent", recent.map { Item.Ch(it) }, alwaysLabel = true))
-            for ((g, chans) in ChannelRepo.groups(list)) out.add(Row("$g  ·  ${chans.size}", chans.map { Item.Ch(it) }, alwaysLabel = true))
+            for ((g, all) in ChannelRepo.groups(list)) {
+                if (g in store.hiddenGroups) continue
+                val chans = all.filter { it.url !in store.hiddenChannels }
+                if (chans.isNotEmpty()) out.add(Row("$g  ·  ${chans.size}", chans.map { Item.Ch(it) }, alwaysLabel = true))
+            }
             return out
         }
         (screens["TV"] as RowsScreen).setRows(rows(tv, false))
@@ -617,7 +660,10 @@ class HomeActivity : Activity() {
             if (store.dock.contains(item.key)) choices.add("Already on Home" to {})
             else choices.add("Pin to Home" to { store.dock.add(item.key); store.save(); rebuildHome(); notice("Pinned to Home", item.title) })
         }
-        if (item is Item.Ch) choices.add((if (item.ch.url in store.favourites) "Remove from Favourites" else "Add to Favourites") to { star(item.ch) })
+        if (item is Item.Ch) {
+            choices.add((if (item.ch.url in store.favourites) "Remove from Favourites" else "Add to Favourites") to { star(item.ch) })
+            choices.add("Hide this channel" to { store.hiddenChannels.add(item.ch.url); store.favourites.remove(item.ch.url); store.save(); rebuildChannelRows(); notice("Channel hidden", "Show it again in Settings, TV") })
+        }
         if (item is Item.App) {
             choices.add("Hide" to { store.hidden.add(item.component.packageName); store.save(); loadApps(); notice("Hidden from Apps", "Show it again in Settings, Apps") })
             choices.add("Uninstall" to { safeStart(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + item.component.packageName))) })

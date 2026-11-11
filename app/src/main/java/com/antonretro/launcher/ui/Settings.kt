@@ -51,7 +51,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
             val tv = Kit.text(ctx, 18f, true).apply { text = p.title; gravity = Gravity.CENTER_VERTICAL; setPadding(Kit.dpi(ctx, 18f), 0, Kit.dpi(ctx, 12f), 0) }
             tv.setOnHoverListener { _, e -> if (e.action == MotionEvent.ACTION_HOVER_ENTER) { active = true; inPage = false; cat = i; showPage(); paint(); onHoverFocus?.invoke() }; false }
             tv.setOnClickListener { active = true; cat = i; inPage = false; showPage(); paint() }
-            catBox.addView(tv, LinearLayout.LayoutParams(-1, Kit.dpi(ctx, 50f)).apply { bottomMargin = Kit.dpi(ctx, 3f) })
+            catBox.addView(tv, LinearLayout.LayoutParams(-1, Kit.dpi(ctx, 44f)).apply { bottomMargin = Kit.dpi(ctx, 2f) })   // eleven pages fit on screen
             catViews.add(tv)
         }
         root.addView(pageTitle, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, 410f); topMargin = Kit.dpi(ctx, 118f) })
