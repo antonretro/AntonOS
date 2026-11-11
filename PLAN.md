@@ -152,6 +152,10 @@ His words: "I want like all the settings for like RetroArch to look in the style
 - **Mouse:** hovering a card focuses it with the same lift, clicking opens it, right click opens options, the wheel scrolls rows and tabs respond to clicks. Every target is big enough to hit easily. The pointer hides after a few seconds still.
 - Switching between them is seamless: whichever was used last decides what's shown (focus ring vs hover), with no setting to change.
 
+#### Knowing what's plugged in (Anthony: "it's like, oh, it's Xbox ... or mouse connected, it understands that")
+
+Identify each device by `InputDevice` vendor/product ID and sources, from a small built-in table: Xbox (360/One/Series and "Generic X-Box pad" clones), PlayStation (DS3/DS4/DualSense), Nintendo (Switch Pro, Joy-Con), 8BitDo, Logitech, plus generic gamepad, mouse, keyboard, air-mouse remote, webcam, USB drive. Unknown pads are "Controller" with generic glyphs. The notice says what it is in plain words with our own drawn icon (never the makers' logos): "Xbox controller connected", "Mouse connected", "USB drive connected: 32 GB". Button hints everywhere switch to that family's labels (A/B/X/Y, Cross/Circle, Nintendo's swapped A/B), or to remote or mouse hints when those were used last. Settings → Controllers & Remotes lists each device with its type, a live button test, and Player 1/2 order; the right RetroArch autoconfig is applied per pad so games map correctly with no setup.
+
 ### Web browser (built in)
 
 The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. Retro Launcher gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.
@@ -326,6 +330,18 @@ Motion is where "Apple quality" is felt, so it gets its own stage and its own ch
 - **Panels and notices:** glass panels slide in with a slight overshoot-free deceleration; notices slide down from the top right and fade out.
 - One shared set of timings and curves in one file, so everything feels like the same system.
 - Rules: animate only scale, position and opacity; nothing drops below 60 fps on the box (measure with `dumpsys gfxinfo`); every animation respects a "Reduce motion" switch in Settings.
+
+### Late extras: our own Files and Store (after TV Guide, browser and the phone page)
+
+Reached from cards in Apps and Home, not new tabs (eight is the cap). Anthony: "I want the file manager to be redesigned in this OS style ... like the app store."
+
+1. **Files**, in the kit's style: internal storage, USB drives and Downloads as big cards; folders as rows with type icons and thumbnails; open with the built-in player/viewer; copy, move, rename, delete (confirm dialog), new folder; "Add to Games/Videos"; APK install with the same risk confirmation as the browser. Hide the vendor File Browser from Apps once ours covers it.
+2. **Store**, our own front end to F-Droid's catalogue: read the official repository index (signed: verify it, and every APK's hash and signature, as the F-Droid client does), stream-parse it (it is large), keep only apps that install on this box (minSdk ≤ 25, armeabi-v7a or universal). Screens: Featured for TV (a short curated list kept in this repo), categories, search, app page with screenshots and description, Install/Update/Remove through Android's package installer, an Updates list. The official F-Droid app stays installed as the fallback until ours is proven. Open-source catalogue only: no Play Store scraping, no other APK sites.
+3. Then list the remaining vendor and third-party utilities still visible (gallery, music, clock, downloads, vendor Media Center and so on) and propose, for Anthony to choose, which deserve a built-in version and which should just be hidden. Don't build those unasked.
+
+### Retro games look: sharp pixels by default
+
+Anthony: "the games to be like pixelized, like Nearest Neighbor ... by default. And then obviously there's settings to change that." The tuned `retroarch.cfg` uses nearest-neighbour (`video_smooth = "false"`), no shader, and whole-number scaling: on the box's 720-line output NES and PlayStation (240 lines ×3) and Game Boy (144 ×5) fill the height exactly; SNES and Mega Drive get 672 lines and GBA 640 with a thin border, which avoids the shimmer of uneven pixels. Settings → Games → Picture style switches between Sharp pixels (default) and Smooth. Retro games only, not Android games.
 
 ## Build order
 

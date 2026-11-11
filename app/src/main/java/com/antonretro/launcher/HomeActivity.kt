@@ -368,7 +368,7 @@ class HomeActivity : Activity() {
             SRow("Save in-game progress often", { "Writes battery saves every 10 seconds" }, toggle = { (RetroConfig.get("autosave_interval") ?: "0") != "0" }, onClick = { RetroConfig.set("autosave_interval", if ((RetroConfig.get("autosave_interval") ?: "0") != "0") "0" else "10") }),
             SRow("Picture shape", value = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; shapes.firstOrNull { it.first == v }?.second ?: "As the game was made" },
                 onClick = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; val i = shapes.indexOfFirst { it.first == v }; RetroConfig.set("aspect_ratio_index", shapes[(i + 1) % shapes.size].first) }),
-            SRow("Smooth picture", { "Off gives sharp, blocky pixels" }, toggle = { on("video_smooth") }, onClick = { flip("video_smooth") }),
+            SRow("Picture style", { if (on("video_smooth")) "Softened edges" else "Crisp, blocky pixels as on the old TVs" }, value = { if (on("video_smooth")) "Smooth" else "Sharp pixels" }, onClick = { flip("video_smooth") }),
             SRow("Show messages in games", { "Small notes like \"Saved\"" }, toggle = { on("video_font_enable") }, onClick = { flip("video_font_enable") }),
             SRow("Whole-pixel scaling", { "Every pixel the same size; may leave a border" }, toggle = { on("video_scale_integer") }, onClick = { flip("video_scale_integer") }),
             SRow("Rewind", { "Hold a button to go back a few seconds (uses more power)" }, toggle = { on("rewind_enable") }, onClick = { flip("rewind_enable") }),
