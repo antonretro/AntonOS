@@ -1330,6 +1330,7 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
+        RetroKeys.launcherKeyAt = e.eventTime   // the helper's watchdog checks keys really arrive here
         // test mode (file RetroLauncher/.test-mute, used by tools/hometest.sh): note the state after every key
         if (e.action == KeyEvent.ACTION_UP && testMode) ui.postDelayed({ noteState("key${e.keyCode}") }, 600)
         if (::saver.isInitialized && saver.showing) { if (e.action == KeyEvent.ACTION_UP) stopSaver(); return true }   // any key just wakes it

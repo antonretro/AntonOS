@@ -56,3 +56,10 @@ n=$(a "cat $LOG | wc -l" | tr -d '\r ')
 a "sendevent /dev/input/event0 1 114 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 114 0; sendevent /dev/input/event0 0 0 0"; sleep 2
 if a "tail -n +$((n+1)) $LOG" | grep -q "keys helper saw 25"; then echo "PASS  key helper connected and real remote keys pass through it"
 else echo "FAIL  remote keys are NOT reaching the helper: switching it off so the remote keeps working"; a "settings put secure enabled_accessibility_services '${others}'"; exit 3; fi
+
+# 6. ...and on into Retro Launcher itself (once a key went through the helper but never arrived, and the box looked frozen)
+a "sendevent /dev/input/event0 1 102 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 102 0; sendevent /dev/input/event0 0 0 0"; sleep 4
+n=$(a "cat $LOG | wc -l" | tr -d '\r ')
+a "sendevent /dev/input/event0 1 114 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 114 0; sendevent /dev/input/event0 0 0 0"; sleep 2
+if a "tail -n +$((n+1)) $LOG" | grep -q "state key25"; then echo "PASS  real remote keys reach Retro Launcher"
+else echo "FAIL  remote keys pass the helper but do NOT reach Retro Launcher: switching the helper off"; a "settings put secure enabled_accessibility_services '${others}'"; exit 4; fi

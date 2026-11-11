@@ -49,6 +49,8 @@ class RetroKeys : AccessibilityService() {
         /** last time a real mouse moved (the launcher and the top-edge strip report it); the pill is for mouse users only */
         @Volatile var lastMouse = 0L
         fun mouseRecent() = android.os.SystemClock.uptimeMillis() - lastMouse < 120_000
+        /** The launcher stamps every key it receives here (the watchdog compares it with what the helper passed on). */
+        @Volatile var launcherKeyAt = 0L
         const val HOLD_MS = 900L
     }
     private val ui = Handler(Looper.getMainLooper())
@@ -172,6 +174,28 @@ class RetroKeys : AccessibilityService() {
         catch (e: Exception) { Perf.note("game menu over the game failed: $e"); goHome() }
     }
 
+    // ------------------------------------------------------------------ watchdog: keys passed on but never arriving
+    private val passed = ArrayDeque<Long>()
+    private var rescuedAt = 0L
+    /** Anthony's box once froze: keys went through the helper while Retro Launcher was in front, and none arrived.
+     *  If 4 presses in 6 s pass through here and the launcher stamps none of them: first bring Retro Launcher to the
+     *  front again; if it happens again within a minute, switch this helper off so keys go straight to Android
+     *  (the launcher switches it back on at its next start). */
+    private fun watchdog(now: Long) {
+        passed.addLast(now)
+        while (passed.isNotEmpty() && now - passed.first() > 6000) passed.removeFirst()
+        if (passed.size < 4 || launcherKeyAt >= passed.first()) return
+        passed.clear()
+        if (now - rescuedAt > 60_000) {
+            rescuedAt = now
+            Perf.note("watchdog: 4 keys passed on, none reached the launcher: bringing it back to the front")
+            try { startActivity(Intent(this, HomeActivity::class.java).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } catch (_: Exception) {}
+        } else {
+            Perf.note("watchdog: keys still not arriving: switching the key helper off so the remote works")
+            if (android.os.Build.VERSION.SDK_INT >= 24) disableSelf()
+        }
+    }
+
     fun goHome() {
         if (!performGlobalAction(GLOBAL_ACTION_HOME))
             try { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
@@ -195,6 +219,7 @@ class RetroKeys : AccessibilityService() {
             if (code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) trigger("Guide again"); return true }
             return false
         }
+        if (inLauncher() && down && e.repeatCount == 0 && !GameOverlay.showing) watchdog(e.eventTime)
         if (inLauncher()) {
             // Retro Launcher handles everything itself; only the Guide button needs help (it goes Home there too)
             if (code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) goHome(); return true }
