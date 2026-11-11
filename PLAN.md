@@ -463,6 +463,16 @@ Each stage ends with a screenshot from the real box shown to Anthony. Don't move
 - Update `C:\tmp\mxq-pro\AGENTS.md` and the video doc.
 - Work is on branch `feat/tv-launcher`. Commit as you go. **Ask Anthony before pushing, opening the PR, or publishing the release.**
 
+## After release: "Retro Launcher Setup" desktop app
+
+Anthony: "an application version that ... makes it easy and connects with ADB ... very user friendly", for people without Claude Code or any AI tool. A small wizard, Windows first (kept portable to Mac and Linux), in Retro Launcher's visual style:
+1. Turn on USB debugging, with pictures of the seven taps on "Build number".
+2. Find the box on the network (scan for port 5555, or type its IP address).
+3. Approve the prompt on the TV.
+4. One **"Set up my box"** button that runs the same steps as the skill's Ship flow, with a progress list and plain-language results, a full backup first, and an **"Undo / restore my original home screen"** button.
+
+The skill's scripts are the engine (one source of truth). Google's platform-tools are fetched from the official URL on first run rather than bundled (check the licence either way). Only the safe, predictable steps (install, configure, tune, verify); the judgement steps the skill does with an AI (auditing unknown apps, deciding what to remove) stay out, shown at most as a read-only report. It never flashes firmware.
+
 ## Things to settle with Anthony
 
 - Whether to switch the box to 1080p if it turns out to be drawing at 720p.
