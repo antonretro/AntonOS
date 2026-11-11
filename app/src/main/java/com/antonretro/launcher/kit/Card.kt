@@ -39,7 +39,7 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         shadow.alpha = 0f
         addView(shadow, LayoutParams(cw + pad * 2, ch + pad * 2).apply { leftMargin = -pad; topMargin = -pad + Kit.dpi(ctx, 8f) })
         addView(card, LayoutParams(cw, ch))
-        ring.background = FocusRing { Kit.dp(ctx, if (card.art?.cover == true) Kit.R_XS else Kit.CARD_RADIUS) }
+        ring.background = FocusRing({ Kit.dp(ctx, if (card.art?.cover == true) Kit.R_XS else Kit.CARD_RADIUS) }, { card.coverBox })
         ring.alpha = 0f
         addView(ring, LayoutParams(cw, ch))
         ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
@@ -64,7 +64,7 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         val s = if (on) Kit.FOCUS_SCALE else 1f
         val lift = if (on) -Kit.dp(context, 4f) else 0f
         card.animate().scaleX(s).scaleY(s).translationY(lift).setDuration(d).setInterpolator(Kit.EASE).start()
-        shadow.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
+        shadow.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on && card.fillsCell) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
         ring.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
         label.animate().alpha(if (on) 1f else if (alwaysLabel) .62f else 0f).translationY(if (on) Kit.dp(context, 4f) else 0f).setDuration(d).start()
         translationZ = if (on) 2f else 0f   // draw above neighbours without reordering the row
@@ -82,7 +82,34 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
 }
 
 class CardFace(ctx: Context) : View(ctx) {
-    var art: Art? = null; set(v) { val shapeChanged = field?.cover != v?.cover; field = v; invalidate(); if (shapeChanged) { invalidateOutline(); (parent as? CardCell)?.ring?.invalidate() } }
+    var art: Art? = null; set(v) { field = v; trim = v?.takeIf { it.cover }?.bitmap?.let { Covers.trim(it) }; layoutCover(); invalidate(); invalidateOutline(); (parent as? CardCell)?.ring?.invalidate() }
+    /** the part of a cover picture worth showing: dark scan borders around box art cut away */
+    private var trim: Rect? = null
+    /** where the cover is drawn inside the card, or null for ordinary (full-card) art */
+    var coverBox: RectF? = null; private set
+    val fillsCell: Boolean get() = coverBox.let { it == null || (it.width() >= width - 1 && it.height() >= height - 1) }
+    private val coverSrc = Rect()
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { layoutCover(); invalidateOutline() }
+    /**
+     * Covers fill the whole card when their shape is close (cropping at most a sliver), otherwise they keep their own
+     * proportions standing on the bottom line, and the clip, focus ring and shadow follow the picture, never the empty
+     * cell: no black or light lines around box art (Anthony: "correctly zoomed ... you don't see any black lines").
+     */
+    private fun layoutCover() {
+        val a = art; val t = trim; val w = width.toFloat(); val h = height.toFloat()
+        if (a == null || !a.cover || a.bitmap == null || t == null || w <= 0f || h <= 0f) { coverBox = null; return }
+        val ar = t.width().toFloat() / t.height(); val cr = w / h
+        if (ar / cr in .86f..1.16f) {   // close enough: zoom to fill, crop the overflow evenly
+            if (ar > cr) { val sw = (t.height() * cr).toInt(); coverSrc.set(t.centerX() - sw / 2, t.top, t.centerX() - sw / 2 + sw, t.bottom) }
+            else { val sh = (t.width() / cr).toInt(); coverSrc.set(t.left, t.centerY() - sh / 2, t.right, t.centerY() - sh / 2 + sh) }
+            coverBox = RectF(0f, 0f, w, h)
+        } else {
+            coverSrc.set(t); val fs = minOf(w / t.width(), h / t.height())
+            val bw = Math.round(t.width() * fs).toFloat(); val bh = Math.round(t.height() * fs).toFloat()
+            val left = Math.round((w - bw) / 2).toFloat()
+            coverBox = RectF(left, h - bh, left + bw, h)
+        }
+    }
     var focusLook = false; set(v) { field = v; invalidate() }
     private val radius = Kit.dp(ctx, Kit.CARD_RADIUS)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -107,7 +134,11 @@ class CardFace(ctx: Context) : View(ctx) {
 
     init {
         outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, if (art?.cover == true) Kit.dp(context, Kit.R_XS) else radius)
+            override fun getOutline(view: View, outline: Outline) {
+                val b = coverBox
+                if (b != null) outline.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), Kit.dp(context, Kit.R_XS))
+                else outline.setRoundRect(0, 0, view.width, view.height, if (art?.cover == true) Kit.dp(context, Kit.R_XS) else radius)
+            }
         }
         clipToOutline = true
         // no per-card graphics layer: on the Mali-450 drawing the card directly is cheaper than keeping
@@ -118,12 +149,8 @@ class CardFace(ctx: Context) : View(ctx) {
         val w = width.toFloat(); val h = height.toFloat(); r.set(0f, 0f, w, h)
         val a = art
         // a game box: no card colour behind it, the whole box in its own proportions, standing on the bottom line
-        if (a != null && a.cover && a.bitmap != null) {
-            val b = a.bitmap; val fs = minOf(w / b.width, h / b.height)
-            val bw = b.width * fs; val bh = b.height * fs
-            c.drawBitmap(b, null, RectF((w - bw) / 2, h - bh, (w + bw) / 2, h), paint)
-            return
-        }
+        val box = coverBox
+        if (a != null && a.cover && a.bitmap != null && box != null) { c.drawBitmap(a.bitmap, coverSrc, box, paint); return }
         paint.shader = LinearGradient(0f, 0f, w, h, a?.top ?: 0xFF2A2E38.toInt(), a?.bottom ?: 0xFF15171F.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(r, paint); paint.shader = null
         a?.bitmap?.let { b ->   // banner: centre-crop to fill; box art: whole box, centred
@@ -163,11 +190,11 @@ class CardFace(ctx: Context) : View(ctx) {
     }
 }
 
-class FocusRing(private val radiusOf: () -> Float) : android.graphics.drawable.Drawable() {
+class FocusRing(private val radiusOf: () -> Float, private val boxOf: () -> RectF? = { null }) : android.graphics.drawable.Drawable() {
     private val sheen = Paint(Paint.ANTI_ALIAS_FLAG); private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f; color = Color.argb(150, 255, 255, 255) }
     private val r = RectF()
     override fun draw(c: Canvas) {
-        r.set(bounds); val radius = radiusOf()
+        r.set(bounds); boxOf()?.let { r.set(it) }; val radius = radiusOf()
         sheen.shader = LinearGradient(0f, 0f, r.width() * .6f, r.height() * .6f, Color.argb(70, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, sheen)
         r.inset(1.25f, 1.25f); c.drawRoundRect(r, radius, radius, edge)
@@ -175,6 +202,26 @@ class FocusRing(private val radiusOf: () -> Float) : android.graphics.drawable.D
     override fun setAlpha(alpha: Int) {}
     override fun setColorFilter(cf: ColorFilter?) {}
     @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
+}
+
+/** Box art from scans often carries black (or near-black) borders: find the picture inside them. */
+object Covers {
+    private val cache = java.util.WeakHashMap<Bitmap, Rect>()
+    fun trim(b: Bitmap): Rect = synchronized(cache) { cache[b] } ?: find(b).also { synchronized(cache) { cache[b] = it } }
+    private fun dark(px: Int) = Color.red(px) < 28 && Color.green(px) < 28 && Color.blue(px) < 28 || Color.alpha(px) < 40
+    /** an edge line counts as border when nearly all of it is dark */
+    private fun border(line: IntArray) = line.count { !dark(it) } < line.size / 25 + 1
+    private fun find(b: Bitmap): Rect {
+        val w = b.width; val h = b.height; val maxX = w / 8; val maxY = h / 8
+        val row = IntArray(w); val col = IntArray(h)
+        var top = 0; while (top < maxY) { b.getPixels(row, 0, w, 0, top, w, 1); if (!border(row)) break; top++ }
+        var bottom = h; while (h - bottom < maxY) { b.getPixels(row, 0, w, 0, bottom - 1, w, 1); if (!border(row)) break; bottom-- }
+        var left = 0; while (left < maxX) { b.getPixels(col, 0, 1, left, 0, 1, h); if (!border(col)) break; left++ }
+        var right = w; while (w - right < maxX) { b.getPixels(col, 0, 1, right - 1, 0, 1, h); if (!border(col)) break; right-- }
+        // one more pixel in where anything was cut: the anti-aliased seam is often a dark grey line
+        if (top > 0) top++; if (bottom < h) bottom--; if (left > 0) left++; if (right < w) right--
+        return if (right - left > w / 2 && bottom - top > h / 2) Rect(left, top, right, bottom) else Rect(0, 0, w, h)
+    }
 }
 
 /** Soft shadows are rendered once per card size and reused (never drawn per frame). */
