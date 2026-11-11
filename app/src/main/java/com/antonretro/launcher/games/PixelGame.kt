@@ -192,8 +192,14 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
     private fun options(then: () -> Unit) = menu(Screen.OPTIONS, listOf(
         Item({ "Music   < $musicVol >" }, side = { d -> musicVol = (musicVol + d).coerceIn(0, 10) }),
         Item({ "Effects   < $sfxVol >" }, side = { d -> sfxVol = (sfxVol + d).coerceIn(0, 10); play("swap") }),
-        Item({ "Start speed   $startLevel" }, side = { d -> startLevel = (startLevel + d).coerceIn(1, 9) }, ok = { startLevel = startLevel % 9 + 1 }),
+        Item({ "$levelLabel   $startLevel" }, side = { d -> startLevel = (startLevel + d).coerceIn(1, levelMax) }, ok = { startLevel = startLevel % levelMax + 1 }),
         Item({ "Back" }, ok = then)), then)
+
+    /** The options row that picks where play starts: a speed (Totem Tide) or a level (puzzles, up to the furthest reached). */
+    open val levelLabel = "Start speed"
+    open val levelMax: Int get() = 9
+    /** Puzzle games record a score per finished level, without the game-over screen. */
+    protected fun saveScore(score: Int) { record(score) }
 
     protected var lastScore = 0; protected var newBest = false
     /** Games call this when the game ends. */

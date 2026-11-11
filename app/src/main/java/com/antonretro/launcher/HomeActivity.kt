@@ -655,12 +655,14 @@ class HomeActivity : Activity() {
      * first, so Home then OK always gets you out.
      */
     // ---------------------------------------------------------------- built-in games (our own, drawn on a Canvas)
-    private val builtInGames: List<Item> by lazy { listOf(Item.Action("bi:tiki", "Totem Tide", "Swap the masks, stop the tide", "tiki") { openBuiltIn("tiki") }) }
+    private val builtInGames: List<Item> by lazy { listOf(
+        Item.Action("bi:tiki", "Totem Tide", "Swap the masks, stop the tide", "tiki") { openBuiltIn("tiki") },
+        Item.Action("bi:gear", "Gear & Ghost", "Route the energy, wake the portal", "gear") { openBuiltIn("gear") }) }
     private var game: com.antonretro.launcher.games.PixelGame? = null
 
     private fun openBuiltIn(id: String) {
         if (game != null) return
-        val g = when (id) { else -> com.antonretro.launcher.games.TotemTide(this) }
+        val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); else -> com.antonretro.launcher.games.TotemTide(this) }
         // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
         g.onQuit = { closeGame(); showTab("Games") }
         root.addView(g, -1, -1); dialog.bringToFront()
@@ -690,6 +692,20 @@ class HomeActivity : Activity() {
     private fun builtInCover(key: String, w: Int, h: Int): android.graphics.Bitmap {
         val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
         val c = android.graphics.Canvas(b)
+        if (key == "bi:gear") {
+            // Gear & Ghost: warm workshop dark, gears turning, Kiko floating, the name underneath
+            c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF3A2416.toInt(), 0xFF0E0806.toInt(), android.graphics.Shader.TileMode.CLAMP) })
+            val sharp = android.graphics.Paint().apply { isFilterBitmap = false }
+            val s = (h * .5f / 16).toInt().coerceAtLeast(1)
+            fun put(bm: android.graphics.Bitmap, x: Int, y: Int, sc: Int) = c.drawBitmap(bm, null, android.graphics.Rect(x, y, x + bm.width * sc, y + bm.height * sc), sharp)
+            val gs = s; val gearW = 16 * gs
+            put(com.antonretro.launcher.games.GearArt.gear(false, 0, stubs = false), w / 2 - gearW - gearW / 3, (h * .1f).toInt(), gs)
+            put(com.antonretro.launcher.games.GearArt.gear(true, 1, stubs = false), w / 2 + gearW / 3, (h * .16f).toInt(), (gs * 3 / 4).coerceAtLeast(1))
+            put(com.antonretro.launcher.games.GearArt.kiko(0), w / 2 - 6 * gs, (h * .22f).toInt(), gs)
+            val t = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; typeface = Kit.font(this@HomeActivity, true); textSize = h * .17f }
+            c.drawText("Gear & Ghost", (w - t.measureText("Gear & Ghost")) / 2, h * .9f, t)
+            return b
+        }
         c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF14424A.toInt(), 0xFF061214.toInt(), android.graphics.Shader.TileMode.CLAMP) })
         try {
             val sheet = assets.open("games/tiki/tiles.png").use { android.graphics.BitmapFactory.decodeStream(it) }
@@ -1221,7 +1237,18 @@ class HomeActivity : Activity() {
             bg.execute { val b = MusicRepo.cover(item.s, minOf(w, h)); if (b != null) ui.post { if (cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true, cover = true) } }
             return
         }
-        if (item.key.startsWith("bi:")) { cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }
+        if (item.key.startsWith("bi:")) {
+            // your own box art for a built-in game: RetroLauncher/Covers/<game name>.png or .jpg (e.g. "Totem Tide.png")
+            val own = listOf("png", "jpg", "jpeg").map { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/Covers/${item.title}.$it") }.firstOrNull { it.isFile }
+            if (own != null) {
+                cell.card.art = Art(null, 0xFF0C2228.toInt(), 0xFF061012.toInt())
+                bg.execute {
+                    val bm = try { android.graphics.BitmapFactory.decodeFile(own.path) } catch (e: Exception) { null }
+                    ui.post { if (bm != null && cell.tag == item.key) cell.card.art = Art(bm, 0, 0, fit = true, cover = true) }
+                }
+                return
+            }
+            cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }
         if (item.key == "tv:guide") { cell.card.art = Art(null, 0xFF3B6FD9.toInt(), 0xFF121A33.toInt(), null, null, bigText = "TV Guide", badge = if (Guide.channelCount > 0) "${Guide.channelCount} CHANNELS" else null, badgeColor = 0x99000000.toInt()); return }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
         if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
