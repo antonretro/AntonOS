@@ -241,6 +241,14 @@ Anthony: "if you have a controller, it'll show you press A for this, B for this"
 
 Anthony: default images "of like world things, like kind of how Google" does. The default theme's wallpaper becomes a rotating set of royalty-free photos of places around the world (landscapes, coasts, mountains, cities at dusk, night skies), changing slowly by default (when the box wakes or every 30 minutes, with a slow cross-fade); "one fixed" and "daily" stay as options. The screensaver uses the same set with a small caption: place name and photographer. Check how many of today's 16 wallpapers are real place photos and grow the set to 20 to 30 across continents, sized for 1280x720 so the APK stays small; credits in `launcher/CREDITS.md`; extra packs downloadable later through themes. Home text must stay readable on every photo (check the bottom darkening). No photos from Google's or Apple's own collections.
 
+### Launch splash (polish stage)
+
+Anthony: "like the Wii U splash ... it shows the splash screen as it loaded the game". Opening an app or game today leaves a black gap of a second or two. Instead, show the thing's own art centred over the blurred wallpaper while it starts: games their box art and title, built-in games their pixel logo, apps their icon and name. It never adds waiting: it only covers the time the app is already taking and goes the moment the app draws its first picture, so a fast app gets almost none. On by default; Settings can turn it off for one app or for all. Themes may restyle it later.
+
+### Closing back "into its box" (polish stage)
+
+Anthony: "when you close the app for it to kind of go into the box of where it came from, like Apple ... nice and juicy". Android 7 doesn't let a launcher animate another app's window as it closes (only the opening zoom, which we already do), so we fake the return: the moment Retro Launcher comes back, the focused card's art starts full screen and shrinks smoothly into its card with a small spring at the end, while the rest of Home fades in. Same for built-in games and the players. Respects Reduce motion; stays within the speed budget.
+
 ### Web browser (built in)
 
 The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. Retro Launcher gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.

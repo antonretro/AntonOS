@@ -1508,12 +1508,13 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() } }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
+    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
 
     override fun onResume() {
         super.onResume()
         resumed = true; lastInput = SystemClock.uptimeMillis()
         RetroKeys.launcherShowing = true; RetroKeys.instance?.launcherChanged()
+        game?.hostPause(false)
         calmKeys()
         if (store.wallpaper >= Backdrop.SCENES.size && !saver.showing) drift.start()
         val day = (System.currentTimeMillis() / 86_400_000L).toInt()

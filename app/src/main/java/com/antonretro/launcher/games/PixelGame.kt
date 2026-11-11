@@ -76,11 +76,37 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
             sounds[name] = if (f.isFile) pool.load(f.path, 1) else context.assets.openFd("games/$id/$name.wav").use { pool.load(it, 1) }
         } catch (_: Exception) {}
     }
-    fun play(name: String, vol: Float = .8f) { if (soundOn) sounds[name]?.let { pool.play(it, vol, vol, 1, 0, 1f) } }
+    fun play(name: String, vol: Float = .8f) { val v = vol * sfxVol / 10f; if (v > 0f) sounds[name]?.let { pool.play(it, v, v, 1, 0, 1f) } }
+
+    // ------------------------------------------------------------------ music: one looping track at a time
+    private var player: android.media.MediaPlayer? = null
+    private var track: String? = null
+    private var hostPaused = false
+    /** Which track should be playing now (null for none). Games decide; the shell switches tracks. */
+    open fun wantMusic(): String? = null
+    private fun musicVolume(): Float = musicVol / 10f * (if (screen == Screen.PLAY || screen == Screen.TITLE) .55f else .25f)
+    private fun updateMusic() {
+        val want = if (hostPaused || !running || musicVol == 0) null else wantMusic()
+        if (want != track) {
+            player?.release(); player = null; track = want
+            if (want != null) try {
+                val f = File(override, "$want.wav")
+                player = android.media.MediaPlayer().apply {
+                    setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    if (f.isFile) setDataSource(f.path) else context.assets.openFd("games/$id/$want.wav").use { setDataSource(it.fileDescriptor, it.startOffset, it.length) }
+                    isLooping = true; prepare(); start()
+                }
+            } catch (e: Exception) { player = null }
+        }
+        player?.let { val v = musicVolume(); it.setVolume(v, v) }
+    }
+    /** The launcher went to the background (another app, the screensaver): music stops; it comes back on return. */
+    fun hostPause(paused: Boolean) { hostPaused = paused; updateMusic() }
 
     // ------------------------------------------------------------------ saved things
     private val prefs get() = context.getSharedPreferences("games", Context.MODE_PRIVATE)
-    var soundOn: Boolean get() = prefs.getBoolean("sound:$id", true); set(v) { prefs.edit().putBoolean("sound:$id", v).apply() }
+    var musicVol: Int get() = prefs.getInt("music:$id", 7); set(v) { prefs.edit().putInt("music:$id", v).apply(); updateMusic() }
+    var sfxVol: Int get() = prefs.getInt("sfx:$id", 8); set(v) { prefs.edit().putInt("sfx:$id", v).apply() }
     var startLevel: Int get() = prefs.getInt("level:$id", 1); set(v) { prefs.edit().putInt("level:$id", v).apply() }
     val scores: List<Int> get() = prefs.getString("top:$id", "")!!.split(',').mapNotNull { it.toIntOrNull() }
     val best: Int get() = scores.maxOrNull() ?: 0
@@ -164,7 +190,8 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
     private fun resume() { screen = Screen.PLAY; items = emptyList() }
     private fun howTo(then: () -> Unit) = menu(Screen.HOWTO, listOf(Item({ "OK" }, ok = then)), then)
     private fun options(then: () -> Unit) = menu(Screen.OPTIONS, listOf(
-        Item({ "Sound   " + if (soundOn) "On" else "Off" }, side = { soundOn = !soundOn }, ok = { soundOn = !soundOn }),
+        Item({ "Music   < $musicVol >" }, side = { d -> musicVol = (musicVol + d).coerceIn(0, 10) }),
+        Item({ "Effects   < $sfxVol >" }, side = { d -> sfxVol = (sfxVol + d).coerceIn(0, 10); play("swap") }),
         Item({ "Start speed   $startLevel" }, side = { d -> startLevel = (startLevel + d).coerceIn(1, 9) }, ok = { startLevel = startLevel % 9 + 1 }),
         Item({ "Back" }, ok = then)), then)
 
@@ -200,8 +227,8 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
 
     // ------------------------------------------------------------------ loop
     fun start() { if (running) return; running = true; last = 0L; Choreographer.getInstance().postFrameCallback(this) }
-    fun stop() { running = false; Choreographer.getInstance().removeFrameCallback(this) }
-    fun release() { stop(); pool.release() }
+    fun stop() { running = false; Choreographer.getInstance().removeFrameCallback(this); updateMusic() }
+    fun release() { stop(); player?.release(); player = null; pool.release() }
 
     override fun doFrame(now: Long) {
         if (!running) return
@@ -214,6 +241,7 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
             val it = bits.iterator(); while (it.hasNext()) { val b = it.next(); b.x += b.vx; b.y += b.vy; b.vy += .12f; if (--b.life <= 0) it.remove() }
             val ip = pops.iterator(); while (ip.hasNext()) { val p = ip.next(); p.y -= .35f; if (--p.life <= 0) ip.remove() }
         }
+        if (t % 15 == 0) updateMusic()
         invalidate()
         Choreographer.getInstance().postFrameCallback(this)
     }
@@ -243,7 +271,7 @@ abstract class PixelGame(ctx: Context, val id: String, val title: String) : View
         when (screen) {
             Screen.TITLE -> { buttons(c, 110, 98, 100, 12, 3); text(c, "BEST ${best}", W - 6, H - 11, DIM, align = 1) }
             Screen.PAUSE -> { dimAll(c); panel(c, 96, 30, 224, 160); text(c, "PAUSED", 160, 40, GOLD, 2, align = 0); buttons(c, 112, 66, 96, 13, 4) }
-            Screen.OPTIONS -> { if (inGame) dimAll(c); panel(c, 80, 40, 240, 140); text(c, "OPTIONS", 160, 50, GOLD, 2, align = 0); buttons(c, 96, 76, 128, 13, 5); text(c, "LEFT / RIGHT TO CHANGE", 160, 126, DIM, align = 0) }
+            Screen.OPTIONS -> { if (inGame) dimAll(c); panel(c, 80, 30, 240, 158); text(c, "OPTIONS", 160, 40, GOLD, 2, align = 0); buttons(c, 96, 62, 128, 13, 5); text(c, "LEFT / RIGHT TO CHANGE", 160, 140, DIM, align = 0) }
             Screen.HOWTO -> {
                 if (inGame) dimAll(c); panel(c, 40, 16, 280, 166); text(c, "HOW TO PLAY", 160, 26, GOLD, 2, align = 0)
                 well(c, 50, 46, 270, 136)

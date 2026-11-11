@@ -40,6 +40,13 @@ class TotemTide(ctx: Context) : PixelGame(ctx, "tiki", "Totem Tide") {
         showTitle()
     }
 
+    /** calm on the title, the island tune while playing, faster and tenser when the stack nears the top */
+    override fun wantMusic(): String? = when (screen) {
+        Screen.TITLE, Screen.BEST -> "music_title"
+        Screen.OVER -> null
+        else -> if (inGame && danger()) "music_danger" else if (inGame) "music_play" else "music_title"
+    }
+
     override fun howToLines() = listOf(
         "SWAP TWO MASKS SIDE BY SIDE.",
         "LINE UP 3 OR MORE THE SAME",
