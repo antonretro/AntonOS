@@ -11,7 +11,6 @@ import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.media.audiofx.Visualizer
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -31,40 +30,94 @@ import com.antonretro.launcher.kit.GlassDrawable
 import com.antonretro.launcher.kit.Kit
 
 /**
- * Plays music (one queue at a time) with Android's own player, which also plays MIDI (Anthony's songs).
+ * A pass-through audio processor inside the music player: it hands a copy of the decoded sound to the visualizer
+ * and changes nothing. (Android's audiofx Visualizer effect, used before, kept songs silent in Now Playing on this
+ * box until the effect was released when leaving the screen: "I leave the app, and the music starts".)
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+class PcmTap : androidx.media3.common.audio.BaseAudioProcessor() {
+    @Volatile var listener: ((ByteArray, Int, Int) -> Unit)? = null
+    private var channels = 2; private var rate = 44100
+    override fun onConfigure(f: androidx.media3.common.audio.AudioProcessor.AudioFormat): androidx.media3.common.audio.AudioProcessor.AudioFormat {
+        if (f.encoding != androidx.media3.common.C.ENCODING_PCM_16BIT) throw androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException(f)
+        channels = f.channelCount; rate = f.sampleRate
+        return f   // same format out: nothing is altered
+    }
+    override fun queueInput(input: java.nio.ByteBuffer) {
+        val n = input.remaining(); if (n == 0) return
+        listener?.let { l -> val copy = ByteArray(n); input.duplicate().get(copy); l(copy, channels, rate) }
+        replaceOutputBuffer(n).put(input).flip()
+    }
+}
+
+/**
+ * Plays music (one queue at a time). MP3, M4A, FLAC, OGG and WAV go through Media3 with the PcmTap above, so the
+ * visualizer gets the real sound; MIDI (which Media3 can't play) uses Android's own player, without visualizer data.
  * Keeps playing when Now Playing is closed; the launcher shows a "Now playing" chip.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MusicPlayer(private val ctx: Context) {
     var queue: List<Song> = emptyList(); private set
     var index = 0; private set
     var shuffle = false; var repeat = 0          // 0 off, 1 all, 2 one
+    val tap = PcmTap()
+    private var exo: androidx.media3.exoplayer.ExoPlayer? = null
     private var mp: MediaPlayer? = null
     var onChanged: (() -> Unit)? = null
     val current: Song? get() = queue.getOrNull(index)
-    val playing: Boolean get() = try { mp?.isPlaying == true } catch (e: Exception) { false }
-    val active: Boolean get() = mp != null
-    val sessionId: Int get() = try { mp?.audioSessionId ?: 0 } catch (e: Exception) { 0 }
-    val position: Int get() = try { mp?.currentPosition ?: 0 } catch (e: Exception) { 0 }
-    val duration: Int get() = try { mp?.duration ?: 0 } catch (e: Exception) { 0 }
+    val playing: Boolean get() = try { exo?.isPlaying == true || exo?.playWhenReady == true && exo?.playbackState == androidx.media3.common.Player.STATE_BUFFERING || mp?.isPlaying == true } catch (e: Exception) { false }
+    val active: Boolean get() = exo != null || mp != null
+    val position: Int get() = try { (exo?.currentPosition ?: mp?.currentPosition?.toLong() ?: 0L).toInt() } catch (e: Exception) { 0 }
+    val duration: Int get() = try { exo?.duration?.takeIf { it > 0 }?.toInt() ?: mp?.duration ?: 0 } catch (e: Exception) { 0 }
+
+    private fun exoPlayer(): androidx.media3.exoplayer.ExoPlayer = exo ?: run {
+        val rf = object : androidx.media3.exoplayer.DefaultRenderersFactory(ctx) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf<androidx.media3.common.audio.AudioProcessor>(tap)).build()
+        }
+        androidx.media3.exoplayer.ExoPlayer.Builder(ctx, rf).build().also { p ->
+            p.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(androidx.media3.common.C.USAGE_MEDIA).setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+            p.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    Perf.note("music state $state on ${current?.title}")
+                    if (state == androidx.media3.common.Player.STATE_ENDED) next(auto = true) else onChanged?.invoke()
+                }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { onChanged?.invoke() }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { Perf.note("music error ${error.errorCodeName} on ${current?.title}"); next(auto = true) }
+            })
+            exo = p
+        }
+    }
 
     fun play(list: List<Song>, i: Int) { queue = list; index = i.coerceIn(0, list.size - 1); start() }
 
     private fun start() {
-        stopPlayer()
         val s = current ?: return
+        try { mp?.release() } catch (_: Exception) {}; mp = null
+        val midi = (s.file?.extension ?: s.asset?.substringAfterLast('.') ?: "").lowercase() in setOf("mid", "midi")
         try {
-            mp = MediaPlayer().apply {
-                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                if (s.asset != null) ctx.assets.openFd(s.asset).use { setDataSource(it.fileDescriptor, it.startOffset, it.length) } else setDataSource(s.file!!.path)
-                setOnCompletionListener { next(auto = true) }
-                setOnErrorListener { _, w, x -> Perf.note("music error $w/$x on ${s.title}"); next(auto = true); true }
-                prepare(); start()
+            if (midi) {
+                exo?.stop()
+                mp = MediaPlayer().apply {
+                    setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    if (s.asset != null) ctx.assets.openFd(s.asset).use { setDataSource(it.fileDescriptor, it.startOffset, it.length) } else setDataSource(s.file!!.path)
+                    setOnCompletionListener { next(auto = true) }
+                    prepare(); start()
+                }
+            } else {
+                val uri = if (s.asset != null) android.net.Uri.parse("asset:///" + s.asset) else android.net.Uri.fromFile(s.file)
+                exoPlayer().apply { setMediaItem(androidx.media3.common.MediaItem.fromUri(uri)); prepare(); playWhenReady = true }
             }
-        } catch (e: Exception) { Perf.note("music can't play ${s.title}: $e"); mp = null }
+            Perf.note("music start ${s.title} (${if (midi) "midi" else "media3"})")
+        } catch (e: Exception) { Perf.note("music can't play ${s.title}: $e") }
         onChanged?.invoke()
     }
 
-    fun toggle() { mp?.let { if (it.isPlaying) it.pause() else it.start() } ?: start(); onChanged?.invoke() }
+    fun toggle() {
+        exo?.let { if (it.mediaItemCount > 0) { it.playWhenReady = !it.playWhenReady; onChanged?.invoke(); return } }
+        mp?.let { if (it.isPlaying) it.pause() else it.start(); onChanged?.invoke(); return }
+        start()
+    }
     fun next(auto: Boolean = false) {
         if (queue.isEmpty()) return
         if (auto && repeat == 2) { start(); return }
@@ -72,10 +125,14 @@ class MusicPlayer(private val ctx: Context) {
                 else if (index + 1 < queue.size) index + 1 else if (repeat == 1 || !auto) 0 else { stop(); return }
         start()
     }
-    fun previous() { if (position > 3000) mp?.seekTo(0) else { index = if (index > 0) index - 1 else queue.size - 1; start() } }
-    fun seekBy(ms: Int) { mp?.let { it.seekTo((it.currentPosition + ms).coerceIn(0, it.duration.coerceAtLeast(0))) } }
-    private fun stopPlayer() { try { mp?.release() } catch (_: Exception) {}; mp = null }
-    fun stop() { stopPlayer(); onChanged?.invoke() }
+    fun previous() { if (position > 3000) seekTo(0) else { index = if (index > 0) index - 1 else queue.size - 1; start() } }
+    private fun seekTo(ms: Int) { exo?.seekTo(ms.toLong()) ?: mp?.seekTo(ms) }
+    fun seekBy(ms: Int) { seekTo((position + ms).coerceIn(0, duration.coerceAtLeast(0))) }
+    fun stop() {
+        try { mp?.release() } catch (_: Exception) {}; mp = null
+        try { exo?.release() } catch (_: Exception) {}; exo = null
+        onChanged?.invoke()
+    }
 }
 
 /**
@@ -89,7 +146,6 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     var onClose: (() -> Unit)? = null
     private val ui = Handler(Looper.getMainLooper())
     private var web: WebView? = null
-    private var vis: Visualizer? = null
     private val bg = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY }
     private val cover = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val title = Kit.text(ctx, 34f, true)
@@ -186,8 +242,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         ctls[5].view.text = if (style == "battery") "Plasma" else "Spectrum"
         ctls[6].view.text = "◀ " + (presets.getOrNull(preset) ?: "Random") + " ▶"
         progress(); paint()
-        // the visualizer listens to whatever session is playing now
-        if (showing) { stopTap(); startTap() }
+        if (showing) startTap()
     }
 
     private fun progress() {
@@ -274,41 +329,19 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         preset = 0; refresh() } }
     private fun setPreset(i: Int) { if (presets.isEmpty()) return; preset = ((i % presets.size) + presets.size) % presets.size; web?.evaluateJavascript("setPreset($preset)", null); refresh() }
 
-    /** Android's audio visualiser on the music player's session: waveform and spectrum bytes, ~15 times a second. */
+    /** The player's own pass-through tap feeds the visualizer: about 6 batches a second, base64 PCM. */
+    private val pending = java.io.ByteArrayOutputStream()
     private fun startTap() {
-        val id = music.sessionId; if (id == 0 || vis != null) return
-        try {
-            vis = Visualizer(id).apply {
-                captureSize = Visualizer.getCaptureSizeRange()[1].coerceAtMost(1024)
-                setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
-                    var wave: ByteArray? = null
-                    override fun onWaveFormDataCapture(v: Visualizer, w: ByteArray, rate: Int) { wave = w }
-                    override fun onFftDataCapture(v: Visualizer, fft: ByteArray, rate: Int) { feed(fft, wave) }
-                }, (Visualizer.getMaxCaptureRate() / 2).coerceAtMost(10000), true, true)
-                enabled = true
+        music.tap.listener = { bytes, ch, rate ->
+            var out: String? = null
+            synchronized(pending) {
+                pending.write(bytes, 0, bytes.size)
+                if (pending.size() >= rate / 6 * ch * 2) { out = android.util.Base64.encodeToString(pending.toByteArray(), android.util.Base64.NO_WRAP); pending.reset() }
             }
-        } catch (e: Throwable) { Perf.note("visualizer tap unavailable: $e"); vis = null }
-    }
-    private fun stopTap() { try { vis?.enabled = false; vis?.release() } catch (_: Exception) {}; vis = null }
-
-    private val sb = StringBuilder(12000)
-    /** Spectrum magnitudes and waveform bytes, 1024 each, in the visualizer's feedLevel() form. */
-    private fun feed(fft: ByteArray, wave: ByteArray?) {
-        val w = web ?: return
-        sb.setLength(0); sb.append("feedLevel({freq:[")
-        val bins = fft.size / 2
-        for (i in 0 until 1024) {
-            val b = (i * bins / 1024).coerceAtMost(bins - 1)
-            val re = fft[2 * b].toInt(); val im = fft[2 * b + 1].toInt()
-            val m = (Math.sqrt((re * re + im * im).toDouble()) * 2.2).toInt().coerceIn(0, 255)
-            if (i > 0) sb.append(','); sb.append(m)
+            out?.let { b64 -> ui.post { web?.evaluateJavascript("feedPcmBase64('$b64',$ch,$rate)", null) } }
         }
-        sb.append("],wave:[")
-        for (i in 0 until 1024) { val v = wave?.let { it[(i * it.size / 1024).coerceAtMost(it.size - 1)].toInt() and 0xFF } ?: 128; if (i > 0) sb.append(','); sb.append(v) }
-        sb.append("]})")
-        val js = sb.toString()
-        ui.post { w.evaluateJavascript(js, null) }
     }
+    private fun stopTap() { music.tap.listener = null; synchronized(pending) { pending.reset() } }
 
     companion object {
         /** A drawn cover for songs without one: the title on a colour of its own. */

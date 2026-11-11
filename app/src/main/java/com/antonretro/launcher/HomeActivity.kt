@@ -1208,14 +1208,14 @@ class HomeActivity : Activity() {
             val own = listOf("png", "jpg", "jpeg").map { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/Covers/${item.rom.file.nameWithoutExtension}.$it") }.firstOrNull { it.isFile }
             if (own != null) bg.execute {
                 val b = try { android.graphics.BitmapFactory.decodeFile(own.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = 1 }) } catch (e: Exception) { null }
-                ui.post { if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, square = true) }
-            } else Images.load(item.rom.boxArt, w, h) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, square = true) }
+                ui.post { if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, cover = true) }
+            } else Images.load(item.rom.boxArt, w, h) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0, 0, fit = true, cover = true) }
             return
         }
         if (item is Item.Track) {
             val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
-            cell.card.art = Art(NowPlaying.coverFor(item.s, minOf(w, h)), 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true)
-            bg.execute { val b = MusicRepo.cover(item.s, minOf(w, h)); if (b != null) ui.post { if (cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true) } }
+            cell.card.art = Art(NowPlaying.coverFor(item.s, minOf(w, h)), 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true, cover = true)
+            bg.execute { val b = MusicRepo.cover(item.s, minOf(w, h)); if (b != null) ui.post { if (cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true, cover = true) } }
             return
         }
         if (item.key.startsWith("bi:")) { cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }

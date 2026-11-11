@@ -35,8 +35,8 @@ object Kit {
     // one radius scale, nothing else. A shape inside another is concentric: its radius is the outer radius minus
     // the gap between them (inner()), never less than XS; a highlight inside a panel keeps that gap on every side
     // and never grows into the panel's edge. Siblings share one radius. Pills (half the height) only for buttons,
-    // chips and the tab bar. One deliberate exception: physical media art (game boxes) keeps square corners and its
-    // own proportions, and its focus ring is square too (Anthony: "square and not have rounded corners").
+    // chips and the tab bar. Cover art (game boxes, song covers, posters) all uses R_XS, the smallest step, and is shown
+    // whole in its own proportions (Anthony: "all retro games rounded corners for simplicity ... and all music").
     const val R_XS = 6f
     const val R_S = 12f
     const val R_M = 16f

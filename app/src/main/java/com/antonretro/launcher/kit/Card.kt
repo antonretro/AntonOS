@@ -16,7 +16,7 @@ import android.widget.TextView
 class Art(val bitmap: Bitmap?, val top: Int, val bottom: Int, val glyph: Bitmap? = null, val caption: String? = null,
           val bigText: String? = null, val badge: String? = null, val badgeColor: Int = 0xFFE5383B.toInt(), val star: Boolean = false,
           /** show the whole picture (box art) instead of cropping it to fill the card */ val fit: Boolean = false,
-          /** physical media art (game boxes): square corners, its own proportions, standing on the card's bottom line */ val square: Boolean = false)
+          /** cover art (game boxes, song covers, posters): shown whole in its own proportions, standing on the card's bottom line, with the small cover radius */ val cover: Boolean = false)
 
 /**
  * The one card: 16:9 (or poster) rounded rectangle with art, a soft pre-rendered shadow,
@@ -39,7 +39,7 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         shadow.alpha = 0f
         addView(shadow, LayoutParams(cw + pad * 2, ch + pad * 2).apply { leftMargin = -pad; topMargin = -pad + Kit.dpi(ctx, 8f) })
         addView(card, LayoutParams(cw, ch))
-        ring.background = FocusRing { if (card.art?.square == true) 0f else Kit.dp(ctx, Kit.CARD_RADIUS) }
+        ring.background = FocusRing { Kit.dp(ctx, if (card.art?.cover == true) Kit.R_XS else Kit.CARD_RADIUS) }
         ring.alpha = 0f
         addView(ring, LayoutParams(cw, ch))
         ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
@@ -82,7 +82,7 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
 }
 
 class CardFace(ctx: Context) : View(ctx) {
-    var art: Art? = null; set(v) { val shapeChanged = field?.square != v?.square; field = v; invalidate(); if (shapeChanged) { invalidateOutline(); (parent as? CardCell)?.ring?.invalidate() } }
+    var art: Art? = null; set(v) { val shapeChanged = field?.cover != v?.cover; field = v; invalidate(); if (shapeChanged) { invalidateOutline(); (parent as? CardCell)?.ring?.invalidate() } }
     var focusLook = false; set(v) { field = v; invalidate() }
     private val radius = Kit.dp(ctx, Kit.CARD_RADIUS)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -107,7 +107,7 @@ class CardFace(ctx: Context) : View(ctx) {
 
     init {
         outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, if (art?.square == true) 0f else radius)
+            override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, if (art?.cover == true) Kit.dp(context, Kit.R_XS) else radius)
         }
         clipToOutline = true
         // no per-card graphics layer: on the Mali-450 drawing the card directly is cheaper than keeping
@@ -118,7 +118,7 @@ class CardFace(ctx: Context) : View(ctx) {
         val w = width.toFloat(); val h = height.toFloat(); r.set(0f, 0f, w, h)
         val a = art
         // a game box: no card colour behind it, the whole box in its own proportions, standing on the bottom line
-        if (a != null && a.square && a.bitmap != null) {
+        if (a != null && a.cover && a.bitmap != null) {
             val b = a.bitmap; val fs = minOf(w / b.width, h / b.height)
             val bw = b.width * fs; val bh = b.height * fs
             c.drawBitmap(b, null, RectF((w - bw) / 2, h - bh, (w + bw) / 2, h), paint)
