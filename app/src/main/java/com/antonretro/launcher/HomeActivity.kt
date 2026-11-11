@@ -254,6 +254,8 @@ class HomeActivity : Activity() {
         }
         root.addView(gameMenu, -1, -1)
         player.onGuide = { c -> openGuide(c.url) }
+        player.nowNext = { c -> Guide.nowNext(c.url) }
+        player.timeText = { t -> timeFmt.format(Date(t)) }
         player.nowLine = { c -> Guide.nowNext(c.url).first?.let { "Now: ${it.title}, until ${timeFmt.format(Date(it.stop))}" } }
         for ((name, s) in screens) {
             s.view.visibility = View.GONE

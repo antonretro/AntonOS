@@ -18,14 +18,36 @@ class Video(val id: String, val title: String, val channel: String) {
  * newest 15 videos). Playing and searching are handed to SmartTube. No scraping, no own player.
  */
 class YouTubeRepo(private val dir: File) {
+    companion object {
+        /** youtube.com/@antonretro (linked from antonretro.com), checked 2026-11-11. */
+        const val ANTON_RETRO = "UCzvgzPSVxBNWtGjTtvxdmuw"
+        /** youtube.com/@multiversemayhemtv, confirmed by Anthony 2026-11-11. */
+        const val MULTIVERSE_MAYHEM = "UCOd8p4jTl-IqGHcJs2BmXrg"
+        /** Anthony's own channels: pinned first on a new box, and added once to lists made before they were defaults. */
+        val OWN = listOf(Pinned(ANTON_RETRO, "Anton Retro"), Pinned(MULTIVERSE_MAYHEM, "Multiverse Mayhem"))
+    }
     class Pinned(val id: String, val name: String)
 
-    /** Starter channels (removable): calm, family-friendly, always posting. */
-    val starters = listOf(Pinned("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA"), Pinned("UCwmZiChSryoWQCZMIQezgTg", "BBC Earth"), Pinned("UCsXVk37bltHxD1rDPwtNM8Q", "Kurzgesagt"))
+    /** Starter channels (removable): Anthony's own channel first, then calm, family-friendly ones that post often. */
+    val starters = OWN + listOf(Pinned("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA"), Pinned("UCwmZiChSryoWQCZMIQezgTg", "BBC Earth"), Pinned("UCsXVk37bltHxD1rDPwtNM8Q", "Kurzgesagt"))
 
     private val pinFile = File(dir, "youtube.json")
     var pinned: MutableList<Pinned> = load(); private set
+    /** Default channels already offered once (removing one afterwards is respected: it never comes back). */
+    private val offered: MutableSet<String> = try { val o = JSONObject(pinFile.readText())
+        val a = o.optJSONArray("offered"); val set = HashSet<String>()
+        if (a != null) for (i in 0 until a.length()) set.add(a.getString(i))
+        if (o.optBoolean("antonOffered", false)) set.add(ANTON_RETRO); set } catch (e: Exception) { HashSet() }
     var watched: MutableList<Video> = loadWatched(); private set
+    // after pinned and watched are loaded (save() writes both)
+    init {
+        var at = 0; var changed = false
+        for (p in OWN) {
+            if (p.id !in offered) { if (pinned.none { it.id == p.id }) pinned.add(at.coerceAtMost(pinned.size), p); offered.add(p.id); changed = true }
+            at = pinned.indexOfFirst { it.id == p.id } + 1
+        }
+        if (changed) save()
+    }
 
     private fun load(): MutableList<Pinned> = try {
         val a = JSONObject(pinFile.readText()).getJSONArray("pinned")
@@ -38,7 +60,7 @@ class YouTubeRepo(private val dir: File) {
 
     fun save() {
         val o = JSONObject().put("pinned", JSONArray(pinned.map { JSONObject().put("id", it.id).put("name", it.name) }))
-            .put("watched", JSONArray(watched.map { it.json() }))
+            .put("watched", JSONArray(watched.map { it.json() })).put("offered", JSONArray(offered.toList()))
         try { pinFile.writeText(o.toString()) } catch (_: Exception) {}
     }
 

@@ -29,6 +29,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.antonretro.launcher.Perf
 import com.antonretro.launcher.data.Channel
 import com.antonretro.launcher.data.Item
+import com.antonretro.launcher.data.Prog
 import com.antonretro.launcher.kit.*
 
 /**
@@ -51,6 +52,13 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val bNum = Kit.text(ctx, 20f, true, Kit.TEXT_DIM)
     private val bName = Kit.text(ctx, 30f, true)
     private val bSub = Kit.text(ctx, 17f, false, Kit.TEXT_DIM)
+    private val bLogo = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+    private val bNow = Kit.text(ctx, 20f, true)
+    private val bTrack = FrameLayout(ctx)
+    private val bFill = View(ctx)
+    private val bClock = Kit.text(ctx, 24f, true)
+    /** Now and next from the guide (either can be null). */
+    var nowNext: ((Channel) -> Pair<Prog?, Prog?>)? = null
     private val error = Kit.text(ctx, 26f, true)
     private val strip = RowsScreen(ctx, 0f, false, artFor, { item, _ -> (item as? Item.Ch)?.let { tune(list.indexOf(it.ch), 0) }; hideStrip() })
     private val stripBox = FrameLayout(ctx)
@@ -81,6 +89,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(Kit.t(220)).start()
         radioPanel.visibility = View.GONE; error.visibility = View.GONE
         cover.alpha = 0f; bNum.text = ""; bName.text = title; bSub.text = "Starting…"
+        bLogo.visibility = View.GONE; bNow.visibility = View.GONE; bTrack.visibility = View.GONE; bClock.text = clock()
         banner.animate().cancel(); banner.alpha = 1f; ui.removeCallbacks(fadeBanner)
         val p = player ?: return
         p.volume = if (testMuted()) 0f else 1f
@@ -128,14 +137,30 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         radioPanel.visibility = View.GONE
         addView(radioPanel, -1, -1)
 
-        // channel banner (top left), fades after a few seconds
+        // the watching banner: one wide glass bar along the bottom, always the full width (never a box sized to
+        // whatever text it had first, which once cut programme names off). Fades after a few seconds.
         banner.orientation = LinearLayout.HORIZONTAL; banner.gravity = Gravity.CENTER_VERTICAL
-        banner.setPadding(Kit.dpi(ctx, 14f), Kit.dpi(ctx, 12f), Kit.dpi(ctx, 26f), Kit.dpi(ctx, 12f))
-        banner.background = GlassDrawable(banner, Kit.dp(ctx, 20f), Kit.GLASS_STRONG)
-        val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(bName); addView(bSub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(ctx, 4f) }) }
-        banner.addView(bNum, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Kit.dpi(ctx, 16f) })
-        banner.addView(texts)
-        addView(banner, LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
+        banner.setPadding(Kit.dpi(ctx, 20f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 28f), Kit.dpi(ctx, 16f))
+        banner.background = GlassDrawable(banner, Kit.dp(ctx, 24f), Kit.GLASS_STRONG)
+        val left = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        bLogo.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 12f); setColor(0x22FFFFFF) }
+        bLogo.setPadding(Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f))
+        left.addView(bLogo, LinearLayout.LayoutParams(Kit.dpi(ctx, 96f), Kit.dpi(ctx, 60f)))
+        bNum.gravity = Gravity.CENTER
+        left.addView(bNum, LinearLayout.LayoutParams(Kit.dpi(ctx, 96f), -2).apply { topMargin = Kit.dpi(ctx, 6f) })
+        banner.addView(left, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Kit.dpi(ctx, 22f) })
+        val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(bName, LinearLayout.LayoutParams(-1, -2))
+        texts.addView(bNow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 6f) })
+        bTrack.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 2f); setColor(0x33FFFFFF) }
+        bFill.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 2f); setColor(Kit.ACCENT) }
+        bFill.pivotX = 0f
+        bTrack.addView(bFill, -1, -1)
+        texts.addView(bTrack, LinearLayout.LayoutParams(Kit.dpi(ctx, 460f), Kit.dpi(ctx, 4f)).apply { topMargin = Kit.dpi(ctx, 8f) })
+        texts.addView(bSub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 8f) })
+        banner.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        banner.addView(bClock, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, 24f) })
+        addView(banner, LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); rightMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
 
         error.gravity = Gravity.CENTER; error.text = "This channel isn't working right now"
         error.setPadding(Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f), Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f))
@@ -153,7 +178,11 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         mouseBack.setOnClickListener { if (mouseBack.alpha > .1f) close(keepRadio = true) }
         addView(mouseBack, LayoutParams(Kit.dpi(ctx, 120f), Kit.dpi(ctx, 46f), Gravity.END).apply { topMargin = Kit.dpi(ctx, Kit.SAFE_Y); rightMargin = Kit.dpi(ctx, Kit.SAFE_X) })
         setOnGenericMotionListener { _, e ->
-            if (e.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) { mouseBack.bringToFront(); mouseBack.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(hideMouseBack); ui.postDelayed(hideMouseBack, 3000) }
+            if (e.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) {
+                mouseBack.bringToFront(); mouseBack.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(hideMouseBack); ui.postDelayed(hideMouseBack, 3000)
+                // the banner comes up with the mouse too (not only with keys)
+                if (!stripOn) { list.getOrNull(idx)?.let { if (video == null) showGuideLines(it) }; banner.animate().cancel(); banner.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 3500) }
+            }
             false
         }
     }
@@ -221,6 +250,12 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             radioCard.tag = null; artFor(Item.Ch(c), radioCard)
         }
         bNum.text = numberOf(c).toString(); bName.text = c.name; bSub.text = "${c.country}  ·  Tuning…"
+        bNow.visibility = View.GONE; bTrack.visibility = View.GONE; bClock.text = clock()
+        bLogo.setImageDrawable(null); bLogo.visibility = View.VISIBLE
+        val logo = c.logo
+        if (logo != null) Images.load(logo, Kit.dpi(context, 84f), Kit.dpi(context, 48f)) { b -> if (b != null && list.getOrNull(idx) === c) bLogo.setImageBitmap(b) }
+        else bLogo.setImageDrawable(android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.HSVToColor(floatArrayOf(((c.name.hashCode() and 0x7fffffff) % 360).toFloat(), .55f, .48f)), 0xFF101218.toInt())).apply { cornerRadius = Kit.dp(context, 8f) })
         banner.animate().cancel(); banner.alpha = 1f
         ui.removeCallbacks(fadeBanner); ui.removeCallbacks(watchdog)
         ui.postDelayed(watchdog, 8000)
@@ -242,7 +277,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         Perf.log(if (firstTune) "channel" else "zap", SystemClock.uptimeMillis() - tunedAt)
         warmNeighbours()
         firstTune = false
-        bSub.text = (try { nowLine?.invoke(c) } catch (e: Exception) { null } ?: c.country) + "  ·  Up/Down other channels  ·  Menu guide"
+        showGuideLines(c)
         ui.postDelayed(fadeBanner, 3500)
     }
 
@@ -272,13 +307,30 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         ui.postDelayed({ if (idx == failedIdx && showing && !stripOn) tune(idx + zapDir, zapDir) }, 2000)
     }
 
+    /** Times as the launcher shows them (its own 12/24-hour setting, not Android's). */
+    var timeText: (Long) -> String = { android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(it)) }
+    private fun clock(): String = timeText(System.currentTimeMillis())
+
+    /** "Now: …" with its progress line and "Next: … at 9:30 PM" when the guide has them; otherwise the country and the keys. */
+    private fun showGuideLines(c: Channel) {
+        val (now, next) = try { nowNext?.invoke(c) ?: (null to null) } catch (e: Exception) { null to null }
+        val t = System.currentTimeMillis()
+        bClock.text = clock()
+        if (now != null) {
+            bNow.text = "Now: ${now.title}"; bNow.visibility = View.VISIBLE
+            bTrack.visibility = View.VISIBLE
+            bFill.scaleX = ((t - now.start).toFloat() / (now.stop - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
+        } else { bNow.visibility = View.GONE; bTrack.visibility = View.GONE }
+        bSub.text = (if (next != null) "Next: ${next.title} at ${timeText(next.start)}" else c.country) + "     Up/Down: other channels   ·   Menu: guide"
+    }
+
     private fun showStrip() {
         stripOn = true
         strip.setRows(listOf(Row(null, list.map { Item.Ch(it) }, alwaysLabel = false)))
         strip.jumpTo(0, idx)
         stripBox.visibility = View.VISIBLE; stripBox.translationY = Kit.dp(context, 60f); stripBox.alpha = 0f
         stripBox.animate().translationY(0f).alpha(1f).setDuration(Kit.t(260)).setInterpolator(Kit.EASE).start()
-        banner.animate().alpha(1f).setDuration(Kit.t(200)).start(); ui.removeCallbacks(fadeBanner)
+        banner.animate().alpha(0f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner)
     }
     private fun hideStrip() {
         stripOn = false

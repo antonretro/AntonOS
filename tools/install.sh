@@ -7,7 +7,9 @@ set -u
 [ -f "$(dirname "$0")/box.env" ] && . "$(dirname "$0")/box.env"   # your box address and adb, kept out of git
 DEV="${1:-${BOX:?set BOX=<box-ip>:5555 in tools/box.env}}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APK="${2:-$HERE/../app/build/outputs/apk/release/app-release.apk}"
+# builds now go to D: (tools/build.sh); fall back to the old place on C:
+APK_D="/d/rl-build/out/app/outputs/apk/release/app-release.apk"
+APK="${2:-$([ -f "$APK_D" ] && echo "$APK_D" || echo "$HERE/../app/build/outputs/apk/release/app-release.apk")}"
 ADB="${ADB:-adb}"
 # Windows adb needs a Windows path for the file (path conversion is off for the shell commands below)
 command -v cygpath >/dev/null 2>&1 && APK="$(cygpath -w "$APK")"
