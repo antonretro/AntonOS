@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Retro Launcher mockup: the 3D game page</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* A mockup of the game page between the shelf and the game (PLAN.md, "The 3D game page").
+   Keys: arrows, Enter = OK, Esc/Backspace = Back, Q/E or [ ] = LB/RB (hold to flip fast). Mouse: click, wheel, drag the box.
+   Covers come from the libretro thumbnail server when online (not stored here); offline they're drawn. */
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Roboto,"Segoe UI",system-ui,sans-serif;color:#fff}
+#fit{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+#stage{position:absolute;inset:0;overflow:hidden;background:#0b0d12}
+.wash{position:absolute;inset:-80px;background-size:cover;background-position:center;filter:blur(60px) saturate(1.3) brightness(.38);transition:opacity .45s;opacity:0}
+.wash.on{opacity:1}
+#veil{position:absolute;inset:0;background:radial-gradient(ellipse at 28% 55%,rgba(0,0,0,0) 0,rgba(0,0,0,.55) 70%)}
+/* shelf (where we come from) */
+#shelf{position:absolute;left:0;right:0;top:0;bottom:0;transition:opacity .35s}
+#shelf h3{position:absolute;left:64px;top:300px;margin:0;font-size:22px;color:#ddd}
+.row{position:absolute;left:64px;top:340px;display:flex;gap:28px;align-items:flex-end}
+.card{position:relative;cursor:pointer;transition:transform .2s}
+.card .cv{display:block;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.card.f{transform:scale(1.12) translateY(-4px)}
+.card.f .cv{outline:2.5px solid rgba(255,255,255,.75);outline-offset:0}
+.card .lb{position:absolute;left:-20px;right:-20px;top:100%;margin-top:12px;text-align:center;font-size:16px;font-weight:700;opacity:.62;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.f .lb{opacity:1}
+#tabs{position:absolute;left:40px;top:28px;display:flex;gap:4px;padding:4px;border-radius:24px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12)}
+#tabs span{padding:10px 16px;border-radius:20px;font-weight:700;font-size:19px;color:#bbb}
+#tabs span.on{background:rgba(255,255,255,.14);color:#fff}
+/* the page */
+#page{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity .35s}
+#page.on{opacity:1;pointer-events:auto}
+.scene{position:absolute;left:0;top:0;width:640px;height:720px;perspective:1400px;perspective-origin:50% 45%}
+.slot{position:absolute;left:0;top:0;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.8,.2,1),opacity .45s,filter .45s}
+.bob{transform-style:preserve-3d;animation:bob 4.2s ease-in-out infinite}
+.turn{transform-style:preserve-3d;animation:turn 9s ease-in-out infinite}
+.slot.side .bob,.slot.side .turn{animation-play-state:paused}
+@keyframes bob{0%,100%{transform:translateY(-6px)}50%{transform:translateY(8px)}}
+@keyframes turn{0%,100%{transform:rotateY(-22deg) rotateX(4deg)}50%{transform:rotateY(-10deg) rotateX(2deg)}}
+.box{position:relative;transform-style:preserve-3d}
+.face{position:absolute;left:0;top:0;backface-visibility:hidden;overflow:hidden}
+.front img,.front canvas{width:100%;height:100%;display:block;object-fit:fill}
+.front::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.22) 45%,transparent 60%);background-size:300% 100%;animation:sweep 6s ease-in-out infinite}
+@keyframes sweep{0%,55%{background-position:120% 0}100%{background-position:-60% 0}}
+.spine{display:flex;align-items:center;justify-content:center}
+.spine b{writing-mode:vertical-rl;transform:rotate(180deg);font-size:15px;letter-spacing:.5px;white-space:nowrap}
+.back{display:flex;flex-direction:column;justify-content:flex-end;padding:22px;box-sizing:border-box}
+.shadow{position:absolute;left:50%;width:260px;height:36px;margin-left:-130px;border-radius:50%;background:radial-gradient(rgba(0,0,0,.55),transparent 70%);animation:shadow 4.2s ease-in-out infinite}
+@keyframes shadow{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(.86);opacity:.6}}
+/* right half */
+#info{position:absolute;left:680px;top:56px;width:540px;transition:opacity .25s}
+#info.fade{opacity:0}
+#gt{font-size:44px;font-weight:800;margin:0;line-height:1.08}
+#gs{font-size:19px;color:#b9bdc6;font-weight:700;margin-top:10px}
+#gm{font-size:17px;color:#9aa0aa;margin-top:6px}
+#btns{margin-top:22px;display:flex;flex-direction:column;gap:8px}
+.b{height:46px;border-radius:26px;display:flex;align-items:center;padding:0 26px;font-size:20px;font-weight:700;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:transform .15s,background .15s}
+.b.f{background:#fff;color:#111;transform:scale(1.03)}
+.b small{margin-left:auto;font-weight:600;opacity:.6;font-size:15px}
+#pads{margin-top:10px;font-size:15px;color:#9aa0aa;line-height:1.5}
+#pads b{color:#fff}
+#hint{position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:center;gap:26px;font-size:16px;color:#c8ccd4}
+#hint i{font-style:normal;display:inline-block;min-width:22px;padding:2px 7px;margin-right:7px;border-radius:12px;background:rgba(255,255,255,.16);font-weight:800;text-align:center;color:#fff}
+#hint i.a{background:#5cb85c}#hint i.bb{background:#d9534f}
+#toast{position:absolute;left:50%;top:40px;transform:translateX(-50%);padding:12px 22px;border-radius:24px;background:rgba(20,22,30,.92);border:1px solid rgba(255,255,255,.14);font-weight:700;opacity:0;transition:opacity .25s}
+#toast.on{opacity:1}
+#note{position:fixed;left:10px;bottom:8px;font:12px system-ui;color:#777}
+</style>
+</head>
+<body>
+<div id="fit"><div id="stage">
+  <div class="wash" id="w0"></div><div class="wash" id="w1"></div><div id="veil"></div>
+  <div id="shelf">
+    <div id="tabs"><span>Home</span><span>TV</span><span>Radio</span><span>YouTube</span><span>Media</span><span class="on">Games</span><span>Apps</span><span>Settings</span></div>
+    <h3>Keep playing</h3><div class="row" id="row"></div>
+  </div>
+  <div id="page">
+    <div class="scene" id="scene"></div>
+    <div id="info">
+      <h1 id="gt"></h1><div id="gs"></div><div id="gm"></div>
+      <div id="pads"><b>Player 1</b> · Xbox Wireless Controller</div>
+      <div id="btns"></div>
+    </div>
+    <div id="hint"><span><i class="a">A</i>Choose</span><span><i>LB</i><i>RB</i>Other games</span><span><i class="bb">B</i>Back to the shelf</span></div>
+  </div>
+  <div id="toast"></div>
+</div></div>
+<div id="note">Mockup only · Enter OK · Esc Back · Q/E switch games (hold for fast) · arrows · drag the box to spin it</div>
+<script>
+const T = 'https://thumbnails.libretro.com/';
+const GAMES = [
+  {t:'Tetris', s:'Game Boy', y:'1989', sys:'Nintendo - Game Boy', f:'Tetris (World) (Rev 1)', c:'#8b9a2b', a:.97, last:'Today', time:'3 h 20 min', save:true},
+  {t:'Super Mario Land', s:'Game Boy', y:'1989', sys:'Nintendo - Game Boy', f:'Super Mario Land (World) (Rev 1)', c:'#c0392b', a:.97, last:'Yesterday', time:'1 h 05 min', save:true},
+  {t:'Super Mario Bros.', s:'Nintendo (NES)', y:'1985', sys:'Nintendo - Nintendo Entertainment System', f:'Super Mario Bros. (World)', c:'#e63946', a:.72, last:'2 days ago', time:'48 min', save:false},
+  {t:'The Legend of Zelda - Link\'s Awakening', s:'Game Boy', y:'1993', sys:'Nintendo - Game Boy', f:'Legend of Zelda, The - Link\'s Awakening (USA, Europe) (Rev 2)', c:'#c9a75a', a:.97, last:'Last week', time:'6 h 12 min', save:true},
+  {t:'Gear & Ghost', s:'Built-in game', y:'2026', c:'#7a4a22', a:.75, last:'Today', time:'Best: 1-1, 3 stars', save:false, own:true},
+  {t:'Totem Tide', s:'Built-in game', y:'2026', c:'#1f6f78', a:.75, last:'Yesterday', time:'Best score 36', save:false, own:true},
+];
+const $ = id => document.getElementById(id);
+let cur = 0, mode = 'shelf', sel = 0, wash = 0;
+
+// ---- covers: the real box art when online, otherwise a drawn stand-in
+function drawn(g){ const c=document.createElement('canvas'); c.width=300; c.height=Math.round(300/g.a); const x=c.getContext('2d');
+  const gr=x.createLinearGradient(0,0,0,c.height); gr.addColorStop(0,g.c); gr.addColorStop(1,'#111'); x.fillStyle=gr; x.fillRect(0,0,c.width,c.height);
+  x.fillStyle='#fff'; x.font='bold 30px system-ui'; x.textAlign='center'; wrap(x,g.t,150,c.height*.42,260,34); x.font='16px system-ui'; x.fillStyle='rgba(255,255,255,.7)'; x.fillText(g.s,150,c.height-26); return c.toDataURL(); }
+function wrap(x,t,cx,y,w,lh){ let line='',ys=y; for(const word of t.split(' ')){ const n=line?line+' '+word:word; if(x.measureText(n).width>w&&line){x.fillText(line,cx,ys);line=word;ys+=lh}else line=n } x.fillText(line,cx,ys) }
+for (const g of GAMES) { g.src = drawn(g); if (!g.own) { const i=new Image(); i.onload=()=>{ g.src=i.src; g.a=i.naturalWidth/i.naturalHeight; refreshCovers(g) }; i.src=T+encodeURIComponent(g.sys)+'/Named_Boxarts/'+encodeURIComponent(g.f.replace(/[&*\/:`<>?\\|"]/g,'_'))+'.png'; } }
+function refreshCovers(g){ buildShelf(); if (mode==='page') buildBoxes(true); }
+
+// ---- the shelf
+function buildShelf(){ const r=$('row'); r.innerHTML='';
+  GAMES.forEach((g,i)=>{ const h=160, w=Math.round(h*g.a); const d=document.createElement('div'); d.className='card'+(mode==='shelf'&&i===cur?' f':'');
+    d.innerHTML=`<img class="cv" src="${g.src}" style="width:${w}px;height:${h}px"><div class="lb">${g.t}</div>`; d.onclick=()=>{ cur=i; if(mode==='shelf') openPage() }; r.appendChild(d) }); }
+
+// ---- a 3D box: the cover on the front, spine and back made from its colour, title and system
+function boxHTML(g, H){ const W=Math.round(H*g.a), D=Math.round(H*.12);
+  const face=(cls,w,h,tf,inner,bg)=>`<div class="face ${cls}" style="width:${w}px;height:${h}px;transform:${tf};background:${bg||g.c}">${inner||''}</div>`;
+  return `<div class="box" style="width:${W}px;height:${H}px">
+   ${face('front',W,H,`translateZ(${D/2}px)`,`<img src="${g.src}">`,'#111')}
+   ${face('back back',W,H,`rotateY(180deg) translateZ(${D/2}px)`,`<div style="font-weight:800;font-size:20px">${g.t}</div><div style="opacity:.7;margin-top:6px">${g.s}</div>`,`linear-gradient(${g.c},#0c0c0e)`)}
+   ${face('spine',D,H,`rotateY(-90deg) translateZ(${D/2}px)`,`<b>${g.t}</b>`,`linear-gradient(90deg,${g.c},#151515)`)}
+   ${face('spine',D,H,`rotateY(90deg) translateZ(${W-D/2}px)`,'',`linear-gradient(90deg,#151515,${g.c})`)}
+   ${face('',W,D,`rotateX(90deg) translateZ(${D/2}px)`,'',g.c)}
+   ${face('',W,D,`rotateX(-90deg) translateZ(${H-D/2}px)`,'','#0e0e10')}
+  </div>`; }
+// three boxes at most: the main one and its neighbours
+function slotPos(k, g){ const H = k===0 ? 330 : 150, W=H*g.a;
+  if (k===0) return {x:330-W/2, y:150, z:0, ry:0, o:1, f:'none', H};
+  return {x:(k<0?70:600)-W/2, y:330, z:-420, ry:k<0?40:-40, o:.4, f:'brightness(.5) blur(1px)', H}; }
+function buildBoxes(keep){ const sc=$('scene'); sc.innerHTML='';
+  for (const k of [-1,0,1]) { const i=cur+k; if (i<0||i>=GAMES.length) continue; const g=GAMES[i], p=slotPos(k,g);
+    const s=document.createElement('div'); s.className='slot'+(k?' side':''); s.dataset.k=k;
+    s.style.transform=`translate3d(${p.x}px,${p.y}px,${p.z}px) rotateY(${p.ry}deg)`; s.style.opacity=p.o; s.style.filter=p.f;
+    s.innerHTML=`<div class="bob"><div class="turn">${boxHTML(g,p.H)}</div></div>`+(k===0?`<div class="shadow" style="top:${p.H+40}px;left:${p.H*g.a/2}px"></div>`:'');
+    s.onclick=()=>{ if(k) flip(k) }; sc.appendChild(s); } }
+
+// ---- right half
+function info(){ const g=GAMES[cur]; $('gt').textContent=g.t; $('gs').textContent=g.s+'  ·  '+g.y; $('gm').textContent='Last played '+g.last+'  ·  '+g.time;
+  const list = (g.save ? [['Continue','from the automatic save'],['Start from the beginning','']] : [['Play','']])
+    .concat([['Options','picture, screen, rewind, volume'],['Controls',''],['Choose cover',''],['Add to Home',''],['Remove','']]);
+  $('btns').innerHTML=list.map((b,i)=>`<div class="b${i===sel?' f':''}" data-i="${i}">${b[0]}<small>${b[1]}</small></div>`).join('');
+  [...$('btns').children].forEach(el=>{ el.onmouseenter=()=>{ sel=+el.dataset.i; focusBtn() }; el.onclick=()=>ok() });
+  setWash(g); }
+function focusBtn(){ [...$('btns').children].forEach((el,i)=>el.classList.toggle('f',i===sel)) }
+function setWash(g){ wash^=1; const a=$('w'+wash), b=$('w'+(wash^1)); a.style.backgroundImage=`url("${g.src}")`; a.classList.add('on'); b.classList.remove('on') }
+
+// ---- moving between screens
+function openPage(){ mode='page'; sel=0; buildShelf();
+  // the selected cover lifts out of the shelf and glides into place as the 3D box
+  const card=$('row').children[cur].getBoundingClientRect(), fit=$('fit').getBoundingClientRect(), s=fit.width/1280;
+  buildBoxes(); info(); const main=[...$('scene').children].find(e=>e.dataset.k==='0'); const g=GAMES[cur], p=slotPos(0,g);
+  const sx=(card.left-fit.left)/s, sy=(card.top-fit.top)/s, k=(card.height/s)/p.H;
+  main.style.transition='none'; main.style.transform=`translate3d(${sx}px,${sy}px,0) scale(${k})`; main.querySelector('.turn').style.animation='none';
+  $('shelf').style.opacity=0; $('page').classList.add('on');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ main.style.transition=''; main.style.transform=`translate3d(${p.x}px,${p.y}px,0)`; setTimeout(()=>main.querySelector('.turn').style.animation='',550) })); }
+function back(){ mode='shelf'; $('page').classList.remove('on'); $('shelf').style.opacity=1; $('w0').classList.remove('on'); $('w1').classList.remove('on'); buildShelf() }
+let flipTimer=0;
+function flip(d, fast){ const n=cur+d; if(n<0||n>=GAMES.length) return; cur=n; sel=0;
+  if (fast) { $('gt').textContent=GAMES[cur].t; clearTimeout(flipTimer); flipTimer=setTimeout(()=>{ buildBoxes(); info() },260); return }
+  // the current box turns away and the next swings in; panel and colours cross-fade
+  const old=[...$('scene').children]; old.forEach(el=>{ const k=+el.dataset.k-d; el.style.transform+=` translateX(${-d*120}px) rotateY(${d*-40}deg)`; el.style.opacity=0 });
+  $('info').classList.add('fade'); setTimeout(()=>{ buildBoxes(); info(); $('info').classList.remove('fade') },230) }
+function ok(){ if(mode==='shelf') return openPage(); const label=$('btns').children[sel].firstChild.textContent; toast(label==='Continue'||label==='Play'||label.startsWith('Start') ? 'Starting '+GAMES[cur].t+'…' : label+' (mockup)') }
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('on'),1400) }
+
+// ---- input
+let held={}, repeatT=0;
+addEventListener('keydown',e=>{ const k=e.key;
+  if (mode==='shelf') { if(k==='ArrowRight'&&cur<GAMES.length-1){cur++;buildShelf()} if(k==='ArrowLeft'&&cur>0){cur--;buildShelf()} if(k==='Enter')openPage(); return }
+  const lb = k==='q'||k==='['||k==='PageUp', rb = k==='e'||k===']'||k==='PageDown';
+  if (lb||rb) { const fast=e.repeat; flip(lb?-1:1, fast); e.preventDefault(); return }
+  if (k==='ArrowUp'){ sel=Math.max(0,sel-1); focusBtn() } else if (k==='ArrowDown'){ sel=Math.min($('btns').children.length-1,sel+1); focusBtn() }
+  else if (k==='ArrowLeft') flip(-1); else if (k==='ArrowRight') flip(1);
+  else if (k==='Enter') ok(); else if (k==='Escape'||k==='Backspace'){ back(); e.preventDefault() } });
+addEventListener('keyup',e=>{ if((e.key==='q'||e.key==='e'||e.key==='['||e.key===']')&&mode==='page'){ buildBoxes(); info() } });
+addEventListener('wheel',e=>{ if(mode==='page'){ flip(e.deltaY>0?1:-1) } },{passive:true});
+// drag spins the box
+let drag=null; $('scene').addEventListener('pointerdown',e=>{ const t=$('scene').querySelector('.slot:not(.side) .turn'); if(!t)return; drag={x:e.clientX,t}; t.style.animation='none' });
+addEventListener('pointermove',e=>{ if(drag){ drag.t.style.transform=`rotateY(${-16+(e.clientX-drag.x)*.5}deg)` } });
+addEventListener('pointerup',()=>{ if(drag){ const t=drag.t; t.style.transition='transform .6s'; t.style.transform=''; setTimeout(()=>{t.style.transition='';t.style.animation=''},600); drag=null } });
+
+function fitStage(){ const s=Math.min(innerWidth/1280,innerHeight/720); $('fit').style.transform=`scale(${s}) translate(-50%,-50%)`; $('fit').style.left='50%'; $('fit').style.top='50%'; $('fit').style.transform=`translate(-50%,-50%) scale(${s})`; $('fit').style.transformOrigin='50% 50%' }
+addEventListener('resize',fitStage); fitStage(); buildShelf();
+</script>
+</body>
+</html>
