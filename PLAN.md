@@ -115,6 +115,32 @@ Today the box has Android's Settings, the box maker's settings and Projectivy's 
 
 Honest limits: some switches need system rights an ordinary app doesn't have (screen resolution, HDMI output mode, date/time, factory reset). For those: grant `WRITE_SECURE_SETTINGS` once over ADB during setup where that's enough; otherwise the row opens the exact Android page for that one thing (a direct intent, not the Android Settings home), and Back returns to our Settings. Find out on the box which items need which route and list them in `AGENTS.md`. Android's own Settings app and the maker's settings app are hidden from Apps (still reachable from About → "Advanced Android settings"). Projectivy gets uninstalled at the end, with Anthony's OK, so its settings go too.
 
+#### Everything in our own style (Anthony, Nov 10)
+
+His words: "I want like all the settings for like RetroArch to look in the style of the OS. I want the TV settings, the guide system, all the things to look in the settings of the OS as well." The rule: **no setting is reached through another app's menu.** Everything lives in Retro Launcher's Settings tab, built from the shared kit.
+
+- **Settings → Games:** what people actually change in RetroArch, written to the tuned `retroarch.cfg` (per-game overrides where it matters): controllers and button layout per pad, save and resume behaviour, picture (shape, whole-pixel scaling, smoothing, a few filter presets the Mali-450 can run), sound volume, rewind and fast-forward on/off, per-system engine (core) choice, BIOS files status, library folders and rescan. Curate, don't mirror RetroArch's hundreds of options; an "Advanced" row only for something common that's missing. RetroArch's own menu never needs to appear: the in-game pause panel (Guide, Start+Select or Back) drives RetroArch over its local command port.
+- **Settings → TV:** channel list source and countries shown, hidden channels, favourites management and order, guide sources and refresh, player options (start fast vs. smoother, preferred quality), reminders.
+- The TV Guide, the player banner, the in-game pause panel and every dialog use the same cards, glass, type and timings.
+
+#### Foreign-UI audit (Nov 10): screens reachable from the launcher that are not ours yet
+
+| Screen | Reached from | Plan |
+|---|---|---|
+| Android display settings | Settings → Picture → Screen size and position | Build ours if the overscan/position values can be written with `WRITE_SECURE_SETTINGS` or `wm overscan` over ADB at setup; otherwise keep as the one "advanced" exception. Resolution/HDMI mode is vendor-only (system rights). |
+| Android sound settings | Settings → Sound → Volume and sound output | Build ours: volume via `AudioManager`; HDMI passthrough is vendor-only, keep as advanced. |
+| Android Wi-Fi settings | Settings → Wi-Fi → Advanced | Ours already covers scan, join, password; keep "Advanced" for proxies/static IP (rare). |
+| Android Bluetooth settings | Settings → Controllers → Pair a Bluetooth controller | Build ours: discovery + pairing with `BluetoothAdapter` (needs location permission granted at setup). |
+| Android storage details | Settings → Storage → Storage details | Build ours (per-app sizes, clear cache) where `StorageStatsManager`-style data is available on 7.1; else drop the row. |
+| Android app uninstall confirmation | Hold OK → Uninstall, Settings → Apps | Can't be replaced: Android requires its own confirmation for an ordinary app. Keep; it's one plain dialog. |
+| Android "Advanced Android settings" | Settings → About | Kept on purpose as the escape hatch. |
+| Classic launcher (vendor) | Settings → About → Classic launcher | Kept on purpose as the fallback home screen. |
+| Android runtime permission dialog | First run on a new box (storage) | Avoid: the skill grants permissions over ADB at setup. |
+| Android "app has stopped" dialogs, volume overlay | System | Can't be replaced by an app (System UI). Prevent crashes instead (smoke test). |
+| RetroArch menu | In a game (Start+Select, Back) | Replaced by our pause panel once the "Retro Launcher buttons" helper is on; RetroArch's fallback menu set to its simplest dark theme. |
+| SmartTube | YouTube videos and search results | Can't be replaced by design: no own YouTube player (YouTube's terms). Our tab does search entry and channel shelves. |
+| Other apps (Kodi, games, Play Store, F-Droid) | Apps | By design: they're the user's apps. The "Get apps" page replaces store browsing for common apps. |
+
 ### Remote, controller and mouse, all first class
 
 - **Remote:** arrows, OK, Back, Home, and the Menu key opens options for the focused card.
