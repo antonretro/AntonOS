@@ -24,6 +24,7 @@ sealed class Item(val key: String, val title: String) {
     /** "All 1,341 channels": opens the whole group. */
     class More(key: String, title: String, val all: List<Channel>) : Item(key, title)
     class Action(key: String, title: String, val subtitle: String, val icon: String, val run: (Context) -> Unit) : Item(key, title)
+    class Track(val s: Song) : Item(s.key, s.title)
 }
 
 /** Loads every launchable app (TV and phone style together) and keeps the list fresh. */

@@ -28,6 +28,9 @@ case "$out" in *Success*) ;; *) echo "FAIL  install"; exit 1;; esac
 #    (Compiling after switching the helper on left Android holding a dead helper that swallowed every remote key.)
 a "cmd package compile -m speed -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
 
+# the music visualizer reads the music player's own output; Android files that under the microphone permission
+a "pm grant $PKG android.permission.RECORD_AUDIO" 2>/dev/null
+
 # 2. installing is the start of a test session: sound off before anything can play (the chime plays on the next start)
 bash "$HERE/mute.sh" "$DEV" | sed "s/^/  /"
 

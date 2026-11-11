@@ -26,6 +26,8 @@ import com.antonretro.launcher.data.Store
 import com.antonretro.launcher.data.Channel
 import com.antonretro.launcher.data.ChannelRepo
 import com.antonretro.launcher.data.Guide
+import com.antonretro.launcher.data.MusicRepo
+import com.antonretro.launcher.data.Song
 import com.antonretro.launcher.data.Prog
 import com.antonretro.launcher.data.Reminder
 import com.antonretro.launcher.data.GameRepo
@@ -63,7 +65,7 @@ class HomeActivity : Activity() {
     private val tabViews = ArrayList<TextView>()
     private lateinit var pills: PillTrack
 
-    private val tabs = listOf("Home", "TV", "Radio", "YouTube", "Videos", "Games", "Apps", "Settings")
+    private val tabs = listOf("Home", "TV", "Radio", "YouTube", "Media", "Games", "Apps", "Settings")
     private val screens = LinkedHashMap<String, Screen>()
     private var current = "Home"
     private var inTabBar = false
@@ -132,6 +134,7 @@ class HomeActivity : Activity() {
         Thread.setDefaultUncaughtExceptionHandler { th, e -> Perf.note("CRASH " + e + " " + android.util.Log.getStackTraceString(e).replace("\n", " ")); Thread.sleep(150); previous?.uncaughtException(th, e) }
         Kit.init(this)
         repo = AppRepo(this); store = Store(this)
+        if (store.hiddenTabs.remove("Videos")) { store.hiddenTabs.add("Media"); store.save() }
         val dm = resources.displayMetrics
         screenW = maxOf(dm.widthPixels, dm.heightPixels); screenH = minOf(dm.widthPixels, dm.heightPixels)
         if (store.wallpaper !in 0 until (Backdrop.SCENES.size + Drift.PALETTES.size)) store.wallpaper = 0
@@ -229,7 +232,7 @@ class HomeActivity : Activity() {
         screens["TV"] = RowsScreen(this, 150f, false, art, open, "Loading your channels…")
         screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Loading radio stations…")
         screens["YouTube"] = RowsScreen(this, 150f, false, art, open)
-        screens["Videos"] = RowsScreen(this, 150f, false, art, open, "Your videos and films will show up here.")
+        screens["Media"] = RowsScreen(this, 150f, false, art, open, "Your music and videos will show up here.")
         screens["Games"] = RowsScreen(this, 150f, false, art, open)
         screens["Apps"] = RowsScreen(this, 150f, false, art, open, "Looking for apps…")
         screens["Settings"] = SettingsScreen(this, settingsPages())
@@ -255,6 +258,8 @@ class HomeActivity : Activity() {
             onAllSettings = { showTab("Settings"); settingsScreen.open("Games") }
         }
         root.addView(gameMenu, -1, -1)
+        music = MusicPlayer(this).apply { onChanged = { ui.post { if (::nowPlayingView.isInitialized && nowPlayingView.showing) nowPlayingView.refresh(); musicChip() } } }
+        nowPlayingView = NowPlaying(this, music).apply { onClose = { coverHome(false); musicChip(); calmKeys() } }
         player.onGuide = { c -> openGuide(c.url) }
         player.nowNext = { c -> Guide.nowNext(c.url) }
         player.timeText = { t -> timeFmt.format(Date(t)) }
@@ -295,7 +300,7 @@ class HomeActivity : Activity() {
         SPage("pad", "Controllers & Remotes") { controllerRows() },
         SPage("home", "Home screen") { listOf(
             SRow("Clock", value = { if (store.clock24) "24-hour (17:30)" else "12-hour (5:30 PM)" }, onClick = { store.clock24 = !store.clock24; store.save(); tickClock() }),
-        ) + listOf("TV", "Radio", "YouTube", "Videos", "Games").map { t ->
+        ) + listOf("TV", "Radio", "YouTube", "Media", "Games").map { t ->
             SRow("Show the $t tab", toggle = { t !in store.hiddenTabs }, onClick = { if (!store.hiddenTabs.remove(t)) store.hiddenTabs.add(t); store.save(); applyHiddenTabs() })
         } + listOf(
             SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your dock, hidden apps and tabs go back to how they started. Your channels and games stay.",
@@ -309,6 +314,8 @@ class HomeActivity : Activity() {
             SRow("This box", value = { android.os.Build.MODEL + " · Android " + android.os.Build.VERSION.RELEASE }),
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
+            SRow("Music", { "Songs by Anthony Micallef, rendered with GeneralUser GS by S. Christian Collins" }),
+            SRow("Music visualizer", { "Retro Visualizer by Anthony Micallef (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
         ) },
     )
@@ -544,18 +551,53 @@ class HomeActivity : Activity() {
     private fun rebuildVideos() {
         bg.execute {
             val groups = try { VideoRepo.scan() } catch (e: Exception) { emptyList() }
+            val found = try { MusicRepo.scan() } catch (e: Exception) { emptyList() }
             ui.post {
+                songs = MusicRepo.builtIn + found
                 videoGroups = groups
                 val all = groups.flatMap { it.second }.associateBy { it.file.path }
                 val keep = store.positions.keys.mapNotNull { all[it] }.map { Item.Vid(it) }
                 val rows = ArrayList<Row>()
+                rows.add(Row("Music", songs.map { Item.Track(it) }, alwaysLabel = true, poster = true, aspect = 1f))
                 if (keep.isNotEmpty()) rows.add(Row("Keep watching", keep, alwaysLabel = true))
                 for ((name, vids) in groups) rows.add(Row(name, vids.map { Item.Vid(it) }, alwaysLabel = true))
-                val vs = screens["Videos"] as RowsScreen
-                vs.setEmptyText("No videos yet. Put them in RetroLauncher/Videos, or plug in a USB drive.")
+                val vs = screens["Media"] as RowsScreen
+                vs.setEmptyText("Put music in RetroLauncher/Music and videos in RetroLauncher/Videos, or plug in a USB drive.")
                 vs.setRows(rows)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- music (Media tab)
+    private var songs: List<Song> = emptyList()
+    private lateinit var music: MusicPlayer
+    private lateinit var nowPlayingView: NowPlaying
+
+    private fun playSong(list: List<Song>, i: Int) {
+        if (::player.isInitialized && player.showing) player.close(keepRadio = false)
+        if (::player.isInitialized) player.stopBackground()   // one thing at a time: radio stops
+        nowPlaying(null)
+        music.play(list, i)
+        openNowPlaying()
+    }
+    private fun openNowPlaying() {
+        if (nowPlayingView.parent == null) root.addView(nowPlayingView, -1, -1)
+        nowPlayingView.show(); dialog.bringToFront(); coverHome(true); musicChip()
+    }
+    /** The small "Now playing" chip by the clock while music plays with Now Playing closed. */
+    private var musicChipView: TextView? = null
+    private fun musicChip() {
+        val show = ::music.isInitialized && music.active && !(::nowPlayingView.isInitialized && nowPlayingView.showing)
+        if (!show) { musicChipView?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
+        val chip = musicChipView ?: Kit.text(this, 16f, true).also { t ->
+            t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
+            t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
+            t.setOnClickListener { openNowPlaying() }
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, 130f); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            musicChipView = t
+        }
+        chip.text = (if (music.playing) "♪  " else "❚❚  ") + (music.current?.title ?: "")
+        chip.bringToFront(); chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
     }
 
     private fun playVideo(v: LocalVideo) {
@@ -931,6 +973,7 @@ class HomeActivity : Activity() {
     }
 
     private fun openPlayer(list: List<Channel>, index: Int) {
+        if (::music.isInitialized && music.active) { music.stop(); musicChip() }
         if (player.parent == null) root.addView(player, -1, -1)
         player.bringToFront()
         player.play(list, index)
@@ -1138,6 +1181,12 @@ class HomeActivity : Activity() {
             Images.load(item.rom.boxArt, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)) { b -> if (b != null && cell.tag == item.key) cell.card.art = Art(b, 0xFF2B2F3A.toInt(), 0xFF101218.toInt(), fit = true) }
             return
         }
+        if (item is Item.Track) {
+            val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
+            cell.card.art = Art(NowPlaying.coverFor(item.s, minOf(w, h)), 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true)
+            bg.execute { val b = MusicRepo.cover(item.s, minOf(w, h)); if (b != null) ui.post { if (cell.tag == item.key) cell.card.art = Art(b, 0xFF111111.toInt(), 0xFF000000.toInt(), fit = true) } }
+            return
+        }
         if (item.key.startsWith("bi:")) { cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }
         if (item.key == "tv:guide") { cell.card.art = Art(null, 0xFF3B6FD9.toInt(), 0xFF121A33.toInt(), null, null, bigText = "TV Guide", badge = if (Guide.channelCount > 0) "${Guide.channelCount} CHANNELS" else null, badgeColor = 0x99000000.toInt()); return }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
@@ -1234,7 +1283,7 @@ class HomeActivity : Activity() {
         Perf.note("state tab=$name")
         // pick up games and videos added since (copied over USB or ADB) every time the tab opens
         if (name == "Games" && old !== new) rebuildGames()
-        if (name == "Videos" && old !== new) rebuildVideos()
+        if (name == "Media" && old !== new) rebuildVideos()
         new.view.visibility = View.VISIBLE
         if (animate && old !== new) { new.view.alpha = 0f; new.view.translationX = dir * Kit.dp(this, 40f); new.view.animate().alpha(1f).translationX(0f).setDuration(Kit.t(Kit.T_TAB)).setInterpolator(Kit.EASE).start() }
         else { new.view.alpha = 1f; new.view.translationX = 0f }
@@ -1282,6 +1331,13 @@ class HomeActivity : Activity() {
         if (digits.isNotEmpty() && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::gameMenu.isInitialized && gameMenu.showing) return gameMenu.onKey(e)
+        if (::nowPlayingView.isInitialized && nowPlayingView.showing) return nowPlayingView.onKey(e)
+        if (::music.isInitialized && music.active && e.action == KeyEvent.ACTION_DOWN && game == null && !(::player.isInitialized && player.showing)) when (e.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> { music.toggle(); return true }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> { music.next(); return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { music.previous(); return true }
+            KeyEvent.KEYCODE_MEDIA_STOP -> { music.stop(); return true }
+        }
         game?.let { g -> if (!(::keyboard.isInitialized && keyboard.showing)) { g.key(e); return true } }
         if (::guide.isInitialized && guide.showing && guide.alpha > 0f) return guide.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
@@ -1336,6 +1392,7 @@ class HomeActivity : Activity() {
         if (introRunning) introSkip?.invoke()
         if (::saver.isInitialized && saver.showing) stopSaver()
         if (::guide.isInitialized && guide.showing) guide.hide()
+        if (::nowPlayingView.isInitialized && nowPlayingView.showing) { nowPlayingView.hide(); coverHome(false); musicChip() }
         closeGame()
         if (::player.isInitialized && player.showing) player.close(keepRadio = true)
         if (::dialog.isInitialized && dialog.showing) dialog.hide()
@@ -1405,7 +1462,7 @@ class HomeActivity : Activity() {
         dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0))
     }
 
-    private fun overlayOpen() = game != null || (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
+    private fun overlayOpen() = game != null || (::nowPlayingView.isInitialized && nowPlayingView.showing) || (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
         (::dialog.isInitialized && dialog.showing) || (::keyboard.isInitialized && keyboard.showing) || (::player.isInitialized && player.showing)
 
     // ---------------------------------------------------------------- opening things
@@ -1419,6 +1476,7 @@ class HomeActivity : Activity() {
                 if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); if (item.isGame) store.noteGame(item.key); returning = true }
             }
             is Item.Action -> item.run(this)
+            is Item.Track -> { val i = songs.indexOfFirst { it.key == item.key }; playSong(songs, i.coerceAtLeast(0)) }
             is Item.Ch -> {
                 val s = screens[current] as? RowsScreen
                 val row = s?.currentRowItems()?.filterIsInstance<Item.Ch>()?.map { it.ch } ?: listOf(item.ch)
