@@ -603,13 +603,8 @@ class HomeActivity : Activity() {
     private fun openBuiltIn(id: String) {
         if (game != null) return
         val g = when (id) { else -> com.antonretro.launcher.games.TotemTide(this) }
-        g.onPauseAsk = {
-            g.paused = true
-            if (!dialog.showing) dialog.show("Paused", "Totem Tide",
-                "Resume" to { g.paused = false },
-                "Start again" to { g.restart(); g.paused = false },
-                "Leave the game" to { closeGame() })
-        }
+        // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
+        g.onQuit = { closeGame() }
         root.addView(g, -1, -1); dialog.bringToFront()
         game = g; coverHome(true); g.start()
         store.noteLaunch("bi:$id")
@@ -1481,7 +1476,7 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { it.paused = true; it.onPauseAsk?.invoke() } }
+    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.pauseGame() }
 
     override fun onResume() {
         super.onResume()
