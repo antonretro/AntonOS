@@ -58,7 +58,8 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val mouseBack = Kit.text(ctx, 18f, true).apply { text = "‹  Back"; gravity = Gravity.CENTER; alpha = 0f }
     private val hideMouseBack = Runnable { mouseBack.animate().alpha(0f).setDuration(Kit.t(300)).start() }
 
-    var onClosed: ((Channel, Boolean) -> Unit)? = null     // channel, keepPlaying (radio)
+    var onClosed: ((Channel, Boolean) -> Unit)? = null
+    var numberOf: (Channel) -> Int = { it.number }     // channel, keepPlaying (radio)
     var onTuned: ((Channel) -> Unit)? = null
     var onStar: ((Channel) -> Unit)? = null
 
@@ -216,7 +217,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             radioName.text = c.name; radioSub.text = "${c.country}  ·  Back keeps it playing"
             radioCard.tag = null; artFor(Item.Ch(c), radioCard)
         }
-        bNum.text = c.number.toString(); bName.text = c.name; bSub.text = "${c.country}  ·  Tuning…"
+        bNum.text = numberOf(c).toString(); bName.text = c.name; bSub.text = "${c.country}  ·  Tuning…"
         banner.animate().cancel(); banner.alpha = 1f
         ui.removeCallbacks(fadeBanner); ui.removeCallbacks(watchdog)
         ui.postDelayed(watchdog, 8000)
@@ -225,7 +226,8 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         val p = player ?: return
         val item = MediaItem.Builder().setUri(Uri.parse(c.url)).apply { if (c.url.contains(".m3u8")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
         p.volume = if (testMuted()) 0f else 1f
-        p.setMediaItem(item); p.prepare(); p.playWhenReady = true
+        try { p.setMediaItem(item); p.prepare(); p.playWhenReady = true }
+        catch (e: Exception) { Perf.note("player can't open ${c.url}: $e"); ui.post { fail() }; return }   // a format we can't play counts as a dead channel, never a crash
         onTuned?.invoke(c)
     }
 

@@ -206,6 +206,7 @@ class HomeActivity : Activity() {
             onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
             onStar = { c -> star(c) }
+            numberOf = { c -> this@HomeActivity.numberOf(c) }
         }
         applyPlayerSettings()
         for ((name, s) in screens) {
@@ -343,6 +344,9 @@ class HomeActivity : Activity() {
         out.add(SRow("Starting a channel", { if (store.playerSmooth) "Waits a little longer, then fewer pauses" else "Picture comes up as fast as possible" }, value = { if (store.playerSmooth) "Smoother" else "Faster" },
             onClick = { store.playerSmooth = !store.playerSmooth; store.save(); applyPlayerSettings() }))
         out.add(SRow("Picture quality", value = { qualities[store.quality.coerceIn(0, 2)] }, onClick = { store.quality = (store.quality + 1) % 3; store.save(); applyPlayerSettings() }))
+        out.add(SRow("Channel numbers", { "Type a number on the remote to go straight to a channel. Hold OK on a channel to change its number" }))
+        out.add(SRow("Number all channels again", { "Favourites first, then country by country" }, onClick = {
+            dialog.show("Number all channels again?", "Every channel gets a new number, starting from 1 with your favourites.", "Renumber" to { store.numbers.clear(); rebuildChannelRows(); notice("Channels renumbered", "Favourites start at 1") }, "Cancel" to {}) }))
         out.add(SRow("TV Guide", { "What's on now and next: coming soon" }))
         val byUrl = (ChannelRepo.tv + ChannelRepo.radio).associateBy { it.url }
         for (u in store.favourites) byUrl[u]?.let { c -> out.add(SRow("★  " + c.name, { "Favourite · " + c.country }, value = { "Remove" }, onClick = { star(c) })) }
@@ -629,7 +633,74 @@ class HomeActivity : Activity() {
         if (requestCode == 7 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) loadChannels()
     }
 
+    // ---------------------------------------------------------------- channel numbers
+    /** Gives every channel a number once: favourites first, then country by country. Numbers are kept in the
+     *  layout file, so they never shuffle; channels that appear later get the next free numbers. */
+    private fun assignNumbers() {
+        val all = ChannelRepo.tv + ChannelRepo.radio
+        if (all.isEmpty()) return
+        val urls = all.map { it.url }.toSet()
+        var next = (store.numbers.values.maxOrNull() ?: 0) + 1
+        var changed = false
+        fun give(c: Channel) { if (!store.numbers.containsKey(c.url)) { store.numbers[c.url] = next++; changed = true } }
+        if (store.numbers.isEmpty()) store.favourites.mapNotNull { u -> all.firstOrNull { it.url == u } }.filter { !it.radio }.forEach { give(it) }
+        for ((_, chans) in ChannelRepo.groups(ChannelRepo.tv)) chans.forEach { give(it) }
+        if (ChannelRepo.radio.isNotEmpty()) { next = maxOf(next, 900); for ((_, chans) in ChannelRepo.groups(ChannelRepo.radio)) chans.forEach { give(it) } }
+        if (store.numbers.keys.any { it !in urls }) { store.numbers.keys.retainAll(urls); changed = true }
+        if (changed) store.save()
+    }
+    fun numberOf(c: Channel) = store.numbers[c.url] ?: c.number
+    private fun byNumber(radio: Boolean) = (if (radio) ChannelRepo.radio else ChannelRepo.tv).filter { it.url !in store.hiddenChannels }.sortedBy { numberOf(it) }
+
+    /** Typing a channel number: the number shows big with the channel's name, then tunes after 1.5 s or on OK. */
+    private var digits = ""
+    private var digitView: LinearLayout? = null
+    private val tuneDigits = Runnable { finishDigits() }
+    private fun digitRadio() = if (::player.isInitialized && player.showing) player.current?.radio == true else current == "Radio"
+
+    private fun typeDigit(d: Int) {
+        if (digits.length >= 4) digits = ""
+        digits += d
+        val n = digits.toInt()
+        val c = (ChannelRepo.tv + ChannelRepo.radio).firstOrNull { numberOf(it) == n && it.url !in store.hiddenChannels }
+        val box = digitView ?: LinearLayout(this).also { v ->
+            v.orientation = LinearLayout.VERTICAL; v.gravity = Gravity.END
+            v.setPadding(Kit.dpi(this, 26f), Kit.dpi(this, 16f), Kit.dpi(this, 26f), Kit.dpi(this, 18f))
+            v.background = GlassDrawable(v, Kit.dp(this, 24f), Kit.GLASS_STRONG)
+            v.addView(Kit.text(this, 64f, true)); v.addView(Kit.text(this, 20f, true, Kit.TEXT_DIM))
+            root.addView(v, FrameLayout.LayoutParams(Kit.dpi(this, 380f), -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 96f) })   // wide enough for 4 digits and a long name
+            digitView = v
+        }
+        (box.getChildAt(0) as TextView).text = digits
+        (box.getChildAt(1) as TextView).text = c?.name ?: if (digits.length >= 2) "No channel $digits" else ""
+        box.bringToFront(); box.animate().cancel(); box.alpha = 1f; box.visibility = View.VISIBLE
+        ui.removeCallbacks(tuneDigits); ui.postDelayed(tuneDigits, 1500)
+    }
+
+    private fun finishDigits() {
+        ui.removeCallbacks(tuneDigits)
+        val n = digits.toIntOrNull(); digits = ""
+        val c = n?.let { num -> (ChannelRepo.tv + ChannelRepo.radio).firstOrNull { numberOf(it) == num && it.url !in store.hiddenChannels } }
+        val box = digitView
+        if (c == null) { if (n != null) (box?.getChildAt(1) as? TextView)?.text = "No channel $n"; box?.animate()?.alpha(0f)?.setStartDelay(1200)?.setDuration(Kit.t(300))?.start(); return }
+        box?.animate()?.alpha(0f)?.setStartDelay(300)?.setDuration(Kit.t(300))?.start()
+        val list = byNumber(c.radio)
+        openPlayer(list, list.indexOfFirst { it.url == c.url }.coerceAtLeast(0))
+    }
+
+    private fun renumber(c: Channel) {
+        keyboard.open("New number for ${c.name} (now ${numberOf(c)})", doneText = "Set") { t ->
+            val n = t.trim().toIntOrNull()
+            if (n == null || n < 1 || n > 9999) { notice("Use a number from 1 to 9999", ""); return@open }
+            val other = store.numbers.entries.firstOrNull { it.value == n }?.key
+            val old = numberOf(c)
+            if (other != null) store.numbers[other] = old   // the two swap places
+            store.numbers[c.url] = n; store.save(); rebuildChannelRows(); notice("${c.name} is now channel $n", if (other != null) "The channel that had $n is now $old" else "")
+        }
+    }
+
     private fun rebuildChannelRows() {
+        assignNumbers()
         val tv = ChannelRepo.tv; val radio = ChannelRepo.radio
         val byUrl = (tv + radio).associateBy { it.url }
         fun rows(list: List<Channel>, radioTab: Boolean): List<Row> {
@@ -689,6 +760,7 @@ class HomeActivity : Activity() {
         }
         if (item is Item.Ch) {
             choices.add((if (item.ch.url in store.favourites) "Remove from Favourites" else "Add to Favourites") to { star(item.ch) })
+            choices.add("Change channel number (${numberOf(item.ch)})" to { renumber(item.ch) })
             choices.add("Hide this channel" to { store.hiddenChannels.add(item.ch.url); store.favourites.remove(item.ch.url); store.save(); rebuildChannelRows(); notice("Channel hidden", "Show it again in Settings, TV") })
         }
         if (item is Item.App) {
@@ -872,7 +944,7 @@ class HomeActivity : Activity() {
         val star = c.url in store.favourites
         val hue = ((c.name.hashCode() and 0x7fffffff) % 360).toFloat()
         val top = Color.HSVToColor(floatArrayOf(hue, .55f, .48f)); val bottom = Color.HSVToColor(floatArrayOf((hue + 20) % 360, .7f, .18f))
-        val badge = if (c.radio) "RADIO" else "LIVE"; val bc = if (c.radio) 0xFF5E60CE.toInt() else 0xFFE5383B.toInt()
+        val badge = numberOf(c).toString() + (if (c.radio) "  RADIO" else "  LIVE"); val bc = if (c.radio) 0xFF5E60CE.toInt() else 0xFFE5383B.toInt()
         cell.card.art = Art(null, top, bottom, null, null, bigText = c.name, badge = badge, badgeColor = bc, star = star)
         val logo = c.logo ?: return
         val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
@@ -958,6 +1030,12 @@ class HomeActivity : Activity() {
         // the controller's Guide/Xbox button = Home, from anywhere (before any panel can swallow it)
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
+        // channel numbers: digits in the TV or Radio tab, or while watching
+        val digit = when (e.keyCode) { in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> e.keyCode - KeyEvent.KEYCODE_0; in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> e.keyCode - KeyEvent.KEYCODE_NUMPAD_0; else -> -1 }
+        val inChannels = (::player.isInitialized && player.showing && player.current != null) || ((current == "TV" || current == "Radio") && !(::keyboard.isInitialized && keyboard.showing))
+        if (digit >= 0 && inChannels) { if (e.action == KeyEvent.ACTION_DOWN) typeDigit(digit); return true }
+        if (digits.isNotEmpty() && e.action == KeyEvent.ACTION_UP && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) { finishDigits(); return true }
+        if (digits.isNotEmpty() && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
             if (e.action == KeyEvent.ACTION_DOWN && player.onKey(e.keyCode)) return true

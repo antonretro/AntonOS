@@ -95,6 +95,7 @@ class Store(ctx: Context) {
     var reduceMotion = false
     var saverMinutes = 5
     var hiddenGroups = mutableSetOf<String>()
+    var numbers = mutableMapOf<String, Int>()   // channel url -> its channel number (kept, never shuffled)
     var hiddenChannels = mutableSetOf<String>()
     var playerSmooth = false
     var quality = 0   // 0 auto, 1 save data (720p), 2 best
@@ -121,6 +122,7 @@ class Store(ctx: Context) {
             lastTv = o.optString("lastTv").ifEmpty { null }
             recentGames = o.optJSONArray("recentGames").strings().toMutableList()
             hiddenTabs = o.optJSONArray("hiddenTabs").strings().toMutableSet()
+            o.optJSONObject("numbers")?.let { l -> l.keys().forEach { numbers[it] = l.optInt(it) } }
             hiddenGroups = o.optJSONArray("hiddenGroups").strings().toMutableSet(); hiddenChannels = o.optJSONArray("hiddenChannels").strings().toMutableSet()
             playerSmooth = o.optBoolean("playerSmooth", false); quality = o.optInt("quality", 0)
             saverMinutes = o.optInt("saverMinutes", 5); saverPhotos = o.optBoolean("saverPhotos", true); dailyWallpaper = o.optBoolean("dailyWallpaper", false); wallpaperDay = o.optInt("wallpaperDay", 0)
@@ -138,7 +140,7 @@ class Store(ctx: Context) {
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
             .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
             .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion)
-            .put("hiddenGroups", JSONArray(hiddenGroups.toList())).put("hiddenChannels", JSONArray(hiddenChannels.toList()))
+            .put("numbers", JSONObject(numbers as Map<*, *>)).put("hiddenGroups", JSONArray(hiddenGroups.toList())).put("hiddenChannels", JSONArray(hiddenChannels.toList()))
             .put("playerSmooth", playerSmooth).put("quality", quality)
             .put("saverMinutes", saverMinutes).put("saverPhotos", saverPhotos).put("dailyWallpaper", dailyWallpaper).put("wallpaperDay", wallpaperDay)
             .put("positions", JSONObject(positions as Map<*, *>)).put("durations", JSONObject(durations as Map<*, *>))
