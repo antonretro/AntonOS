@@ -152,6 +152,7 @@ class HomeActivity : Activity() {
         buildScreens()
         root.addView(saver, -1, -1); root.addView(keyboard, -1, -1); root.addView(dialog, -1, -1)
         Kit.motion = if (store.reduceMotion) 0.01f else 1f
+        Kit.coverRadius = if (store.squareCovers) 0f else Kit.R_XS
         safely("tabs") { applyHiddenTabs() }
         showTab("Home", animate = false)
         ui.postDelayed(idleCheck, 15_000)
@@ -299,6 +300,8 @@ class HomeActivity : Activity() {
         ) },
         SPage("pad", "Controllers & Remotes") { controllerRows() },
         SPage("home", "Home screen") { listOf(
+            SRow("Box art corners", { "Game boxes and covers: slightly rounded, or sharp like the real box" }, value = { if (store.squareCovers) "Square" else "Rounded" },
+                onClick = { store.squareCovers = !store.squareCovers; Kit.coverRadius = if (store.squareCovers) 0f else Kit.R_XS; store.save(); rebuildGames() }),
             SRow("Clock", value = { if (store.clock24) "24-hour (17:30)" else "12-hour (5:30 PM)" }, onClick = { store.clock24 = !store.clock24; store.save(); tickClock() }),
         ) + listOf("TV", "Radio", "YouTube", "Media", "Games").map { t ->
             SRow("Show the $t tab", toggle = { t !in store.hiddenTabs }, onClick = { if (!store.hiddenTabs.remove(t)) store.hiddenTabs.add(t); store.save(); applyHiddenTabs() })

@@ -94,6 +94,7 @@ class Store(ctx: Context) {
     var hiddenTabs = mutableSetOf<String>()
     var startupSound = true
     var reduceMotion = false
+    var squareCovers = false
     var saverMinutes = 5
     var hiddenGroups = mutableSetOf<String>()
     var numbers = mutableMapOf<String, Int>()   // channel url -> its channel number (kept, never shuffled)
@@ -127,7 +128,7 @@ class Store(ctx: Context) {
             hiddenGroups = o.optJSONArray("hiddenGroups").strings().toMutableSet(); hiddenChannels = o.optJSONArray("hiddenChannels").strings().toMutableSet()
             playerSmooth = o.optBoolean("playerSmooth", false); quality = o.optInt("quality", 0)
             saverMinutes = o.optInt("saverMinutes", 5); saverPhotos = o.optBoolean("saverPhotos", true); dailyWallpaper = o.optBoolean("dailyWallpaper", false); wallpaperDay = o.optInt("wallpaperDay", 0)
-            clock24 = o.optBoolean("clock24", false); startupSound = o.optBoolean("startupSound", true); reduceMotion = o.optBoolean("reduceMotion", false)
+            clock24 = o.optBoolean("clock24", false); startupSound = o.optBoolean("startupSound", true); reduceMotion = o.optBoolean("reduceMotion", false); squareCovers = o.optBoolean("squareCovers", false)
             o.optJSONObject("positions")?.let { l -> l.keys().forEach { positions[it] = l.optLong(it) } }
             o.optJSONObject("durations")?.let { l -> l.keys().forEach { durations[it] = l.optLong(it) } }
             firstRun = false
@@ -140,7 +141,7 @@ class Store(ctx: Context) {
             .put("dock", JSONArray(dock)).put("hidden", JSONArray(hidden.toList())).put("recent", JSONArray(recent))
             .put("launches", JSONObject(launches as Map<*, *>)).put("wallpaper", wallpaper)
             .put("favourites", JSONArray(favourites)).put("recentChannels", JSONArray(recentChannels)).put("lastTv", lastTv ?: "").put("recentGames", JSONArray(recentGames))
-            .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion)
+            .put("hiddenTabs", JSONArray(hiddenTabs.toList())).put("clock24", clock24).put("startupSound", startupSound).put("reduceMotion", reduceMotion).put("squareCovers", squareCovers)
             .put("numbers", JSONObject(numbers as Map<*, *>)).put("hiddenGroups", JSONArray(hiddenGroups.toList())).put("hiddenChannels", JSONArray(hiddenChannels.toList()))
             .put("playerSmooth", playerSmooth).put("quality", quality)
             .put("saverMinutes", saverMinutes).put("saverPhotos", saverPhotos).put("dailyWallpaper", dailyWallpaper).put("wallpaperDay", wallpaperDay)

@@ -13,6 +13,8 @@ class GameSystem(val id: String, val shelf: String, val badge: String, val ext: 
 class Rom(val file: File, val system: GameSystem) {
     val key get() = "rom:" + file.path
     val title: String get() = file.nameWithoutExtension.replace(Regex("""\s*[\[(][^\])]*[\])]"""), "").replace('_', ' ').trim().ifEmpty { file.nameWithoutExtension }
+        // catalogue names put the article last ("Legend of Zelda, The - Link's Awakening"): say it the normal way
+        .replace(Regex("""^(.+?), (The|A|An)\b(.*)$""")) { m -> m.groupValues[2] + " " + m.groupValues[1] + m.groupValues[3] }
     /** libretro-thumbnails box art, matched by the file's own (No-Intro style) name. */
     val boxArt: String get() {
         val n = file.nameWithoutExtension.map { if (it in BAD) '_' else it }.joinToString("")
@@ -61,7 +63,7 @@ object GameRepo {
             }
         }
         walk(root, null, 0)
-        return out.sortedBy { it.title.lowercase() }
+        return out.sortedBy { it.title.lowercase().removePrefix("the ") }
     }
 
     fun engine(ctx: Context): String? = ENGINES.firstOrNull { try { ctx.packageManager.getPackageInfo(it, 0); true } catch (e: Exception) { false } }

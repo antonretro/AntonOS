@@ -39,12 +39,13 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         shadow.alpha = 0f
         addView(shadow, LayoutParams(cw + pad * 2, ch + pad * 2).apply { leftMargin = -pad; topMargin = -pad + Kit.dpi(ctx, 8f) })
         addView(card, LayoutParams(cw, ch))
-        ring.background = FocusRing({ Kit.dp(ctx, if (card.art?.cover == true) Kit.R_XS else Kit.CARD_RADIUS) }, { card.coverBox })
+        ring.background = FocusRing({ Kit.dp(ctx, if (card.art?.cover == true) Kit.coverRadius else Kit.CARD_RADIUS) }, { card.coverBox })
         ring.alpha = 0f
         addView(ring, LayoutParams(cw, ch))
         ring.pivotX = cw / 2f; ring.pivotY = ch / 2f
         label.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
         label.alpha = if (alwaysLabel) .62f else 0f
+        label.isSingleLine = true; label.marqueeRepeatLimit = -1; label.isHorizontalFadingEdgeEnabled = true; label.setFadingEdgeLength(Kit.dpi(ctx, 14f))   // a long name scrolls while its card is focused (as on Switch)
         Kit.shadowText(label)
         // fixed height: a wrap-content label would be squeezed to the card's own height and clipped
         addView(label, LayoutParams(cw + Kit.dpi(ctx, 24f), Kit.dpi(ctx, 28f)).apply { leftMargin = -Kit.dpi(ctx, 12f); topMargin = ch + Kit.dpi(ctx, 11f) })
@@ -66,6 +67,7 @@ class CardCell(ctx: Context, val wDp: Float, val hDp: Float, val alwaysLabel: Bo
         card.animate().scaleX(s).scaleY(s).translationY(lift).setDuration(d).setInterpolator(Kit.EASE).start()
         shadow.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on && card.fillsCell) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
         ring.animate().scaleX(s).scaleY(s).translationY(lift).alpha(if (on) 1f else 0f).setDuration(d).setInterpolator(Kit.EASE).start()
+        label.ellipsize = if (on) android.text.TextUtils.TruncateAt.MARQUEE else android.text.TextUtils.TruncateAt.END; label.isSelected = on
         label.animate().alpha(if (on) 1f else if (alwaysLabel) .62f else 0f).translationY(if (on) Kit.dp(context, 4f) else 0f).setDuration(d).start()
         translationZ = if (on) 2f else 0f   // draw above neighbours without reordering the row
     }
@@ -136,8 +138,8 @@ class CardFace(ctx: Context) : View(ctx) {
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
                 val b = coverBox
-                if (b != null) outline.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), Kit.dp(context, Kit.R_XS))
-                else outline.setRoundRect(0, 0, view.width, view.height, if (art?.cover == true) Kit.dp(context, Kit.R_XS) else radius)
+                if (b != null) outline.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), Kit.dp(context, Kit.coverRadius))
+                else outline.setRoundRect(0, 0, view.width, view.height, if (art?.cover == true) Kit.dp(context, Kit.coverRadius) else radius)
             }
         }
         clipToOutline = true
@@ -150,7 +152,13 @@ class CardFace(ctx: Context) : View(ctx) {
         val a = art
         // a game box: no card colour behind it, the whole box in its own proportions, standing on the bottom line
         val box = coverBox
-        if (a != null && a.cover && a.bitmap != null && box != null) { c.drawBitmap(a.bitmap, coverSrc, box, paint); return }
+        if (a != null && a.cover && a.bitmap != null && box != null) {
+            c.drawBitmap(a.bitmap, coverSrc, box, paint)
+            // the same faint glass edge as every other card, on the picture itself
+            edge.strokeWidth = 1f; edge.color = Color.argb(28, 255, 255, 255)
+            r.set(box); r.inset(.5f, .5f); val cr = Kit.dp(context, Kit.coverRadius); c.drawRoundRect(r, cr, cr, edge)
+            return
+        }
         paint.shader = LinearGradient(0f, 0f, w, h, a?.top ?: 0xFF2A2E38.toInt(), a?.bottom ?: 0xFF15171F.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(r, paint); paint.shader = null
         a?.bitmap?.let { b ->   // banner: centre-crop to fill; box art: whole box, centred

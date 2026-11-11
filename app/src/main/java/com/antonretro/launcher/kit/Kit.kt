@@ -38,6 +38,8 @@ object Kit {
     // chips and the tab bar. Cover art (game boxes, song covers, posters) all uses R_XS, the smallest step, and is shown
     // whole in its own proportions (Anthony: "all retro games rounded corners for simplicity ... and all music").
     const val R_XS = 6f
+    /** box art corners, a setting: R_XS (rounded, the default) or 0 (square, like the real box) */
+    @JvmStatic var coverRadius = R_XS
     const val R_S = 12f
     const val R_M = 16f
     const val R_L = 24f
