@@ -28,6 +28,7 @@ class SPage(val icon: String, val title: String, val rows: () -> List<SRow>)
  */
 @SuppressLint("ViewConstructor")
 class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx) {
+    private companion object { const val RAIL_GAP = 12f }
     private val root = FrameLayout(ctx)
     override val view: View get() = root
     private val catBox = LinearLayout(ctx)
@@ -42,9 +43,9 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
 
     init {
         val catPanel = FrameLayout(ctx)
-        catPanel.background = GlassDrawable(catPanel, Kit.dp(ctx, 24f))
+        catPanel.background = GlassDrawable(catPanel, Kit.dp(ctx, Kit.R_L))
         catBox.orientation = LinearLayout.VERTICAL
-        catBox.setPadding(Kit.dpi(ctx, 12f), Kit.dpi(ctx, 12f), Kit.dpi(ctx, 12f), Kit.dpi(ctx, 12f))
+        catBox.setPadding(Kit.dpi(ctx, RAIL_GAP), Kit.dpi(ctx, RAIL_GAP), Kit.dpi(ctx, RAIL_GAP), Kit.dpi(ctx, RAIL_GAP))
         catPanel.addView(catBox)
         root.addView(catPanel, FrameLayout.LayoutParams(Kit.dpi(ctx, 330f), -2).apply { leftMargin = Kit.dpi(ctx, 41f); topMargin = Kit.dpi(ctx, 112f) })
         for ((i, p) in pages.withIndex()) {
@@ -85,9 +86,9 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
     private fun paint() {
         for ((i, tv) in catViews.withIndex()) {
             val sel = i == cat; val foc = active && !inPage && sel
-            tv.background = if (foc || sel) GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(if (foc) Kit.FOCUS_FILL else 0x24FFFFFF) } else null
+            // concentric with the rail panel and never larger than its inset: no growing into the panel's edge
+            tv.background = if (foc || sel) GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.inner(Kit.R_L, RAIL_GAP)); setColor(if (foc) Kit.FOCUS_FILL else 0x24FFFFFF) } else null
             tv.setTextColor(if (foc) Kit.FOCUS_TEXT else if (sel) Kit.TEXT else 0xCCFFFFFF.toInt())
-            Kit.unclip(tv); tv.animate().scaleX(if (foc) 1.03f else 1f).scaleY(if (foc) 1.03f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
         for ((i, v) in rowViews.withIndex()) v.setFocus(active && inPage && i == row)
         // keep the focused row on screen
@@ -137,7 +138,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
         private val sw = Switch(ctx)
         private var on = false
         private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG); private val bgRect = RectF()
-        private val radius = Kit.dp(ctx, 16f)
+        private val radius = Kit.dp(ctx, Kit.R_M)   // every settings row shares one radius
 
         init {
             orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL

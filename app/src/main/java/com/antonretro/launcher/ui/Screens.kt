@@ -74,7 +74,7 @@ class RowsScreen(ctx: Context, private val startTop: Float, override val usesShe
             val w = row.aspect?.let { h * it } ?: if (row.poster) Kit.POSTER_W else Kit.CARD_W   // box art keeps its real shape
             val rv = FrameLayout(ctx).apply { clipChildren = false; clipToPadding = false }
             if (row.glass) {
-                val g = View(ctx); g.background = GlassDrawable(g, Kit.dp(ctx, 27f)); glassViews.add(g)
+                val g = View(ctx); g.background = GlassDrawable(g, Kit.dp(ctx, Kit.outer(Kit.CARD_RADIUS, 23f))); glassViews.add(g)
                 rv.addView(g, FrameLayout.LayoutParams(-1, Kit.dpi(ctx, h + 74f)).apply { leftMargin = Kit.dpi(ctx, 29f); rightMargin = Kit.dpi(ctx, 29f); topMargin = -Kit.dpi(ctx, 23f) })
             }
             row.title?.let {
@@ -206,14 +206,15 @@ class ListScreen(ctx: Context, private val title: String, private val entries: L
     private val rowViews = ArrayList<TextView>()
     private var idx = 0; private var active = false
     private val panel = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-    private val bgOn = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(Kit.FOCUS_FILL) }
-    private val bgOff = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 14f); setColor(0x0DFFFFFF) }
+    // rows inside a 16 dp padded panel of radius L: concentric
+    private val bgOn = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.inner(Kit.R_L, 16f)); setColor(Kit.FOCUS_FILL) }
+    private val bgOff = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.inner(Kit.R_L, 16f)); setColor(0x0DFFFFFF) }
 
     init {
         val h = Kit.text(ctx, 32f, true).apply { text = title }
         root.addView(h, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 118f) })
         val box = FrameLayout(ctx)
-        box.background = GlassDrawable(box, Kit.dp(ctx, 24f))
+        box.background = GlassDrawable(box, Kit.dp(ctx, Kit.R_L))
         box.setPadding(Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 16f))
         box.addView(panel)
         root.addView(box, FrameLayout.LayoutParams(Kit.dpi(ctx, 760f), -2).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 170f) })

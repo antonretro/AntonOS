@@ -39,10 +39,10 @@ class Keyboard(ctx: Context) : FrameLayout(ctx) {
         isClickable = true
         panel.orientation = LinearLayout.VERTICAL
         panel.setPadding(Kit.dpi(ctx, 26f), Kit.dpi(ctx, 22f), Kit.dpi(ctx, 26f), Kit.dpi(ctx, 24f))
-        panel.background = GlassDrawable(panel, Kit.dp(ctx, 24f), Kit.GLASS_STRONG)
+        panel.background = GlassDrawable(panel, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         val top = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; addView(title, LinearLayout.LayoutParams(0, -2, 1f)); addView(hint) }
         panel.addView(top)
-        field.background = GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 16f); setColor(0x59000000); setStroke(2, 0x4DFFFFFF) }
+        field.background = GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.R_M); setColor(0x59000000); setStroke(2, 0x4DFFFFFF) }
         field.setPadding(Kit.dpi(ctx, 20f), 0, Kit.dpi(ctx, 20f), 0); field.gravity = Gravity.CENTER_VERTICAL
         panel.addView(field, LinearLayout.LayoutParams(-1, Kit.dpi(ctx, 62f)).apply { topMargin = Kit.dpi(ctx, 10f); bottomMargin = Kit.dpi(ctx, 16f) })
         rowsBox.orientation = LinearLayout.VERTICAL
@@ -85,7 +85,7 @@ class Keyboard(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    private fun bg(on: Boolean, accent: Boolean) = GradientDrawable().apply { cornerRadius = Kit.dp(context, 12f); setColor(if (on) Kit.FOCUS_FILL else if (accent) Kit.ACCENT else 0x1FFFFFFF) }
+    private fun bg(on: Boolean, accent: Boolean) = GradientDrawable().apply { cornerRadius = Kit.dp(context, Kit.R_S); setColor(if (on) Kit.FOCUS_FILL else if (accent) Kit.ACCENT else 0x1FFFFFFF) }
 
     private fun paint() {
         for ((ri, row) in keys.withIndex()) for ((ki, k) in row.withIndex()) {

@@ -59,7 +59,7 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
         addView(ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY; Backdrop.blurredDim?.let { setImageBitmap(it) } }, -1, -1)
         addView(View(ctx).apply { setBackgroundColor(Color.argb(140, 6, 8, 14)) }, -1, -1)
         val left = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        artBox.background = GlassDrawable(artBox, Kit.dp(ctx, 22f), Kit.GLASS_STRONG)
+        artBox.background = GlassDrawable(artBox, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         artBox.setPadding(Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 14f))
         artBox.addView(art, -1, -1)
         left.addView(artBox, LinearLayout.LayoutParams(Kit.dpi(ctx, 340f), Kit.dpi(ctx, 300f)))
@@ -73,7 +73,7 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
         right.addView(note, LinearLayout.LayoutParams(Kit.dpi(ctx, 600f), -2).apply { topMargin = Kit.dpi(ctx, 8f); bottomMargin = Kit.dpi(ctx, 20f) })
         right.addView(list)
         addView(right, LayoutParams(Kit.dpi(ctx, 620f), -2).apply { leftMargin = Kit.dpi(ctx, 520f); topMargin = Kit.dpi(ctx, 70f) })
-        applying.background = GlassDrawable(applying, Kit.dp(ctx, 26f), Kit.GLASS_STRONG)
+        applying.background = GlassDrawable(applying, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         addView(applying, LayoutParams(Kit.dpi(ctx, 420f), Kit.dpi(ctx, 120f), Gravity.CENTER))
     }
 
@@ -177,7 +177,7 @@ class GameMenu(ctx: Context) : FrameLayout(ctx) {
             val label = row.label(); val value = row.value?.invoke()
             v.text = if (value != null) "$label        ◀  $value  ▶" else label
             val passive = row.ok == null && row.side == null
-            v.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, 28f); setColor(if (on && !passive) Kit.FOCUS_FILL else if (passive) 0x00000000 else 0x1FFFFFFF) }
+            v.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, Kit.pill(56f)); setColor(if (on && !passive) Kit.FOCUS_FILL else if (passive) 0x00000000 else 0x1FFFFFFF) }
             v.setTextColor(if (on && !passive) Kit.FOCUS_TEXT else if (passive) 0xD9FFFFFF.toInt() else Color.WHITE)
             v.pivotX = 0f; v.pivotY = v.height / 2f   // grow to the right: the rounded left edge never gets cut off
             Kit.unclip(v); v.animate().scaleX(if (on && !passive) 1.04f else 1f).scaleY(if (on && !passive) 1.04f else 1f).setDuration(Kit.t(150)).start()

@@ -143,7 +143,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         banner.setPadding(Kit.dpi(ctx, 20f), Kit.dpi(ctx, 16f), Kit.dpi(ctx, 28f), Kit.dpi(ctx, 16f))
         banner.background = GlassDrawable(banner, Kit.dp(ctx, 24f), Kit.GLASS_STRONG)
         val left = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        bLogo.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 12f); setColor(0x22FFFFFF) }
+        bLogo.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, Kit.inner(Kit.R_L, 16f)); setColor(0x22FFFFFF) }   // 16 dp inside the banner: concentric
         bLogo.setPadding(Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f), Kit.dpi(ctx, 6f))
         left.addView(bLogo, LinearLayout.LayoutParams(Kit.dpi(ctx, 96f), Kit.dpi(ctx, 60f)))
         bNum.gravity = Gravity.CENTER
@@ -164,7 +164,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
         error.gravity = Gravity.CENTER; error.text = "This channel isn't working right now"
         error.setPadding(Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f), Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f))
-        error.background = GlassDrawable(error, Kit.dp(ctx, 20f), Kit.GLASS_STRONG)
+        error.background = GlassDrawable(error, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         error.visibility = View.GONE
         addView(error, LayoutParams(-2, -2, Gravity.CENTER))
 
@@ -174,7 +174,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         stripBox.addView(strip.view, LayoutParams(-1, -1).apply { topMargin = Kit.dpi(ctx, 62f) })
         stripBox.visibility = View.GONE
         addView(stripBox, LayoutParams(-1, Kit.dpi(ctx, 250f), Gravity.BOTTOM))
-        mouseBack.background = GlassDrawable(mouseBack, Kit.dp(ctx, 22f), Kit.GLASS_STRONG)
+        mouseBack.background = GlassDrawable(mouseBack, Kit.dp(ctx, Kit.pill(44f)), Kit.GLASS_STRONG)
         mouseBack.setOnClickListener { if (mouseBack.alpha > .1f) close(keepRadio = true) }
         addView(mouseBack, LayoutParams(Kit.dpi(ctx, 120f), Kit.dpi(ctx, 46f), Gravity.END).apply { topMargin = Kit.dpi(ctx, Kit.SAFE_Y); rightMargin = Kit.dpi(ctx, Kit.SAFE_X) })
         setOnGenericMotionListener { _, e ->

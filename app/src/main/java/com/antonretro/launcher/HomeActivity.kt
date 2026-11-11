@@ -193,7 +193,7 @@ class HomeActivity : Activity() {
 
         pills = PillTrack(this)
         val bar = pills
-        bar.background = GlassDrawable(bar, Kit.dp(this, 27f))
+        bar.background = GlassDrawable(bar, Kit.dp(this, Kit.pill(43f + 8f)))
         tabBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f), Kit.dpi(this@HomeActivity, 4f)) }
         for ((i, name) in tabs.withIndex()) {
             val tv = Kit.text(this, Kit.TAB_TEXT, true).apply { text = name; gravity = Gravity.CENTER; setPadding(Kit.dpi(this@HomeActivity, 16f), 0, Kit.dpi(this@HomeActivity, 16f), 0) }
@@ -782,7 +782,7 @@ class HomeActivity : Activity() {
         val box = digitView ?: LinearLayout(this).also { v ->
             v.orientation = LinearLayout.VERTICAL; v.gravity = Gravity.END
             v.setPadding(Kit.dpi(this, 26f), Kit.dpi(this, 16f), Kit.dpi(this, 26f), Kit.dpi(this, 18f))
-            v.background = GlassDrawable(v, Kit.dp(this, 24f), Kit.GLASS_STRONG)
+            v.background = GlassDrawable(v, Kit.dp(this, Kit.R_L), Kit.GLASS_STRONG)
             v.addView(Kit.text(this, 64f, true)); v.addView(Kit.text(this, 20f, true, Kit.TEXT_DIM))
             root.addView(v, FrameLayout.LayoutParams(Kit.dpi(this, 380f), -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 96f) })   // wide enough for 4 digits and a long name
             digitView = v
@@ -906,7 +906,7 @@ class HomeActivity : Activity() {
         if (c == null) { nowChip?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
         val chip = nowChip ?: Kit.text(this, 16f, true).also { t ->
             t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
-            t.background = GlassDrawable(t, Kit.dp(this, 16f))
+            t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
             t.setOnClickListener { player.current?.let { openPlayer(listOf(it), 0) } }
             t.setOnLongClickListener { player.stopBackground(); nowPlaying(null); true }
             root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, 130f); topMargin = Kit.dpi(this@HomeActivity, 36f) })
@@ -1008,7 +1008,7 @@ class HomeActivity : Activity() {
         val n = noticeView ?: Kit.text(this, 17f, true).also { t ->
             t.isSingleLine = false; t.maxLines = 2
             t.setPadding(Kit.dpi(this, 22f), Kit.dpi(this, 12f), Kit.dpi(this, 22f), Kit.dpi(this, 12f))
-            t.background = GlassDrawable(t, Kit.dp(this, 22f), Kit.GLASS_STRONG)
+            t.background = GlassDrawable(t, Kit.dp(this, Kit.R_L), Kit.GLASS_STRONG)
             root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 88f) })
             noticeView = t
         }

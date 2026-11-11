@@ -18,7 +18,7 @@ class PillTrack(ctx: Context) : FrameLayout(ctx) {
     private val sel = RectF(); private val foc = RectF()
     private var focAlpha = 0f
     private var selAnim: ValueAnimator? = null; private var focAnim: ValueAnimator? = null
-    private val radius = Kit.dp(ctx, 21f)
+    private val radius = Kit.dp(ctx, Kit.pill(43f))   // tab pills; the bar around them is a pill 4 dp larger: concentric
 
     fun moveSelected(l: Float, r: Float, animate: Boolean) { selAnim?.cancel(); selAnim = glide(sel, l, r, animate) }
     fun moveFocus(l: Float, r: Float, show: Boolean, animate: Boolean) {

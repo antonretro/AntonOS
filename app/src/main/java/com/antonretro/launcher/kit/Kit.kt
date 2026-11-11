@@ -31,7 +31,22 @@ object Kit {
     const val SAFE_Y = 40f
     const val CARD_W = 213f
     const val CARD_H = 120f
-    const val CARD_RADIUS = 13f
+    // ---- the corner rule (Anthony: "make sure the white corner matches the corners"):
+    // one radius scale, nothing else. A shape inside another is concentric: its radius is the outer radius minus
+    // the gap between them (inner()), never less than XS; a highlight inside a panel keeps that gap on every side
+    // and never grows into the panel's edge. Siblings share one radius. Pills (half the height) only for buttons,
+    // chips and the tab bar.
+    const val R_XS = 6f
+    const val R_S = 12f
+    const val R_M = 16f
+    const val R_L = 24f
+    /** the radius of a shape inset by `gap` inside a shape of radius `outer` */
+    fun inner(outer: Float, gap: Float) = maxOf(outer - gap, R_XS)
+    /** the radius of a shape around a child of radius `inner` with `gap` between them */
+    fun outer(inner: Float, gap: Float) = inner + gap
+    /** a pill: fully round ends */
+    fun pill(heightDp: Float) = heightDp / 2f
+    const val CARD_RADIUS = R_S
     const val POSTER_W = 140f
     const val POSTER_H = 187f
     const val GAP = 27f

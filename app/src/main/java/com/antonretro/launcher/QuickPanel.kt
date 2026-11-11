@@ -286,7 +286,7 @@ class QuickPanel : Activity() {
         root.setOnClickListener { backToApp(null) }   // mouse: click outside = back to the app
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; isClickable = true }
         box.setPadding(Kit.dpi(this, 34f), Kit.dpi(this, 26f), Kit.dpi(this, 34f), Kit.dpi(this, 24f))
-        box.background = GlassDrawable(box, Kit.dp(this, 26f), Kit.GLASS_STRONG)
+        box.background = GlassDrawable(box, Kit.dp(this, Kit.R_L), Kit.GLASS_STRONG)
         box.clipChildren = false; box.clipToPadding = false
 
         val head = FrameLayout(this)

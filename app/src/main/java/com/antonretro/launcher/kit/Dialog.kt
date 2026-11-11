@@ -29,7 +29,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
         setBackgroundColor(0x80000000.toInt())
         box.orientation = LinearLayout.VERTICAL; box.gravity = Gravity.CENTER_HORIZONTAL
         box.setPadding(Kit.dpi(ctx, 40f), Kit.dpi(ctx, 36f), Kit.dpi(ctx, 40f), Kit.dpi(ctx, 34f))
-        box.background = GlassDrawable(box, Kit.dp(ctx, 26f), Kit.GLASS_STRONG)
+        box.background = GlassDrawable(box, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
         title.gravity = Gravity.CENTER; body.gravity = Gravity.CENTER; body.isSingleLine = false; body.maxLines = 4
         box.addView(title)
         box.addView(body, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 12f); bottomMargin = Kit.dpi(ctx, 26f) })
@@ -68,7 +68,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     private fun paint() {
         for ((i, b) in btns.withIndex()) {
             val on = i == sel
-            b.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, 28f); setColor(if (on) Kit.FOCUS_FILL else 0x24FFFFFF) }
+            b.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, Kit.pill(if (vertical) 52f else 56f)); setColor(if (on) Kit.FOCUS_FILL else 0x24FFFFFF) }
             b.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
             Kit.unclip(b); b.animate().scaleX(if (on) 1.06f else 1f).scaleY(if (on) 1.06f else 1f).setDuration(Kit.t(150)).start()
         }
