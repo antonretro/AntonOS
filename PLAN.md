@@ -65,6 +65,10 @@ The dock of favourites (anything can be pinned: a channel, a game, an app), then
 - Same rule as the skill: some iptv-org entries are unofficial rebroadcasts. Use the list as built; don't hand-pick, test or promote those, and add no other sources.
 - Kodi stays installed and shows up under Apps for anyone who wants it. It's just no longer needed for TV, which also frees roughly 300 MB of RAM.
 
+#### Channel numbers (Anthony: "you can put in the number of the channel and then it will come up")
+
+Every channel and radio station gets a stable number: favourites first, then by country, saved in the layout file so numbers never shuffle when the list is rebuilt; renumbering in Settings → TV. The number shows on channel cards, in the guide and in the watching banner. Typing digits (remote, keyboard or the phone remote's number pad) in the TV or Radio tab or while watching shows a large number with the matching channel name as you type, then tunes after about 1.5 s or on OK; an unknown number says "No channel 123".
+
 ### Radio (built in)
 
 Its own tab, because "listen to the radio" is a different wish from "watch TV". Station cards with logos, grouped by country, Favourites and Recent on top. Plays in the same built-in player with the station logo, name and a clock over the blurred wallpaper. Home leaves it playing in the background with a small "Now playing" chip on Home; pressing the chip opens it, a long press stops it.
@@ -194,6 +198,13 @@ No app to install on the phone, so iPhone and Android both work. Settings → Co
 - Pairing: the TV shows a 4-digit code the first time a phone connects; remembered phones are listed in Settings and can be removed. Home network only, off until switched on, never reachable from the internet.
 - Honest limit: an ordinary app can fully drive its own screens (so Home, TV, Radio, Videos, Games library, browser and Settings all work), and can send Back and Home anywhere through an accessibility service, but Android does not let it press arrows inside *other* apps. Check on the box whether its debug build allows key injection another way; if not, say so in the phone page ("arrows work in Retro Launcher only") rather than failing silently.
 - Build it late: it is an extra, and nothing else depends on it.
+- **A first-class design, not a utility page** (Anthony: "the mobile interface and the mobile app, I want to look really nice and be like designed correctly"). Same dark glass look as the launcher, built mobile-first for iPhone Safari and Android Chrome: safe-area insets, big thumb-reach targets, press feedback that feels like haptics, no layout jumps, portrait and one-handed, an "Add to Home Screen" manifest and icon so it opens full screen like an app. Sections: **Remote** (swipe pad, OK, Back, Home, volume), **Keyboard**, a **number pad** for channels, **tab shortcuts**, **Send to TV**, and **Now Playing** (current channel or video). Draw it in the mockup first and check it at phone sizes in the browser pane before wiring it up. Keep the page's transport (how presses reach the box) behind one small interface.
+- **Send to TV** (approved): a box where a YouTube link is pasted (opens in SmartTube) or a direct video/audio link (plays in the built-in player), plus pick-a-file upload from the phone into Videos if that's cheap. Home network only, same pairing code as the remote.
+- **Later, optional: hosted remote.** The phone page could also be served from Anthony's site (`antonretro.com/remote`) as a proper installable web app, with the box holding an outbound connection to his server that relays key presses (a secure website can't call the box on the home network directly). Off by default, switched on in Settings; local stays the default. Open concerns: added delay; depends on his server and the internet; careful pairing, because the TV becomes reachable from outside; other people's installs would run through his server.
+
+#### Settings → Casting (approved, build late with the phone remote)
+
+In our style and plain words, explain and set up what the box really supports: linking the phone's YouTube app to SmartTube with its TV code; Miracast screen mirroring from Android/Windows (start the box's `com.droidlogic.miracast` from our page); receiving media over the home network through the box's Media Center. No foreign menus where avoidable. **Not in scope:** real Google Cast receiving (needs a Google device certificate this box doesn't have; the workarounds reuse keys extracted from real devices: don't implement or install any of that). No closed-source AirPlay receiver apps without running the adware scan and asking Anthony first.
 
 ### Seeing where you are (Anthony's main complaint about Projectivy)
 
