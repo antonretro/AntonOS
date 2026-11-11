@@ -50,6 +50,7 @@ class HomeActivity : Activity() {
     private var screenW = 1280; private var screenH = 720
     private lateinit var saver: Screensaver
     private var lastInput = SystemClock.uptimeMillis()
+    private val testMode get() = java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()
     private lateinit var bgBlur: ImageView
     private lateinit var dim: View
     private lateinit var shelf: FrameLayout
@@ -65,6 +66,31 @@ class HomeActivity : Activity() {
     private var inTabBar = false
     private var tabIdx = 0
     private var scrolledShown = false
+
+    /**
+     * Android unbinds an accessibility helper when its app updates. If ours is switched on in settings but not
+     * running, write the setting again (we hold WRITE_SECURE_SETTINGS, granted at setup) so it binds again.
+     */
+    private fun reattachKeysHelper() {
+        val me = "$packageName/${RetroKeys::class.java.name}"
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: return
+        if (!enabled.split(':').any { it.equals(me, true) || it.equals("$packageName/.RetroKeys", true) }) return
+        // the helper runs in our own process: if it hasn't connected a few seconds after start, it isn't bound
+        ui.postDelayed({
+            if (!RetroKeys.alive) safely("keys rebind") { rebindKeys(enabled) }
+            else if (enabled.split(':').count { it == me } > 1) safely("keys tidy") { Settings.Secure.putString(contentResolver, "enabled_accessibility_services", enabled.split(':').distinct().joinToString(":")) }
+        }, 3000)
+    }
+
+    /** Never blank the setting (if the app died halfway the helper would stay off): change it by adding ourselves
+     *  once more, which makes Android bind the helper again. The next healthy start tidies the duplicate away. */
+    private fun rebindKeys(enabled: String) {
+        val me = "$packageName/${RetroKeys::class.java.name}"
+        Settings.Secure.putString(contentResolver, "enabled_accessibility_services", "$enabled:$me")
+        Settings.Secure.putInt(contentResolver, "accessibility_enabled", 1)
+        Perf.note("keys helper re-attached")
+    }
+
 
     /** Start-up must never crash the Home button: anything optional that fails is logged and skipped. */
     private inline fun safely(what: String, f: () -> Unit) { try { f() } catch (t: Throwable) { Perf.note("startup step '$what' failed: $t") } }
@@ -110,6 +136,7 @@ class HomeActivity : Activity() {
         ui.postDelayed({ safely("videos") { rebuildVideos() } }, 1200)
         safely("apps") { loadApps { safely("intro") { if (wantIntro()) playIntro() } } }
         safely("channels") { loadChannels() }
+        safely("keys helper") { reattachKeysHelper() }
         ui.postDelayed({ safely("player") { player.prepare() } }, 1500)   // the first channel doesn't pay for creating the player
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean { root.viewTreeObserver.removeOnPreDrawListener(this); Perf.log("cold", SystemClock.uptimeMillis() - t0); return true }
@@ -895,6 +922,7 @@ class HomeActivity : Activity() {
             old.view.animate().cancel(); old.view.visibility = View.GONE
         }
         current = name; tabIdx = tabs.indexOf(name)
+        Perf.note("state tab=$name")
         // pick up games and videos added since (copied over USB or ADB) every time the tab opens
         if (name == "Games" && old !== new) rebuildGames()
         if (name == "Videos" && old !== new) rebuildVideos()
@@ -923,8 +951,12 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
+        // test mode (file RetroLauncher/.test-mute, used by tools/hometest.sh): note the state after every key
+        if (e.action == KeyEvent.ACTION_UP && testMode) ui.postDelayed({ noteState("key${e.keyCode}") }, 600)
         if (::saver.isInitialized && saver.showing) { if (e.action == KeyEvent.ACTION_UP) stopSaver(); return true }   // any key just wakes it
         if (introRunning) { if (e.action == KeyEvent.ACTION_UP) introSkip?.invoke(); return true }
+        // the controller's Guide/Xbox button = Home, from anywhere (before any panel can swallow it)
+        if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         if (::keyboard.isInitialized && keyboard.showing) return keyboard.onKey(e)
         if (::player.isInitialized && player.showing && player.alpha > 0f) {
@@ -949,7 +981,6 @@ class HomeActivity : Activity() {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_PAGE_UP -> { switchTab(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_PAGE_DOWN -> { switchTab(1); return true }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { onBackKey(); return true }
-            KeyEvent.KEYCODE_BUTTON_MODE -> { if (::player.isInitialized && player.showing) player.close(keepRadio = true); dialog.hide(); keyboard.close(); inTabBar = false; if (current != "Home") showTab("Home"); screens["Home"]?.reset(); return true }   // the controller's Guide/Xbox button = Home
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BUTTON_START -> { if (!inTabBar) screens[current]?.longOk(); return true }
         }
         return super.dispatchKeyEvent(e)
@@ -972,12 +1003,34 @@ class HomeActivity : Activity() {
         screens[current]?.ok()
     }
 
+    /**
+     * The one way back to Home (Home key, Guide button, mouse): closes whatever is open (player, dialog,
+     * keyboard, screensaver, a Settings page) and lands on the first card of the Home tab. Radio keeps playing.
+     */
+    fun goHome() {
+        if (introRunning) introSkip?.invoke()
+        if (::saver.isInitialized && saver.showing) stopSaver()
+        if (::player.isInitialized && player.showing) player.close(keepRadio = true)
+        if (::dialog.isInitialized && dialog.showing) dialog.hide()
+        if (::keyboard.isInitialized && keyboard.showing) keyboard.close()
+        if (returning || stage.alpha < 1f) { stage.animate().cancel(); stage.alpha = 1f; stage.scaleX = 1f; stage.scaleY = 1f }
+        (screens["Settings"] as? SettingsScreen)?.reset()
+        inTabBar = false
+        if (current != "Home") showTab("Home")
+        screens["Home"]?.reset(); screens["Home"]?.enter()
+        drawTabs()
+        ui.postDelayed({ noteState("afterHome") }, 400)
+    }
+
+    /** For the Home/Back checklist test: what is on screen right now. */
+    private fun noteState(why: String) = Perf.note("state $why tab=$current tabbar=$inTabBar player=${::player.isInitialized && player.showing} dialog=${dialog.showing} keyboard=${keyboard.showing}")
+
     private fun onBackKey() {
-        // Back goes one step up; on Home's first row it does nothing.
-        if (inTabBar) { if (current != "Home") showTab("Home"); return }
+        // Back goes one step up. At the top of any tab it goes to the Home tab; on Home it does nothing.
+        if (inTabBar) { if (current != "Home") goHome() else { inTabBar = false; screens["Home"]?.enter(); drawTabs() }; return }
         val s = screens[current] ?: return
-        if (s.back()) return
-        if (current != "Home") { s.leave(); inTabBar = true; tabIdx = tabs.indexOf(current); drawTabs() }
+        if (s.back()) { ui.postDelayed({ noteState("afterBack") }, 400); return }
+        if (current != "Home") goHome() else ui.postDelayed({ noteState("afterBack") }, 400)
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
@@ -1093,11 +1146,7 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val t0 = SystemClock.uptimeMillis()
-        if (::player.isInitialized && player.showing) player.close(keepRadio = true)
-        if (Intent.ACTION_MAIN == intent.action && hasWindowFocus()) {
-            // Home pressed while already home: go to the first card of Home
-            inTabBar = false; if (current != "Home") showTab("Home"); screens["Home"]?.reset()
-        }
+        if (Intent.ACTION_MAIN == intent.action) goHome()   // Home always means the Home tab, from anywhere
         Perf.afterFrame("home", t0)
     }
 

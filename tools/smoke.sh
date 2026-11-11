@@ -21,13 +21,15 @@ a "cmd package set-home-activity $ACT" >/dev/null 2>&1
 home=$(a "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | tail -1 | tr -d '\r')
 check "Retro Launcher is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home goes to $home")"
 
-a "am force-stop $PKG"; sleep 1
+# never force-stop the launcher here: Android then switches its key helper off (accessibility rule).
+# "am kill" while another app is in front is what a low-memory close looks like.
+a "am start -n com.android.settings/.Settings" >/dev/null; sleep 2; a "am kill $PKG"; sleep 1
 a "am start -W -n $ACT" >/dev/null; sleep 3
 check "cold start shows Retro Launcher" "$(focus | grep -q $PKG && echo ok || echo "$(focus)")"
 check "no crash at start" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 
 # killed behind another app, then Home (what happens when memory is short during a game)
-a "am force-stop $PKG; input keyevent 3"; sleep 4
+a "am start -n com.android.settings/.Settings" >/dev/null; sleep 2; a "am kill $PKG; input keyevent 3"; sleep 5
 check "Home after the launcher was killed" "$(focus | grep -q $PKG && echo ok || echo "$(focus)")"
 check "still no crash" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 
@@ -45,7 +47,18 @@ if [ "${2:-}" = "--game" ]; then
     a "input keyevent 3"; sleep 4
     check "game $i: Home returns to Retro Launcher" "$( [ "$ingame" = ok ] && (focus | grep -q $PKG && echo ok || echo "$(focus)") || echo "$ingame")"
   done
+  # the Xbox pad's Guide button, sent as a real device press (the key helper ignores simulated keys)
+  PAD=$(a "getevent -p 2>/dev/null" | tr -d '
+' | awk '/^add device/{d=$4} /X-Box|Xbox|xbox|Gamepad|Controller/{print d; exit}')
+  if [ -n "$PAD" ]; then
+    press() { a "sendevent $PAD 1 $1 1; sendevent $PAD 0 0 0; sendevent $PAD 1 $1 0; sendevent $PAD 0 0 0"; }
+    a "am force-stop com.retroarch.ra32"; a "am start -n com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture -e ROM '$ROM' -e LIBRETRO /data/data/com.retroarch.ra32/cores/gambatte_libretro_android.so -e CONFIGFILE $CFG" >/dev/null; sleep 8
+    press 316; sleep 2; check "pad Guide in a game opens our pause menu" "$(focus | grep -q PauseActivity && echo ok || echo "$(focus)")"
+    press 305; sleep 2; check "pad B resumes the game" "$(focus | grep -q retroarch && echo ok || echo "$(focus)")"
+    a "input keyevent 3"; sleep 3; check "Home from the game" "$(focus | grep -q $PKG/ && echo ok || echo "$(focus)")"
+  else echo "SKIP  no pad connected: Guide checks"; fi
   a "mv $CFG.smokebak $CFG"
+  check "key helper still switched on" "$(a "settings get secure enabled_accessibility_services" | grep -q RetroKeys && echo ok || echo off)"
   check "no crash after games" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 fi
 echo "$fails failure(s)"

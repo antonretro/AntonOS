@@ -54,6 +54,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val error = Kit.text(ctx, 26f, true)
     private val strip = RowsScreen(ctx, 0f, false, artFor, { item, _ -> (item as? Item.Ch)?.let { tune(list.indexOf(it.ch), 0) }; hideStrip() })
     private val stripBox = FrameLayout(ctx)
+    /** Mouse: a Back button appears top right whenever the mouse moves over the picture. */
+    private val mouseBack = Kit.text(ctx, 18f, true).apply { text = "‹  Back"; gravity = Gravity.CENTER; alpha = 0f }
+    private val hideMouseBack = Runnable { mouseBack.animate().alpha(0f).setDuration(Kit.t(300)).start() }
 
     var onClosed: ((Channel, Boolean) -> Unit)? = null     // channel, keepPlaying (radio)
     var onTuned: ((Channel) -> Unit)? = null
@@ -142,6 +145,13 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         stripBox.addView(strip.view, LayoutParams(-1, -1).apply { topMargin = Kit.dpi(ctx, 62f) })
         stripBox.visibility = View.GONE
         addView(stripBox, LayoutParams(-1, Kit.dpi(ctx, 250f), Gravity.BOTTOM))
+        mouseBack.background = GlassDrawable(mouseBack, Kit.dp(ctx, 22f), Kit.GLASS_STRONG)
+        mouseBack.setOnClickListener { if (mouseBack.alpha > .1f) close(keepRadio = true) }
+        addView(mouseBack, LayoutParams(Kit.dpi(ctx, 120f), Kit.dpi(ctx, 46f), Gravity.END).apply { topMargin = Kit.dpi(ctx, Kit.SAFE_Y); rightMargin = Kit.dpi(ctx, Kit.SAFE_X) })
+        setOnGenericMotionListener { _, e ->
+            if (e.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) { mouseBack.bringToFront(); mouseBack.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(hideMouseBack); ui.postDelayed(hideMouseBack, 3000) }
+            false
+        }
     }
 
     /** Testing over ADB: a file /sdcard/RetroLauncher/.test-mute silences the player. */

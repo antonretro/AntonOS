@@ -34,8 +34,11 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
         box.addView(title)
         box.addView(body, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 12f); bottomMargin = Kit.dpi(ctx, 26f) })
         buttons.orientation = LinearLayout.HORIZONTAL; buttons.gravity = Gravity.CENTER
+        buttons.clipChildren = false; box.clipChildren = false; box.clipToPadding = false   // keep a selected button's round corners
         box.addView(buttons)
         addView(box, LayoutParams(Kit.dpi(ctx, 620f), -2, Gravity.CENTER))
+        box.isClickable = true
+        setOnClickListener { sel = btns.size - 1; choose() }   // mouse: click outside = the last choice (Cancel / Not now)
     }
 
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {

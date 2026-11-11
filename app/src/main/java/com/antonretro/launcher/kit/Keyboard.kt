@@ -48,6 +48,8 @@ class Keyboard(ctx: Context) : FrameLayout(ctx) {
         rowsBox.orientation = LinearLayout.VERTICAL
         panel.addView(rowsBox)
         addView(panel, LayoutParams(Kit.dpi(ctx, 1000f), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = Kit.dpi(ctx, 34f) })
+        panel.isClickable = true
+        setOnClickListener { close() }   // mouse: click outside the keyboard to close it
     }
 
     fun open(titleText: String, initial: String = "", password: Boolean = false, doneText: String = "Done", onDone: (String) -> Unit) {

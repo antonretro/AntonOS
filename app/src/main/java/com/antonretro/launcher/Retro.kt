@@ -58,26 +58,38 @@ object RetroConfig {
  * Back opens Retro Launcher's own pause menu, so RetroArch's menu never has to appear.
  */
 class RetroKeys : AccessibilityService() {
+    companion object { @Volatile var alive = false }
+    override fun onDestroy() { alive = false; super.onDestroy() }
     private var foreground: String? = null
-    private var startDown = false; private var selectDown = false
+    private var lastStart = 0L; private var lastSelect = 0L
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         if (e?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) e.packageName?.toString()?.let { if (it != "com.android.systemui" && it != "android") foreground = it }
     }
     override fun onInterrupt() {}
 
+    override fun onServiceConnected() {
+        // ask for key events explicitly as well as in the XML (some Android 7 builds ignore the XML flag)
+        serviceInfo = serviceInfo.apply { flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS }
+        if (Perf.file == null) Perf.file = getExternalFilesDir(null)?.let { File(it, "perf.log") }
+        Perf.note("keys helper connected")
+        alive = true
+    }
+
     private fun inGame() = foreground?.startsWith("com.retroarch") == true
 
     override fun onKeyEvent(e: KeyEvent): Boolean {
         val code = e.keyCode
-        if (code == KeyEvent.KEYCODE_BUTTON_START) startDown = e.action == KeyEvent.ACTION_DOWN
-        if (code == KeyEvent.KEYCODE_BUTTON_SELECT) selectDown = e.action == KeyEvent.ACTION_DOWN
+        if (e.action == KeyEvent.ACTION_DOWN && File(Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()) Perf.note("keys helper saw $code in $foreground")
+        // Start + Select: pressed within a second of each other (this pad reports each release straight away)
+        if (e.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_BUTTON_START) lastStart = e.eventTime
+        if (e.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_BUTTON_SELECT) lastSelect = e.eventTime
         val guide = code == KeyEvent.KEYCODE_BUTTON_MODE
-        val combo = startDown && selectDown && (code == KeyEvent.KEYCODE_BUTTON_START || code == KeyEvent.KEYCODE_BUTTON_SELECT)
+        val combo = (code == KeyEvent.KEYCODE_BUTTON_START || code == KeyEvent.KEYCODE_BUTTON_SELECT) && e.action == KeyEvent.ACTION_DOWN && Math.abs(lastStart - lastSelect) < 1000
         val back = code == KeyEvent.KEYCODE_BACK
         if (inGame() && (guide || combo || back)) {
             if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
-                startDown = false; selectDown = false
+                lastStart = 0L; lastSelect = -5000L
                 startActivity(Intent(this, PauseActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
             }
             return true   // RetroArch never sees it, so its own menu doesn't open
@@ -101,6 +113,7 @@ class PauseActivity : Activity() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         box.setPadding(Kit.dpi(this, 34f), Kit.dpi(this, 30f), Kit.dpi(this, 34f), Kit.dpi(this, 26f))
         box.background = GlassDrawable(box, Kit.dp(this, 26f), Kit.GLASS_STRONG)
+        box.clipChildren = false; box.clipToPadding = false   // a selected button grows a little; keep its round corners
         box.addView(Kit.text(this, 30f, true).apply { text = "Paused" })
         box.addView(Kit.text(this, 16f, false, Kit.TEXT_DIM).apply { text = "Your game waits right where you left it" }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(this@PauseActivity, 6f); bottomMargin = Kit.dpi(this@PauseActivity, 20f) })
         for ((i, label) in items.withIndex()) {
@@ -136,6 +149,20 @@ class PauseActivity : Activity() {
             3 -> backToGame("RESET")
             4 -> { RetroCmd.send("SAVE_STATE"); ui.postDelayed({ startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); finish() }, 300) }
         }
+    }
+
+    /** A pad's D-pad and left stick arrive as movement, not keys: turn them into up/down. */
+    private var stickY = 0
+    override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
+        if (e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK) && e.action == MotionEvent.ACTION_MOVE) {
+            // newest movement first, then anything batched in the same frame (pads report many small moves)
+            var y = e.getAxisValue(MotionEvent.AXIS_HAT_Y).let { if (it != 0f) it else e.getAxisValue(MotionEvent.AXIS_Y) }
+            for (h in 0 until e.historySize) { val hy = e.getHistoricalAxisValue(MotionEvent.AXIS_HAT_Y, h); if (Math.abs(hy) > .5f) y = hy }
+            val d = if (y > .5f) 1 else if (y < -.5f) -1 else 0
+            if (d != stickY) { stickY = d; if (d != 0) { sel = (sel + d).coerceIn(0, items.size - 1); paint() } }
+            return true
+        }
+        return super.dispatchGenericMotionEvent(e)
     }
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
