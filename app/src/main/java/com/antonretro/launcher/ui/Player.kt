@@ -71,6 +71,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     var onTuned: ((Channel) -> Unit)? = null
     var onStar: ((Channel) -> Unit)? = null
     var onGuide: ((Channel) -> Unit)? = null
+    /** a channel really showed a picture (or a station sound) / a channel failed: feeds "Working only" in the Guide */
+    var onWorks: ((Channel) -> Unit)? = null
+    var onBroken: ((Channel) -> Unit)? = null
     /** "Now: News at Nine, until 9:30 PM" from the guide, or null. */
     var nowLine: ((Channel) -> String?)? = null
 
@@ -273,6 +276,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         ui.removeCallbacks(watchdog)
         if (video != null) return
         val c = list.getOrNull(idx) ?: return
+        onWorks?.invoke(c)
         cover.animate().alpha(0f).setDuration(Kit.t(160)).start()
         Perf.log(if (firstTune) "channel" else "zap", SystemClock.uptimeMillis() - tunedAt)
         warmNeighbours()
@@ -301,6 +305,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             ui.postDelayed({ error.text = "This channel isn't working right now"; endVideo(false) }, 2500); return
         }
         if (!showing && !playing) return
+        list.getOrNull(idx)?.let { onBroken?.invoke(it) }
         player?.stop()
         error.visibility = View.VISIBLE; error.alpha = 0f; error.animate().alpha(1f).setDuration(Kit.t(200)).start()
         val failedIdx = idx

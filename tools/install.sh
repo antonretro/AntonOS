@@ -26,7 +26,7 @@ case "$out" in *Success*) ;; *) echo "FAIL  install"; exit 1;; esac
 
 # 1. ahead-of-time compile FIRST: it kills the app process, and the key helper lives in that process.
 #    (Compiling after switching the helper on left Android holding a dead helper that swallowed every remote key.)
-a "cmd package compile -m speed -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
+a "cmd package compile -m interpret-only -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
 
 # the music visualizer reads the music player's own output; Android files that under the microphone permission
 a "pm grant $PKG android.permission.RECORD_AUDIO" 2>/dev/null

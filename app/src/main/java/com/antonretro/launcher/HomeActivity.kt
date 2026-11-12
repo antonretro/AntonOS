@@ -255,6 +255,8 @@ class HomeActivity : Activity() {
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
             onStar = { c -> star(c) }
             numberOf = { c -> this@HomeActivity.numberOf(c) }
+            onBroken = { c -> markBroken(c.url, true) }
+            onWorks = { c -> markBroken(c.url, false) }
         }
         applyPlayerSettings()
         safely("guide") { Guide.open(this) }
@@ -1212,7 +1214,7 @@ class HomeActivity : Activity() {
     // ---------------------------------------------------------------- TV Guide
     private lateinit var guide: GuideView
     private val HOUR = 3600_000L
-    private val guideItem = Item.Action("tv:guide", "TV Guide", "What's on now and next", "guide") { openGuide(null) }
+    private val guideItem = Item.Action("tv:guide", "TV Guide", "What's on now and next", "guide") { tvGuideFirst = true; openGuide(null) }
 
     /** Favourites first, then channels that have a guide, then the rest; each by channel number. */
     private fun guideList(): List<Channel> {
@@ -1229,8 +1231,38 @@ class HomeActivity : Activity() {
         else { for ((v, vis) in covered) v.visibility = vis; covered.clear() }
     }
 
+    // ---------------------------------------------------------------- the Guide: default TV view, filters, search
+    private val tvPrefs by lazy { getSharedPreferences("tv", MODE_PRIVATE) }
+    /** urls that failed to play, with when (a channel that works again is forgiven at once; failures fade after a week) */
+    private val broken by lazy { HashMap<String, Long>().apply { tvPrefs.getStringSet("broken", emptySet())!!.forEach { e -> e.substringBefore(' ').toLongOrNull()?.let { put(e.substringAfter(' '), it) } } } }
+    private fun markBroken(url: String, bad: Boolean) {
+        if (bad) broken[url] = System.currentTimeMillis() else if (broken.remove(url) == null) return
+        tvPrefs.edit().putStringSet("broken", broken.map { (u, t) -> "$t $u" }.toSet()).apply()
+    }
+    private fun isBroken(url: String) = broken[url]?.let { System.currentTimeMillis() - it < 7 * 24 * 3600_000L } == true
+    /** the Guide opens by itself when you go down into the TV tab, unless Cards was chosen (remembered) */
+    private var tvGuideFirst: Boolean
+        get() = tvPrefs.getBoolean("guideFirst", true)
+        set(v) { tvPrefs.edit().putBoolean("guideFirst", v).apply() }
+
+    private fun guideFilters(): List<GuideView.Filter> {
+        val out = ArrayList<GuideView.Filter>()
+        out.add(GuideView.Filter("All") { true })
+        if (store.favourites.isNotEmpty()) out.add(GuideView.Filter("★  Favourites") { it.url in store.favourites })
+        if (store.recentChannels.isNotEmpty()) out.add(GuideView.Filter("Recent") { it.url in store.recentChannels })
+        for ((g, _) in ChannelRepo.groups(ChannelRepo.tv.filter { it.country !in store.hiddenGroups })) out.add(GuideView.Filter(g) { it.country == g })
+        return out
+    }
+
     private fun openGuide(startUrl: String?) {
         if (guide.parent == null) root.addView(guide, -1, -1)
+        guide.filters = guideFilters()
+        guide.isBroken = { c -> isBroken(c.url) }
+        guide.workingOnly = tvPrefs.getBoolean("workingOnly", true)
+        guide.onWorkingOnly = { on -> tvPrefs.edit().putBoolean("workingOnly", on).apply() }
+        guide.onSearch = { keyboard.open("Find a channel", doneText = "Find") { q -> guide.search(q) } }
+        guide.onCards = { tvGuideFirst = false; guide.hide(); inTabBar = false; screens[current]?.enter(); drawTabs(); notice("Cards view", "The Guide is still the first card") }
+        guide.onTop = { guide.hide(); inTabBar = true; tabIdx = tabs.indexOf(current); drawTabs() }
         guide.show(guideList(), startUrl ?: player.current?.takeIf { player.showing }?.url ?: store.lastTv)
         dialog.bringToFront()
         if (Guide.channelCount == 0) maybeRefreshGuide(0)
@@ -1633,7 +1665,10 @@ class HomeActivity : Activity() {
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
             if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]) } }
-            if (dr > 0) { inTabBar = false; screens[current]?.enter(); drawTabs() }
+            if (dr > 0) {
+                if (current == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { inTabBar = false; drawTabs(); openGuide(null); guide.focusBar(); return }
+                inTabBar = false; screens[current]?.enter(); drawTabs()
+            }
             return
         }
         val s = screens[current] ?: return

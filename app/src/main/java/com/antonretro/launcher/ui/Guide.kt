@@ -37,6 +37,21 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     var onCover: ((Boolean) -> Unit)? = null
     val showing get() = visibility == View.VISIBLE
 
+    /** One chip in the filter bar: a label and which channels it keeps. */
+    class Filter(val label: String, val keep: (Channel) -> Boolean)
+    /** the chips after Search: All, Favourites, Recent, countries… (set by the launcher before [show]) */
+    var filters: List<Filter> = emptyList()
+    /** a channel that failed to play recently ("Working only" hides those) */
+    var isBroken: (Channel) -> Boolean = { false }
+    var workingOnly = true
+    var onWorkingOnly: ((Boolean) -> Unit)? = null
+    /** Search chip: the launcher opens its keyboard and calls [search] with the words */
+    var onSearch: (() -> Unit)? = null
+    /** "Cards" chip: back to the card view of the TV tab (remembered by the launcher) */
+    var onCards: (() -> Unit)? = null
+    /** Up from the filter bar: back to the tab bar */
+    var onTop: (() -> Unit)? = null
+
     // before the views below: Grid's paints are sized with dp() when it is created
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Float) = v * d
@@ -52,6 +67,16 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     private var bgBitmap: android.graphics.Bitmap? = null
 
     private var chans: List<Channel> = emptyList()
+    private var all: List<Channel> = emptyList()
+    private var filterIdx = 0
+    private var query = ""
+    // the filter bar: Search, the filters, Working only, Cards
+    private val barScroll = android.widget.HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false; clipChildren = false }
+    private val bar = android.widget.LinearLayout(ctx).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; clipChildren = false; clipToPadding = false }
+    private val chips = ArrayList<android.widget.TextView>()
+    private val chipActs = ArrayList<() -> Unit>()
+    private var inBar = false
+    private var chipSel = 0
     private val cache = HashMap<String, List<Prog>>()
     private val loading = HashSet<String>()
 
@@ -73,17 +98,23 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         // fixed sizes everywhere: new text then only redraws itself instead of re-measuring the whole screen
         fun put(v: View, top: Float, h: Float, w: Float = 900f) = addView(v, LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, top) })
         put(meta, 34f, 26f); put(title, 64f, 44f); put(desc, 112f, 52f)
-        hint.text = "OK  watch or remind   ·   Back  close"; hint.gravity = android.view.Gravity.END
-        addView(hint, LayoutParams(Kit.dpi(ctx, 320f), Kit.dpi(ctx, 24f), android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 40f) })
-        addView(grid, LayoutParams(-1, -1).apply { topMargin = Kit.dpi(ctx, 178f) })
+        hint.text = "OK  watch or remind   ·   Up  filters   ·   Back  close"; hint.gravity = android.view.Gravity.END
+        addView(hint, LayoutParams(Kit.dpi(ctx, 520f), Kit.dpi(ctx, 24f), android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 40f) })
+        barScroll.addView(bar)
+        barScroll.setPadding(Kit.dpi(ctx, Kit.SAFE_X), 0, Kit.dpi(ctx, Kit.SAFE_X), 0)
+        addView(barScroll, LayoutParams(-1, Kit.dpi(ctx, 52f)).apply { topMargin = Kit.dpi(ctx, 168f) })
+        addView(grid, LayoutParams(-1, -1).apply { topMargin = Kit.dpi(ctx, 226f) })
     }
 
     // ------------------------------------------------------------------ open / close
     fun show(list: List<Channel>, startUrl: String?) {
-        chans = list; cache.clear(); loading.clear()
+        all = list; filterIdx = filterIdx.coerceIn(0, filters.size); query = ""; inBar = false
+        chans = applyFilter(); if (startUrl != null && chans.none { it.url == startUrl } && filterIdx != 0) { filterIdx = 0; chans = applyFilter() }
+        buildBar()
+        cache.clear(); loading.clear()
         val now = System.currentTimeMillis()
         targetStart = floorHalf(now); viewStart = targetStart; anchor = now
-        fRow = list.indexOfFirst { it.url == startUrl }.coerceAtLeast(0)
+        fRow = chans.indexOfFirst { it.url == startUrl }.coerceAtLeast(0)
         targetTop = (fRow - 2).coerceAtLeast(0); topRow = targetTop.toFloat()
         fProg = null
         // one ready-made background picture (blurred wallpaper with the dark tint baked in): one layer, not two
@@ -136,11 +167,72 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         fProg = l.firstOrNull { it.onAt(anchor) } ?: l.firstOrNull { it.start >= anchor } ?: l.lastOrNull()
     }
 
+    // ------------------------------------------------------------------ filters
+    /** chip 0 is Search; then [filters] (index 0 there = the first filter, usually All) */
+    private fun applyFilter(): List<Channel> {
+        val f = filters.getOrNull(filterIdx)
+        val q = query.trim().lowercase()
+        return all.filter { c -> (f == null || f.keep(c)) && (!workingOnly || !isBroken(c)) && (q.isEmpty() || c.name.lowercase().contains(q)) }
+    }
+
+    /** Coming down from the tab bar: the filter bar first, one more Down goes into the channels. */
+    fun focusBar() { inBar = true; chipSel = (filterIdx + 1).coerceIn(0, chips.size - 1); paintBar(); grid.invalidate() }
+
+    /** The words from the Search chip ("" clears the search). */
+    fun search(words: String) {
+        query = words.trim(); refilter(); buildBar(); chipSel = 0; paintBar()
+        if (chans.isEmpty()) hint.text = "No channel called \"$query\""
+    }
+
+    private fun refilter() {
+        val keep = chans.getOrNull(fRow)?.url
+        chans = applyFilter(); cache.clear(); loading.clear()
+        fRow = chans.indexOfFirst { it.url == keep }.coerceAtLeast(0)
+        targetTop = (fRow - 2).coerceAtLeast(0); topRow = targetTop.toFloat(); fProg = null
+        pickProg(); grid.invalidate(); updateInfo()
+    }
+
+    private fun buildBar() {
+        bar.removeAllViews(); chips.clear(); chipActs.clear()
+        fun chip(label: String, on: Boolean, act: () -> Unit) {
+            val t = Kit.text(context, 17f, true).apply { text = label; gravity = android.view.Gravity.CENTER; setPadding(Kit.dpi(context, 18f), 0, Kit.dpi(context, 18f), 0); tag = on }
+            t.setOnClickListener { chipSel = chips.indexOf(t); act() }
+            bar.addView(t, android.widget.LinearLayout.LayoutParams(-2, Kit.dpi(context, 40f)).apply { rightMargin = Kit.dpi(context, 8f) })
+            chips.add(t); chipActs.add(act)
+        }
+        chip(if (query.isEmpty()) "⌕  Search" else "⌕  \"$query\"  ✕", query.isNotEmpty()) { if (query.isEmpty()) onSearch?.invoke() else search("") }
+        for ((i, f) in filters.withIndex()) chip(f.label, i == filterIdx) { filterIdx = i; refilter(); buildBar(); paintBar() }
+        chip(if (workingOnly) "✓  Working only" else "Working only", workingOnly) { workingOnly = !workingOnly; onWorkingOnly?.invoke(workingOnly); refilter(); buildBar(); paintBar() }
+        chip("▦  Cards", false) { onCards?.invoke() }
+        chipSel = chipSel.coerceIn(0, chips.size - 1)
+        paintBar()
+    }
+
+    private fun paintBar() {
+        for ((i, t) in chips.withIndex()) {
+            val focus = inBar && i == chipSel; val on = t.tag == true
+            t.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(context, Kit.pill(40f)); setColor(when { focus -> Kit.FOCUS_FILL; on -> 0x40FFFFFF; else -> 0x14FFFFFF }) }
+            t.setTextColor(if (focus) Kit.FOCUS_TEXT else if (on) Kit.TEXT else 0xCCFFFFFF.toInt())
+        }
+        chips.getOrNull(chipSel)?.let { c -> if (inBar) barScroll.post { barScroll.smoothScrollTo((c.left - Kit.dpi(context, 120f)).coerceAtLeast(0), 0) } }
+    }
+
     // ------------------------------------------------------------------ moving
     fun onKey(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return true
+        if (inBar) {
+            when (e.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> if (chipSel > 0) { chipSel--; paintBar() }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> if (chipSel < chips.size - 1) { chipSel++; paintBar() }
+                KeyEvent.KEYCODE_DPAD_DOWN -> if (chans.isNotEmpty()) { inBar = false; paintBar(); focusChanged() }
+                KeyEvent.KEYCODE_DPAD_UP -> if (e.repeatCount == 0) onTop?.invoke()
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_NUMPAD_ENTER -> if (e.repeatCount == 0) chipActs.getOrNull(chipSel)?.invoke()
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> if (e.repeatCount == 0) hide()
+            }
+            return true
+        }
         when (e.keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP -> moveRow(-1)
+            KeyEvent.KEYCODE_DPAD_UP -> if (fRow == 0) { if (e.repeatCount == 0) { inBar = true; chipSel = (filterIdx + 1).coerceIn(0, chips.size - 1); paintBar(); grid.invalidate() } } else moveRow(-1)
             KeyEvent.KEYCODE_DPAD_DOWN -> moveRow(1)
             KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_BUTTON_L1 -> moveRow(-rowsVisible())
             KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_BUTTON_R1 -> moveRow(rowsVisible())
@@ -281,7 +373,7 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
                 val c = chans.getOrNull(i) ?: break
                 val top = rowsTop + (k - frac) * step
                 if (top > height) break
-                val focusedRow = i == fRow
+                val focusedRow = i == fRow && !inBar
                 // channel cell
                 r.set(left, top, left + chanW, top + rowH)
                 fill.color = if (focusedRow) Color.argb(70, 255, 255, 255) else Color.argb(34, 255, 255, 255)
