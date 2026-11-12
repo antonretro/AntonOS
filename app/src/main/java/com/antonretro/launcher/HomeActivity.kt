@@ -221,7 +221,9 @@ class HomeActivity : Activity() {
         root.addView(bar, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(this@HomeActivity, 41f); topMargin = Kit.dpi(this@HomeActivity, 29f) })
         clock = Kit.text(this, 24f, true)
         Kit.shadowText(clock)
-        root.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 38f) })
+        statusRow.orientation = LinearLayout.HORIZONTAL; statusRow.gravity = Gravity.CENTER_VERTICAL
+        statusRow.addView(clock)
+        root.addView(statusRow, FrameLayout.LayoutParams(-2, Kit.dpi(this, 52f), Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 28f) })
         tickClock()
     }
 
@@ -686,24 +688,33 @@ class HomeActivity : Activity() {
     /** The small "Now playing" chip by the clock while music plays with Now Playing closed. */
     private var musicChipView: TextView? = null
     /** Chips by the clock sit to its LEFT with a gap, whatever the clock's width (they once covered it). */
-    private fun chipRightMargin(): Int {
-        val w = if (clock.width > 0) clock.width else clock.paint.measureText(clock.text.toString()).toInt()
-        return Kit.dpi(this, Kit.SAFE_X) + w + Kit.dpi(this, 16f)
+    /** The top-right status row: the TV/radio chip, the music chip, then the clock, each 14 dp apart. Chips are
+     *  added once, in that order, and are GONE while hidden, so they never sit on top of each other or the clock. */
+    private val statusRow by lazy { LinearLayout(this) }
+    private fun addStatusChip(t: View, order: Int) {
+        // order 0 = TV/radio, 1 = music; the clock is always last
+        var at = 0
+        for (i in 0 until statusRow.childCount) { val o = statusRow.getChildAt(i).getTag(R.id.status_order) as? Int ?: continue; if (o < order) at = i + 1 }
+        t.setTag(R.id.status_order, order)
+        statusRow.addView(t, at, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Kit.dpi(this@HomeActivity, 14f) })
     }
-    private fun placeChip(v: View?) { v ?: return; (v.layoutParams as? FrameLayout.LayoutParams)?.let { if (it.rightMargin != chipRightMargin()) { it.rightMargin = chipRightMargin(); v.layoutParams = it } } }
+    private fun fadeChip(v: View?, show: Boolean) {
+        v ?: return; v.animate().cancel()
+        if (show) { if (v.visibility != View.VISIBLE) { v.alpha = 0f; v.visibility = View.VISIBLE }; v.animate().alpha(1f).setDuration(Kit.t(250)).start() }
+        else if (v.visibility == View.VISIBLE) v.animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { v.visibility = View.GONE }.start()
+    }
     private fun musicChip() {
         val show = ::music.isInitialized && music.active && !(::nowPlayingView.isInitialized && nowPlayingView.showing)
-        if (!show) { musicChipView?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
+        if (!show) { fadeChip(musicChipView, false); return }
         val chip = musicChipView ?: Kit.text(this, 16f, true).also { t ->
             t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
             t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
             t.setOnClickListener { openNowPlaying() }
-            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = chipRightMargin(); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            t.visibility = View.GONE; addStatusChip(t, 1)
             musicChipView = t
         }
         chip.text = (if (music.playing) "♪  " else "❚❚  ") + (music.current?.title ?: "")
-        placeChip(chip)
-        chip.bringToFront(); chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
+        fadeChip(chip, true)
     }
 
     private fun playVideo(v: LocalVideo) {
@@ -848,6 +859,43 @@ class HomeActivity : Activity() {
             // the game library may still be loading (just after a restart): open the game straight from its file
             else -> if (key.startsWith("rom:")) java.io.File(key.removePrefix("rom:")).let { f -> GameRepo.systemFor(f, f.parentFile?.name)?.let { playGame(Rom(f, it), null) } }
         }
+    }
+
+    // ---------------------------------------------------------------- the 3D game page (ui/GamePage.kt)
+    private var gamePageView: com.antonretro.launcher.ui.GamePage? = null
+    private var gamePageRoms: List<Rom> = emptyList()
+
+    /** RetroArch's automatic save for this game, if there is one (Saves/states, any sub-folder). */
+    private fun autoSave(rom: Rom): java.io.File? {
+        val dir = java.io.File(ChannelRepo.dir, "Saves/states")
+        val name = rom.file.nameWithoutExtension + ".state.auto"
+        return dir.walkTopDown().maxDepth(2).firstOrNull { it.isFile && it.name == name }
+    }
+
+    private fun showGamePage(roms: List<Rom>, index: Int) {
+        val page = gamePageView ?: com.antonretro.launcher.ui.GamePage(this).also { pg ->
+            root.addView(pg, -1, -1); gamePageView = pg
+            pg.onClose = { coverHome(false); calmKeys() }
+            pg.wantCover = { e -> gamePageRoms.firstOrNull { it.key == e.key }?.boxArt?.let { url -> Images.load(url, 600, 800) { b -> ui.post { pg.coverArrived(e.key, b) } } } }
+            pg.onOptions = { e -> gamePageRoms.firstOrNull { it.key == e.key }?.let { cardOptions("Games", Item.Game(it)) } }
+            pg.onPlay = { e, fresh ->
+                gamePageRoms.firstOrNull { it.key == e.key }?.let { rom ->
+                    // starting over keeps the old save as a backup next to it instead of deleting it
+                    if (fresh) autoSave(rom)?.let { f -> f.renameTo(java.io.File(f.path + ".before-restart")) }
+                    pg.hide(); playGame(rom, null)
+                }
+            }
+        }
+        gamePageRoms = roms
+        val recent = store.recentGames
+        val entries = roms.map { r ->
+            val played = recent.indexOf(r.key)
+            com.antonretro.launcher.ui.GamePage.Entry(r.key, r.title, r.system.shelf, r.system.colour, r.system.boxAspect,
+                when { played == 0 -> "Played last"; played > 0 -> "Played recently"; else -> "" }, autoSave(r) != null)
+        }
+        dialog.bringToFront()
+        coverHome(true)
+        page.show(entries, index)
     }
 
     private fun playGame(rom: Rom, cell: CardCell?) {
@@ -1114,17 +1162,16 @@ class HomeActivity : Activity() {
     /** The small "Now playing" chip next to the clock while radio plays in the background. */
     private var nowChip: TextView? = null
     private fun nowPlaying(c: Channel?) {
-        if (c == null) { nowChip?.animate()?.alpha(0f)?.setDuration(Kit.t(200))?.start(); return }
+        if (c == null) { fadeChip(nowChip, false); return }
         val chip = nowChip ?: Kit.text(this, 16f, true).also { t ->
             t.setPadding(Kit.dpi(this, 14f), Kit.dpi(this, 8f), Kit.dpi(this, 14f), Kit.dpi(this, 8f))
             t.background = GlassDrawable(t, Kit.dp(this, Kit.pill(36f)))
             t.setOnClickListener { player.current?.let { openPlayer(listOf(it), 0) } }
             t.setOnLongClickListener { player.stopBackground(); nowPlaying(null); true }
-            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = chipRightMargin(); topMargin = Kit.dpi(this@HomeActivity, 36f) })
+            t.visibility = View.GONE; addStatusChip(t, 0)
             nowChip = t
         }
-        placeChip(chip)
-        chip.text = "♪  ${c.name}"; chip.alpha = 0f; chip.animate().alpha(1f).setDuration(Kit.t(250)).start()
+        chip.text = "♪  ${c.name}"; fadeChip(chip, true)
     }
 
     private fun openPlayer(list: List<Channel>, index: Int) {
@@ -1234,7 +1281,7 @@ class HomeActivity : Activity() {
             t.isSingleLine = false; t.maxLines = 2
             t.setPadding(Kit.dpi(this, 22f), Kit.dpi(this, 12f), Kit.dpi(this, 22f), Kit.dpi(this, 12f))
             t.background = GlassDrawable(t, Kit.dp(this, Kit.R_L), Kit.GLASS_STRONG)
-            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 88f) })
+            root.addView(t, FrameLayout.LayoutParams(-2, -2, Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 92f) })
             noticeView = t
         }
         n.text = android.text.SpannableStringBuilder(title).apply {
@@ -1510,6 +1557,7 @@ class HomeActivity : Activity() {
         if (SystemClock.uptimeMillis() < keysCalmUntil) return true
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
+        gamePageView?.let { if (it.showing) return it.onKey(e) }
         // channel numbers: digits in the TV or Radio tab, or while watching
         val digit = when (e.keyCode) { in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> e.keyCode - KeyEvent.KEYCODE_0; in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> e.keyCode - KeyEvent.KEYCODE_NUMPAD_0; else -> -1 }
         val inChannels = (::player.isInitialized && player.showing && player.current != null) || ((current == "TV" || current == "Radio") && !(::keyboard.isInitialized && keyboard.showing))
@@ -1649,7 +1697,7 @@ class HomeActivity : Activity() {
         dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0))
     }
 
-    private fun overlayOpen() = game != null || (::nowPlayingView.isInitialized && nowPlayingView.showing) || (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
+    private fun overlayOpen() = (gamePageView?.showing == true) || game != null || (::nowPlayingView.isInitialized && nowPlayingView.showing) || (::guide.isInitialized && guide.showing) || (::gameMenu.isInitialized && gameMenu.showing) ||
         (::dialog.isInitialized && dialog.showing) || (::keyboard.isInitialized && keyboard.showing) || (::player.isInitialized && player.showing)
 
     // ---------------------------------------------------------------- opening things
@@ -1673,7 +1721,10 @@ class HomeActivity : Activity() {
             is Item.Yt -> if (openInSmartTube(item.v.url, cell)) { yt.noteWatched(item.v); ui.postDelayed({ rebuildYouTube() }, 800) }
             is Item.YtSearch -> youtubeSearch()
             is Item.Vid -> playVideo(item.v)
-            is Item.Game -> playGame(item.rom, cell)
+            is Item.Game -> {
+                val row = (screens[current] as? RowsScreen)?.currentRowItems()?.filterIsInstance<Item.Game>()?.map { it.rom } ?: listOf(item.rom)
+                showGamePage(row, row.indexOfFirst { it.key == item.rom.key }.coerceAtLeast(0))
+            }
             is Item.AddGames -> offerGamesFrom(usbRoots(), quietIfNone = false)
             is Item.YtAdd -> youtubeAdd()
         }
@@ -1840,7 +1891,7 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- clock + app changes
     private val timeFmt get() = SimpleDateFormat(if (store.clock24) "H:mm" else "h:mm a", Locale.getDefault())   // 12-hour "5:33 PM" unless 24-hour is chosen
-    private fun tickClock() { clock.text = timeFmt.format(Date()); clock.post { placeChip(musicChipView); placeChip(nowChip) } }
+    private fun tickClock() { clock.text = timeFmt.format(Date()); Unit }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {

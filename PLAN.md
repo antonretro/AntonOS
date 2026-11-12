@@ -525,3 +525,17 @@ The skill's scripts are the engine (one source of truth). Google's platform-tool
 - No unlicensed streaming apps, rows or "recommended" feeds from them.
 - No firmware flashing. This is an app that takes over the home screen, not a new Android ROM, even though it should feel like one.
 - No downloading or bundling commercial game files or box art in the repo.
+
+### Mouse, controllers and two players (Anthony's question, 2026-11-12)
+
+- **Menus:** every connected device works at once. Whatever was used last decides what's shown (focus ring and pad glyphs, or pointer and hover). Using another device switches instantly, no setting. The mouse pointer hides after a few seconds of pad/remote use and comes back when the mouse moves.
+- **Player numbers:** order of connection by default (first pad = Player 1). The remote only takes a player slot as Player 1 when no pad is connected; a mouse never does. Settings → Controllers lists pads with their player number and lets him reorder them ("press A on the controller that should be Player 1"); the order is remembered per device, so the same pad gets the same number next time.
+- **Games:** the game page and game Home Menu show who is Player 1/2 with each pad's glyph. RetroArch gets the same order (`input_player1_joypad_index` etc. in the per-game config) and autoconfig per pad. Built-in games say 1 player unless one supports 2 (a 2-player mode for the falling-block game and Totem Tide is a later option).
+- **In-game menus:** any pad's Guide/Home opens the game Home Menu and that pad drives it; others are ignored until it closes.
+- **Notices:** "Xbox controller connected · Player 2"; a pad disconnecting mid-game pauses the game with "Player 2's controller disconnected".
+
+### Later ideas from Anthony (2026-11-12, not scheduled)
+
+- **Mirror to phone** (Wii U style): the TV picture on the phone page. Needs Android's screen-capture permission (one OK on the TV each time) and a picture stream to the phone; fine for menus, too delayed for action games.
+- **Phone-as-controller games:** a bowling/darts/air-hockey demo where you swipe on the phone. Tilt controls need https (later hosted mode).
+- **DS emulator with the phone as the bottom screen:** very hard (RetroArch can't send one screen to a browser); not promised.
