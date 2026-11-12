@@ -586,6 +586,8 @@ class HomeActivity : Activity() {
     private lateinit var nowPlayingView: NowPlaying
 
     private fun playSong(list: List<Song>, i: Int) {
+        // the song that's already playing: just open Now Playing again, the song and the visualizer carry on
+        if (::music.isInitialized && music.active && music.current?.key == list.getOrNull(i)?.key) { openNowPlaying(); return }
         if (::player.isInitialized && player.showing) player.close(keepRadio = false)
         if (::player.isInitialized) player.stopBackground()   // one thing at a time: radio stops
         nowPlaying(null)

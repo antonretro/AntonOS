@@ -299,20 +299,22 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
             vis = made.also { v ->
                 v.onReady = { names ->
                     bg.visibility = View.INVISIBLE   // the visualizer covers it: don't draw the wallpaper under it every frame
-                    presets = names; preset = 0; refresh()
+                    presets = names; preset = if (preset in names.indices) preset else 0
+                    if (preset != 0) v.setPreset(preset)
+                    refresh()
                 }
                 addView(v.view, 1, LayoutParams(-1, -1))
             }
         } catch (e: Throwable) { Perf.note("visualizer can't start: $e"); vis = null }
-        vis?.resume()
+        vis?.let { it.view.visibility = View.VISIBLE; bg.visibility = View.INVISIBLE; it.resume() }
         music.tap.listener = { bytes, ch, rate -> vis?.feedPcm(bytes, ch, rate) }
     }
 
+    /** Closing Now Playing only pauses the visualizer: coming back carries on with the same look, it doesn't start over. */
     private fun stopVisualizer() {
         music.tap.listener = null
+        vis?.let { v -> v.pause(); v.view.visibility = View.INVISIBLE }
         bg.visibility = View.VISIBLE
-        vis?.let { v -> removeView(v.view); v.release() }
-        vis = null
     }
 
     private fun setStyle(s: String) { style = s; vis?.setVisualizer(s) { names -> presets = names; preset = 0; refresh() } }
