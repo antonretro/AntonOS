@@ -190,10 +190,14 @@ class HomeActivity : Activity() {
     // ---------------------------------------------------------------- views
     private fun buildViews() {
         root = FrameLayout(this).apply { clipChildren = false }
-        bgSharp = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageBitmap(Backdrop.sharp) }
-        bgBlur = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; setImageBitmap(Backdrop.blurredDim); alpha = 0f }
+        // one picture each: fading them needs no off-screen copy (Android makes a full-screen one by default,
+        // which on this GPU was most of the cost of moving between the dock and the rows)
+        bgSharp = object : ImageView(this) { override fun hasOverlappingRendering() = false }.apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageBitmap(Backdrop.sharp) }
+        bgBlur = object : ImageView(this) { override fun hasOverlappingRendering() = false }.apply { scaleType = ImageView.ScaleType.FIT_XY; setImageBitmap(Backdrop.blurredDim); alpha = 0f }
         dim = View(this).apply { setBackgroundColor(Kit.DIM_SCROLLED); alpha = 0f }
-        shelf = FrameLayout(this)
+        // the home title area fades as one picture with no off-screen copy (its texts never overlap): measured,
+        // that fade and the wallpaper's were almost all the dropped frames between the dock and the rows
+        shelf = object : FrameLayout(this) { override fun hasOverlappingRendering() = false }
         stage = FrameLayout(this).apply { clipChildren = false }
         drift = DriftView(this).apply { visibility = View.GONE }
         root.addView(drift, -1, -1)
@@ -201,7 +205,8 @@ class HomeActivity : Activity() {
         applyWallpaper()
         root.addView(shelf, FrameLayout.LayoutParams(-1, Kit.dpi(this, 400f)))
         // content is clipped under the tab bar with a soft fade (pre-made gradient, no per-frame work)
-        root.addView(stage, -1, -1)
+        // the screens end above the button-hint bar: the row you are on never sits under it
+        root.addView(stage, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = Kit.dpi(this@HomeActivity, 44f) })
 
         pills = PillTrack(this)
         val bar = pills
@@ -224,7 +229,7 @@ class HomeActivity : Activity() {
         statusRow.orientation = LinearLayout.HORIZONTAL; statusRow.gravity = Gravity.CENTER_VERTICAL
         statusRow.addView(clock)
         root.addView(statusRow, FrameLayout.LayoutParams(-2, Kit.dpi(this, 52f), Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 28f) })
-        root.addView(hintBar, FrameLayout.LayoutParams(-1, Kit.dpi(this, 40f), Gravity.BOTTOM))
+        root.addView(hintBar, FrameLayout.LayoutParams(-1, Kit.dpi(this, 44f), Gravity.BOTTOM))
         tickClock()
     }
 
@@ -1558,11 +1563,12 @@ class HomeActivity : Activity() {
         val want = screens[current]?.scrolled() == true
         if (want == scrolledShown) return
         scrolledShown = want
-        val d = Kit.t(350)
+        val d = if ("nofade" in Kit.perfFlags) 0L else Kit.t(220)
+        if ("noshelf" in Kit.perfFlags) shelf.visibility = View.GONE
         // only one full-screen picture is drawn once the fade ends (the GPU's biggest cost)
         if (!want) { bgSharp.visibility = View.VISIBLE }
         bgBlur.animate().alpha(if (want) 1f else 0f).setDuration(d).withEndAction { if (scrolledShown) bgSharp.visibility = View.INVISIBLE }.start()
-        shelf.animate().alpha(if (want) 0f else 1f).setDuration(d).start()
+        shelf.animate().alpha(if (want) 0f else 1f).setDuration(d).withLayer().start()
     }
 
     // ---------------------------------------------------------------- tabs

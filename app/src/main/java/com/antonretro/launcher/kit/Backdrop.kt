@@ -155,7 +155,7 @@ class GlassDrawable(private val host: View, private val radius: Float, private v
     private var shaderFor: Bitmap? = null
 
     override fun draw(canvas: Canvas) {
-        val bl = Backdrop.blurred
+        val bl = if ("noglass" in Kit.perfFlags) null else Backdrop.blurred
         rect.set(bounds)
         if (bl != null) {
             if (shaderFor !== bl) { shaderPaint.shader = BitmapShader(bl, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP); shaderFor = bl }

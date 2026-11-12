@@ -21,7 +21,7 @@ class HintBar(ctx: Context) : LinearLayout(ctx) {
     init {
         orientation = HORIZONTAL; gravity = Gravity.CENTER
         setPadding(Kit.dpi(ctx, 18f), 0, Kit.dpi(ctx, 18f), 0)
-        background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xB3000000.toInt(), 0x00000000))
+        background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF00A0C10.toInt(), 0xE60A0C10.toInt(), 0x000A0C10))   // its own dark strip
     }
 
     fun set(list: List<Pair<Btn, String>>) { if (list == hints) return; hints = list; draw() }

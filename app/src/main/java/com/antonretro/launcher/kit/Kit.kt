@@ -114,6 +114,8 @@ object Kit {
 
     /** Soft text shadows are expensive to redraw while text fades or moves on the Mali-450, so they're only used
      *  when shadowsOn; the wallpapers' built-in darker bands keep white text readable without them. */
+    /** Speed experiments without a rebuild: words in /sdcard/RetroLauncher/.perf-flags (read at start). */
+    @JvmStatic val perfFlags: Set<String> by lazy { try { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.perf-flags").readText().replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').split(" ").filter { it.isNotEmpty() }.toSet() } catch (e: Exception) { emptySet() } }
     @JvmStatic var shadowsOn = true   // measured: turning them off made no difference
-    fun shadowText(tv: TextView) { if (shadowsOn) tv.setShadowLayer(12f, 0f, 2f, Color.argb(120, 0, 0, 0)) }
+    fun shadowText(tv: TextView) { if (shadowsOn && "noshadow" !in perfFlags) tv.setShadowLayer(12f, 0f, 2f, Color.argb(120, 0, 0, 0)) }
 }
