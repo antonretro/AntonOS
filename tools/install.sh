@@ -25,8 +25,10 @@ echo "  $out"
 case "$out" in *Success*) ;; *) echo "FAIL  install"; exit 1;; esac
 
 # 1. ahead-of-time compile FIRST: it kills the app process, and the key helper lives in that process.
+#    speed-profile compiles only the code AntonOS actually runs (about 2 MB; full `speed` took ~70 MB and filled the box).
+#    Measured on the box: Home key 759 -> 548 ms, janky frames 13.5% -> 9.7% versus interpret-only.
 #    (Compiling after switching the helper on left Android holding a dead helper that swallowed every remote key.)
-a "cmd package compile -m interpret-only -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
+a "cmd package compile -m speed-profile -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
 
 # the music visualizer reads the music player's own output; Android files that under the microphone permission
 a "pm grant $PKG android.permission.RECORD_AUDIO" 2>/dev/null
