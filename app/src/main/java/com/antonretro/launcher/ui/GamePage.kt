@@ -66,7 +66,7 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
         info.addView(note, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(ctx, 6f) })
         btnBox.orientation = LinearLayout.VERTICAL; btnBox.clipChildren = false; btnBox.clipToPadding = false
         info.clipChildren = false; info.clipToPadding = false
-        info.addView(btnBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 26f) })
+        info.addView(btnBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 26f); rightMargin = Kit.dpi(ctx, 24f) })
         addView(info, LayoutParams(Kit.dpi(ctx, 520f), -2).apply { leftMargin = Kit.dpi(ctx, 680f); topMargin = Kit.dpi(ctx, 70f) })
         hints.gravity = Gravity.CENTER
         hints.text = "OK  Choose        ◀ ▶  Other games        Back  To the shelf"
@@ -145,6 +145,7 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
     }
 
     fun onKey(e: KeyEvent): Boolean {
+        if (e.action == KeyEvent.ACTION_DOWN) Perf.note("game page key ${e.keyCode} cur=$cur of ${list.size}")
         if (e.action != KeyEvent.ACTION_DOWN) return true
         val held = e.repeatCount > 0
         when (e.keyCode) {
@@ -174,7 +175,7 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
         private val dst = RectF()
         fun set(cover: Bitmap?, colour: Int = 0) {
             // a tiny copy stretched up with filtering is a cheap, soft blur
-            val small = cover?.let { Bitmap.createScaledBitmap(it, 12, (12f * it.height / it.width).toInt().coerceAtLeast(1), true) }
+            val small = cover?.let { Bitmap.createScaledBitmap(Bitmap.createScaledBitmap(it, 6, (6f * it.height / it.width).toInt().coerceAtLeast(1), true), 48, (48f * it.height / it.width).toInt().coerceAtLeast(1), true) }
             b = a; colB = colA; a = small; colA = colour
             fade = 0f
             ValueAnimator.ofFloat(0f, 1f).apply { duration = Kit.t(450); addUpdateListener { fade = it.animatedValue as Float; invalidate() }; start() }
@@ -183,13 +184,13 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
             dst.set(-80f, -80f, width + 80f, height + 80f)
             fun layer(bm: Bitmap?, col: Int, al: Float) {
                 if (al <= 0f) return
-                p.alpha = (al * 255 * .55f).toInt()
+                p.alpha = (al * 255 * .5f).toInt()
                 if (bm != null) c.drawBitmap(bm, null, dst, p)
                 else if (col != 0) { p.color = col; p.alpha = (al * 255 * .35f).toInt(); c.drawRect(dst, p) }
             }
             layer(b, colB, 1f - fade); layer(a, colA, fade)
             // darker on the right so the text reads, lighter round the box
-            veil.shader = RadialGradient(width * .28f, height * .55f, width * .8f, intArrayOf(0x00000000, 0xA6000000.toInt()), null, Shader.TileMode.CLAMP)
+            veil.shader = RadialGradient(width * .28f, height * .55f, width * .8f, intArrayOf(0x33000000, 0xCC000000.toInt()), null, Shader.TileMode.CLAMP)
             c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), veil)
         }
     }
@@ -288,17 +289,17 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
             val a = abs(pos).coerceAtMost(1f)
             val main = 1f - a                              // 1 at the centre
             val H = (150f + 180f * main) * dp * (.82f + .18f * entering)
-            val W = H * e.aspect; val D = H * .12f
-            val cx = width * .5f + pos * width * .43f
+            val W = H * e.aspect; val D = H * .17f
+            val cx = width * .5f + pos * width * .33f
             val cy = (height * .47f) + (1f - main) * 95f * dp + (1f - entering) * 60f * dp
             val bob = sin(sec * 2f * PI.toFloat() / 4.2f) * 7f * dp * main
             // a slow turn on the centre box; side boxes face inward
             val yawDeg = if (flat) (6f + 4f * sin(sec * 2f * PI.toFloat() / 10f)) * main - pos * 40f
-                         else (17f + 7f * sin(sec * 2f * PI.toFloat() / 10f)) * main - pos * 40f
-            val pitchDeg = 3f * main
+                         else (26f + 8f * sin(sec * 2f * PI.toFloat() / 10f)) * main - pos * 38f
+            val pitchDeg = 6f * main
             val alpha = (255 * (1f - .6f * a) * entering).toInt().coerceIn(0, 255)
             val yaw = Math.toRadians(yawDeg.toDouble()).toFloat(); val pitch = Math.toRadians(pitchDeg.toDouble()).toFloat()
-            val persp = 1400f * dp
+            val persp = 900f * dp
 
             // shadow on the floor under the centre box
             if (main > .05f) {

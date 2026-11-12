@@ -906,24 +906,33 @@ class HomeActivity : Activity() {
         }
         val opts = cell?.let { ActivityOptions.makeScaleUpAnimation(it.card, 0, 0, it.card.width, it.card.height) }
         cancelEngineKills()
-        val pkg = i.component!!.packageName
-        val running = engineRunning(pkg)
-        val same = running && store.recentGames.firstOrNull() == rom.key
+        // Android won't let us see RetroArch's process, so don't guess whether it's alive: we know ourselves whether
+        // this game is the one waiting paused (gameAway is cleared when you Leave)
+        val same = gameAway?.key == rom.key
+        var tries = 0
         fun go() {
-            Perf.note("game start ${rom.title} same=$same running=$running")
-            if (safeStart(i, opts?.toBundle())) { gameAway = rom; homeFromGame = false; store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
+            tries++
+            Perf.note("game start ${rom.title} same=$same try=$tries")
+            if (safeStart(i, opts?.toBundle())) {
+                gameAway = rom; homeFromGame = false; store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800)
+                // if an old engine took the start and died with it, we're still in front: start it once more
+                if (tries == 1) ui.postDelayed({
+                    Perf.note("game open check: resumed=$resumed away=${gameAway?.title}")
+                    if (resumed && game == null && gameAway?.key == rom.key) { Perf.note("game didn't open, starting again"); i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK); killEngineNow(); ui.postDelayed({ go() }, 700) }
+                }, 3000)
+            }
         }
         if (same) {
             // the same game, still paused in the engine: bring it back where you left it
             i.flags = Intent.FLAG_ACTIVITY_NEW_TASK; go()
-        } else if (running) {
-            // a different game while the engine still holds the last one: end it, and only start the new game once it
-            // has really gone (starting straight away hands the old, dying engine to Android and nothing opens)
+        } else {
+            // a different game: end whatever engine is left first (starting straight away can hand the old, dying
+            // engine the new game, and nothing opens), then start it
+            // and give it a brand-new task: handed the old task's leftovers, RetroArch quits itself the moment it starts
+            i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
             killEngineNow()
-            var tries = 0
-            fun waitThenGo() { if (!engineRunning(pkg) || ++tries > 15) go() else ui.postDelayed({ waitThenGo() }, 100) }
-            ui.postDelayed({ waitThenGo() }, 150)
-        } else go()
+            ui.postDelayed({ go() }, 600)
+        }
     }
 
     /** Looks on USB drives for games and offers to copy them into the library in one press. */
