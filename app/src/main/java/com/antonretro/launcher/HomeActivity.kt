@@ -1563,7 +1563,7 @@ class HomeActivity : Activity() {
         val want = screens[current]?.scrolled() == true
         if (want == scrolledShown) return
         scrolledShown = want
-        val d = if ("nofade" in Kit.perfFlags) 0L else Kit.t(220)
+        val d = if ("nofade" in Kit.perfFlags) 0L else Kit.t(130)
         if ("noshelf" in Kit.perfFlags) shelf.visibility = View.GONE
         // only one full-screen picture is drawn once the fade ends (the GPU's biggest cost)
         if (!want) { bgSharp.visibility = View.VISIBLE }
