@@ -29,7 +29,7 @@ OTHER_APPS = {  # package -> activity used for start timing (resolved if None)
     "com.retroarch": None,
     "org.xbmc.kodi": None,
 }
-DEFAULT_ADB = r"C:\Users\Anthony\AppData\Local\Android\Sdk\platform-tools\adb.exe"
+DEFAULT_ADB = os.environ.get("ADB", "adb")   # set ADB=<path to adb> if it is not on PATH
 
 BUDGET = {
     "key2focus": 50, "home": 300, "tab": 250, "channel": 2000, "zap": 1500,

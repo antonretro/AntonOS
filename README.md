@@ -1,17 +1,44 @@
 # AntonOS
 
-*by AntonRetro.* A home screen and system for cheap Android TV boxes: TV, radio, YouTube, music, games and apps in one place.
+*by AntonRetro.* A home screen and system for cheap Android TV boxes: TV, radio, YouTube, music, games and apps in one place, driven by a remote, a game controller, a mouse or your phone.
 
-> Name: AntonOS (renamed from Retro Launcher on 2026-11-12). The app ID stays `com.antonretro.launcher` and the box folder stays `/sdcard/RetroLauncher/`, so existing installs keep their settings.
+> **Early preview.** Built and tested on one box only: an MXQ Pro (Amlogic S905, Android 7.1, 32-bit, 1280×720). Expect rough edges on other boxes.
 
-**Early preview.** A home screen for cheap Android TV boxes (built and tested on an MXQ Pro, Android 7.1, 1280x720), in the spirit of a modern TV interface: live TV with a guide, radio, YouTube shelves, your own music and videos, retro and Android games, and one Settings menu, all driven by a remote, a game controller or a mouse.
+![Home](docs/screenshots/home.jpg)
 
-- **TV:** free channels by country with numbers, favourites and a TV guide.
-- **Media:** your music (with a built-in visualizer) and videos.
-- **Games:** your retro games with box art (RetroArch runs hidden as the engine), your Android games, and built-in pixel games.
-- **Never stuck:** Home or the Xbox button always gets you out, with a menu over games.
+| TV Guide | Now Playing |
+|---|---|
+| ![TV Guide](docs/screenshots/tv-guide.jpg) | ![Now Playing](docs/screenshots/now-playing.jpg) |
 
-Box setup (installing, tuning and the channel list) is done by the companion tool [android-tv-box-skill](https://github.com/antonretro/android-tv-box-skill).
+![Games](docs/screenshots/games.jpg)
+
+## What it does
+
+- **Home:** your favourite apps in a dock, Keep watching / Keep playing / Recently used, and world-photo wallpapers that change through the day.
+- **TV:** free channels by country with channel numbers, a TV Guide with filters (country, favourites, recent, search, "Working only"), favourites, and player controls.
+- **Radio:** stations by country; keeps playing in the background.
+- **YouTube:** your favourite channels as shelves and search, played in SmartTube.
+- **Media:** your music with a built-in visualizer, and your videos.
+- **Games:** your retro games with a 3D game page (RetroArch runs hidden as the engine), your Android games, and two built-in pixel games. The controller's Guide button saves your place.
+- **Phone remote:** scan a QR code on the TV and your phone (iPhone or Android, no app) becomes a remote with a keyboard, voice typing and a number pad.
+- **Never stuck:** Home or the Xbox button always gets you out.
+
+## Install (plain APK)
+
+1. Download `AntonOS-<version>.apk` from [Releases](https://github.com/antonretro/antonos/releases) and install it on the box (from a USB stick with a file manager, or `adb install AntonOS-<version>.apk`).
+2. Open AntonOS. When Android asks which home screen to use, pick **AntonOS → Always**.
+3. Optional, for the Xbox button and the never-stuck menu over games: Android Settings → Accessibility → **AntonOS buttons** → On.
+4. Optional extras it uses when present: **RetroArch** (games), **SmartTube** (YouTube). Put your own games in `/sdcard/RetroLauncher/Games/<system>/` and a channel list at `/sdcard/RetroLauncher/channels.m3u`.
+
+The companion tool [android-tv-box-skill](https://github.com/antonretro/android-tv-box-skill) sets up a whole box over ADB (and offers AntonOS or Projectivy as the home screen).
+
+## Known gaps in this preview
+
+- Tested on one MXQ Pro only (Android 7.1, 32-bit, Mali-450). Other boxes, resolutions and Android versions are untested.
+- Moving between the Home dock and the rows can stutter on slow GPUs (the full-screen wallpaper fade).
+- Leaving a game with only the TV remote keeps in-game saves but not the exact place (use the controller's Guide button for that).
+- The phone remote's arrows work inside AntonOS only; in other apps it does Back, Home, volume and play/pause.
+- Not yet built: the TV corner mini player, themes, the first-time welcome, the built-in Files/Browser/Store apps.
 
 ## Building
 
@@ -22,7 +49,7 @@ BOX=192.168.1.50:5555
 ADB=adb
 ```
 
-The design, decisions and what is still to do are in [PLAN.md](PLAN.md); facts about the test box are in [BOX-FACTS.md](BOX-FACTS.md).
+The design, decisions and what is still to do are in [PLAN.md](PLAN.md); facts about the test box are in [BOX-FACTS.md](BOX-FACTS.md). The app ID stays `com.antonretro.launcher` and its folder `/sdcard/RetroLauncher/` (it was called Retro Launcher before 2026-11-12), so updates keep your settings.
 
 ## Licence
 
