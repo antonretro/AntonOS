@@ -113,6 +113,62 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
         v.onExit(pos, dur)
     }
+    // ------------------------------------------------------------------ the control row (OK or the mouse shows it)
+    private val controls = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; clipChildren = false; clipToPadding = false }
+    private val ctlBtns = ArrayList<TextView>()
+    private var ctlActs: List<() -> Unit> = emptyList()
+    private var ctlSel = 0
+    private var controlsOn = false
+    private val hideControls = Runnable { setControls(false) }
+
+    private fun buildControls() {
+        val c = current ?: return
+        val paused = player?.playWhenReady == false
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add((if (paused) "▶  Play" else "❚❚  Pause") to { player?.let { it.playWhenReady = !it.playWhenReady }; buildControls(); poke() })
+        if (!c.radio) {
+            items.add("☰  Channels" to { setControls(false); showStrip() })
+            items.add("▦  Guide" to { setControls(false); onGuide?.invoke(c) })
+        }
+        items.add("★  Favourite" to { onStar?.invoke(c); poke() })
+        items.add("‹  Back" to { setControls(false); close(keepRadio = true) })
+        controls.removeAllViews(); ctlBtns.clear(); ctlActs = items.map { it.second }
+        for ((i, it) in items.withIndex()) {
+            val b = Kit.text(context, 18f, true).apply { text = it.first; gravity = Gravity.CENTER; setPadding(Kit.dpi(context, 22f), 0, Kit.dpi(context, 22f), 0) }
+            b.setOnClickListener { ctlSel = i; ctlActs.getOrNull(i)?.invoke() }
+            b.setOnHoverListener { _, ev -> if (ev.action == android.view.MotionEvent.ACTION_HOVER_ENTER) { ctlSel = i; paintControls(); poke() }; false }
+            controls.addView(b, LinearLayout.LayoutParams(-2, Kit.dpi(context, 46f)).apply { rightMargin = Kit.dpi(context, 10f) })
+            ctlBtns.add(b)
+        }
+        ctlSel = ctlSel.coerceIn(0, ctlBtns.size - 1); paintControls()
+    }
+    private fun paintControls() {
+        for ((i, b) in ctlBtns.withIndex()) {
+            val on = i == ctlSel
+            b.background = GlassDrawable(b, Kit.dp(context, Kit.pill(46f)), if (on) Kit.FOCUS_FILL else Kit.GLASS_STRONG)
+            b.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
+            Kit.unclip(b); b.animate().scaleX(if (on) 1.06f else 1f).scaleY(if (on) 1.06f else 1f).setDuration(Kit.t(140)).start()
+        }
+    }
+    /** keep the row (and the banner) up a little longer after any use */
+    private fun poke() { ui.removeCallbacks(hideControls); ui.postDelayed(hideControls, 8000); showBannerNow() }
+    private fun showBannerNow() {
+        list.getOrNull(idx)?.let { if (video == null && !it.radio) showGuideLines(it) }
+        banner.animate().cancel(); banner.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 8000)
+    }
+    private fun setControls(on: Boolean) {
+        if (testMuted()) Perf.note("player controls $on (was $controlsOn)")
+        if (on == controlsOn && on) { poke(); return }
+        controlsOn = on
+        ui.removeCallbacks(hideControls)
+        if (on) {
+            ctlSel = 0; buildControls()
+            controls.visibility = View.VISIBLE; controls.alpha = 0f; controls.translationY = Kit.dp(context, 12f); controls.bringToFront()
+            controls.animate().alpha(1f).translationY(0f).setDuration(Kit.t(200)).setInterpolator(Kit.EASE).start()
+            poke()
+        } else controls.animate().alpha(0f).setDuration(Kit.t(180)).withEndAction { if (!controlsOn) controls.visibility = View.GONE }.start()
+    }
+
     private var list: List<Channel> = emptyList()
     private var idx = 0
     private var zapDir = 1
@@ -165,6 +221,9 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         banner.addView(bClock, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, 24f) })
         addView(banner, LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); rightMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
 
+        controls.visibility = View.GONE
+        addView(controls, LayoutParams(-2, Kit.dpi(ctx, 56f), Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y + 150f) })
+
         error.gravity = Gravity.CENTER; error.text = "This channel isn't working right now"
         error.setPadding(Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f), Kit.dpi(ctx, 34f), Kit.dpi(ctx, 20f))
         error.background = GlassDrawable(error, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
@@ -184,7 +243,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             if (e.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) {
                 mouseBack.bringToFront(); mouseBack.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(hideMouseBack); ui.postDelayed(hideMouseBack, 3000)
                 // the banner comes up with the mouse too (not only with keys)
-                if (!stripOn) { list.getOrNull(idx)?.let { if (video == null) showGuideLines(it) }; banner.animate().cancel(); banner.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 3500) }
+                if (!stripOn) { if (video == null && current != null) setControls(true) else { banner.animate().cancel(); banner.animate().alpha(1f).setDuration(Kit.t(150)).start(); ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 3500) } }
             }
             false
         }
@@ -326,7 +385,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             bTrack.visibility = View.VISIBLE
             bFill.scaleX = ((t - now.start).toFloat() / (now.stop - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
         } else { bNow.visibility = View.GONE; bTrack.visibility = View.GONE }
-        bSub.text = (if (next != null) "Next: ${next.title} at ${timeText(next.start)}" else c.country) + "     Up/Down: other channels   ·   Menu: guide"
+        bSub.text = (if (next != null) "Next: ${next.title} at ${timeText(next.start)}" else c.country) + "     Up/Down: other channels   ·   OK: controls"
     }
 
     private fun showStrip() {
@@ -367,12 +426,21 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             }
             return true
         }
+        if (testMuted()) Perf.note("player key $code controls=$controlsOn sel=$ctlSel strip=$stripOn")
+        if (controlsOn) {
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { if (ctlSel > 0) { ctlSel--; paintControls() }; poke(); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { if (ctlSel < ctlBtns.size - 1) { ctlSel++; paintControls() }; poke(); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> { ctlActs.getOrNull(ctlSel)?.invoke(); return true }
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { setControls(false); return true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN -> setControls(false)   // and change channel below
+            }
+        }
         when (code) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> tune(idx - 1, -1)
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> tune(idx + 1, 1)
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A ->
-                if (current?.radio == true) { player?.let { it.playWhenReady = !it.playWhenReady; radioSub.text = if (it.playWhenReady) "${current?.country}  ·  Back keeps it playing" else "Paused  ·  OK to play, Back to stop" } }
-                else showStrip()
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> setControls(true)
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { player?.let { it.playWhenReady = !it.playWhenReady }; if (current?.radio == true) player?.let { radioSub.text = if (it.playWhenReady) "${current?.country}  ·  Back keeps it playing" else "Paused  ·  OK for controls, Back to stop" } }
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> showStrip()
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_GUIDE -> current?.let { if (it.radio) onStar?.invoke(it) else onGuide?.invoke(it) }
             KeyEvent.KEYCODE_BUTTON_Y -> current?.let { onStar?.invoke(it) }
@@ -390,6 +458,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         val keep = keepRadio && c?.radio == true && error.visibility != View.VISIBLE && player?.playWhenReady == true
         if (!keep) player?.stop()
         if (stripOn) { stripOn = false; stripBox.visibility = View.GONE }
+        controlsOn = false; controls.visibility = View.GONE; ui.removeCallbacks(hideControls)
         animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
         if (c != null) onClosed?.invoke(c, keep)
     }
