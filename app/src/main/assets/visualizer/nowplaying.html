@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Retro Launcher: Now Playing visualizer</title>
+<title>AntonOS: Now Playing visualizer</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #vis{display:block;width:100%;height:100%;image-rendering:pixelated}
@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}
 <body>
 <canvas id="vis"></canvas>
 <script>
-// Retro Launcher's host page for Anthony's visualizer (visualizer.js is his engine, unchanged).
+// AntonOS's host page for Anthony's visualizer (visualizer.js is his engine, unchanged).
 // The engine steps 30 times a second; presenting at 60 only repeats frames and doubles the GPU work on the
 // Mali-450, which showed as small hitches. So screen updates are capped at a steady 30 a second here.
 (function () {

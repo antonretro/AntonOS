@@ -42,7 +42,7 @@ class RetroKeys : AccessibilityService() {
     companion object {
         @Volatile var alive = false
         @Volatile var instance: RetroKeys? = null
-        /** The app that was in front just before Retro Launcher came back (so Home knows it came from a game). */
+        /** The app that was in front just before AntonOS came back (so Home knows it came from a game). */
         @Volatile var beforeLauncher: String? = null
         /** set by the launcher while one of its own screens is in front (no Home pill there) */
         @Volatile var launcherShowing = false
@@ -177,8 +177,8 @@ class RetroKeys : AccessibilityService() {
     // ------------------------------------------------------------------ watchdog: keys passed on but never arriving
     private val passed = ArrayDeque<Long>()
     private var rescuedAt = 0L
-    /** Anthony's box once froze: keys went through the helper while Retro Launcher was in front, and none arrived.
-     *  If 4 presses in 6 s pass through here and the launcher stamps none of them: first bring Retro Launcher to the
+    /** Anthony's box once froze: keys went through the helper while AntonOS was in front, and none arrived.
+     *  If 4 presses in 6 s pass through here and the launcher stamps none of them: first bring AntonOS to the
      *  front again; if it happens again within a minute, switch this helper off so keys go straight to Android
      *  (the launcher switches it back on at its next start). */
     private fun watchdog(now: Long) {
@@ -221,7 +221,7 @@ class RetroKeys : AccessibilityService() {
         }
         if (inLauncher() && down && e.repeatCount == 0 && !GameOverlay.showing) watchdog(e.eventTime)
         if (inLauncher()) {
-            // Retro Launcher handles everything itself; only the Guide button needs help (it goes Home there too)
+            // AntonOS handles everything itself; only the Guide button needs help (it goes Home there too)
             if (code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) goHome(); return true }
             return false
         }
@@ -349,6 +349,8 @@ class QuickPanel : Activity() {
         choices.add(Choice(if (game) "Back to the game" else "Back to $appName") { backToApp(null) })
         // Save/Load/Restart need RetroArch's command port, which doesn't open on this box: not offered until it does
         choices.add(Choice(if (game) "Close the game" else "Close $appName") { closeApp() })
+        // the phone remote, one press away from anywhere: opens Home with the QR code showing (switches it on if needed)
+        choices.add(Choice("Use my phone as the remote") { openRecent("phone") })
         for (ch in choices) addRow(box, listOf(button(ch.label, 520f, 52f)), listOf(ch.run))
 
         // recent things (not the app that's open now)

@@ -23,7 +23,7 @@ class SPage(val icon: String, val title: String, val rows: () -> List<SRow>)
 
 /**
  * The one Settings menu (replaces the box's three): categories on the left, the page on the right,
- * same glass, rounded rows and white focus as the rest of Retro Launcher. Left/Right moves between
+ * same glass, rounded rows and white focus as the rest of AntonOS. Left/Right moves between
  * the two sides; Back goes from the page to the categories, then to the tab bar.
  */
 @SuppressLint("ViewConstructor")

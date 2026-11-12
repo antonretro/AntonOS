@@ -1,4 +1,8 @@
-# Retro Launcher
+# AntonOS
+
+*by AntonRetro.* A home screen and system for cheap Android TV boxes: TV, radio, YouTube, music, games and apps in one place.
+
+> Name: AntonOS (renamed from Retro Launcher on 2026-11-12). The app ID stays `com.antonretro.launcher` and the box folder stays `/sdcard/RetroLauncher/`, so existing installs keep their settings.
 
 **Early preview.** A home screen for cheap Android TV boxes (built and tested on an MXQ Pro, Android 7.1, 1280x720), in the spirit of a modern TV interface: live TV with a guide, radio, YouTube shelves, your own music and videos, retro and Android games, and one Settings menu, all driven by a remote, a game controller or a mouse.
 

@@ -7,13 +7,13 @@ import android.media.MediaMetadataRetriever
 import android.os.Environment
 import java.io.File
 
-/** One song: a file on the box, or one of the songs that come with Retro Launcher (in the app's assets). */
+/** One song: a file on the box, or one of the songs that come with AntonOS (in the app's assets). */
 class Song(val title: String, val artist: String, val album: String, val file: File?, val asset: String?) {
     val key get() = "song:" + (file?.path ?: "asset:$asset")
 }
 
 /**
- * The music library for the Media tab: Anthony's own songs that ship with Retro Launcher first, then music found in
+ * The music library for the Media tab: Anthony's own songs that ship with AntonOS first, then music found in
  * RetroLauncher/Music, Music, Download and USB drives. Tags (title, artist, album) and embedded cover art are read
  * from the files; anything without them gets a tidy name from the file name and a drawn cover.
  */
@@ -22,9 +22,9 @@ object MusicRepo {
 
     /** Anthony's three songs (his own, MIT), rendered with the GeneralUser GS SoundFont by S. Christian Collins (licence in assets/music). */
     val builtIn = listOf(
-        Song("Jetpack Postcard", "Anthony Micallef", "Retro Launcher", null, "music/jetpack-postcard.mp3"),
-        Song("Lemonade Satellite", "Anthony Micallef", "Retro Launcher", null, "music/lemonade-satellite.mp3"),
-        Song("Slap Happy Forklift", "Anthony Micallef", "Retro Launcher", null, "music/slap-happy-forklift.mp3"))
+        Song("Jetpack Postcard", "Anthony Micallef", "AntonOS", null, "music/jetpack-postcard.mp3"),
+        Song("Lemonade Satellite", "Anthony Micallef", "AntonOS", null, "music/lemonade-satellite.mp3"),
+        Song("Slap Happy Forklift", "Anthony Micallef", "AntonOS", null, "music/slap-happy-forklift.mp3"))
 
     val home get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher/Music")
 

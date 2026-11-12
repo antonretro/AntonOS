@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Retro Launcher - design mockup</title>
+<title>AntonOS - design mockup</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -205,7 +205,7 @@ html,body{margin:0;background:#0b0c10;color:#fff;font-family:Inter,system-ui,san
 </head>
 <body>
 <div id="demo">
-  <b>Retro Launcher mockup</b>
+  <b>AntonOS mockup</b>
   <button data-go="home">Home</button><button data-go="homeScrolled">Home scrolled</button>
   <button data-go="tv">TV</button><button data-go="watch">Watching TV</button>
   <button data-go="radio">Radio</button><button data-go="radioPlay">Radio playing</button>
@@ -457,7 +457,7 @@ function settingsPage(i){
     case 'Home screen': return h('Home screen')+`<div style="display:flex;gap:28px;margin-bottom:30px">${[['cinema','Cinema','Big pictures'],['classic','Classic grid','Big colour tiles'],['simple','Simple','Only the basics']].map(([k,n,d])=>`<div class="card" data-f data-act="style:${k}" style="width:330px;height:200px"><div class="face" style="background:${k==='cinema'?WALL[0]+' center/cover':k==='classic'?grad('#e76f51','#2a9d8f'):grad('#3a3f55','#15171f')};display:flex;flex-direction:column;justify-content:flex-end;padding:20px"><b style="font-size:30px">${n}${state.style===k?' ✓':''}</b><span style="font-size:22px;color:rgba(255,255,255,.75)">${d}</span></div><div class="sheen"></div></div>`).join('')}</div>`+R('Tabs shown','<span class="val">'+visibleTabs().length+' of 8</span>','tabs')+R('Reset home screen','<span class="val">›</span>','dlg');
     case 'Apps': return h('Apps')+['SmartTube · 48 MB','Kodi · 210 MB','Subway Surfers DE · 160 MB','F-Droid · 12 MB'].map(a=>R(a,'<span class="val">›</span>')).join('');
     case 'Storage': return h('Storage')+R('<div>Box storage<small>2.1 GB free of 4.2 GB</small></div>')+R('<div>USB drive "KINGSTON"<small>12 games, 8 videos found</small></div>','<span class="val">Open</span>','dlg');
-    default: return h('About')+R('Box','<span class="val">MXQ Pro · Android 7.1.2</span>')+R('Retro Launcher','<span class="val">1.0</span>')+R('Show the welcome again','<span class="val">›</span>','welcome')+R('Advanced Android settings','<span class="val">›</span>');
+    default: return h('About')+R('Box','<span class="val">MXQ Pro · Android 7.1.2</span>')+R('AntonOS','<span class="val">1.0</span>')+R('Show the welcome again','<span class="val">›</span>','welcome')+R('Advanced Android settings','<span class="val">›</span>');
   }
 }
 function renderFree(){
@@ -531,7 +531,7 @@ function layerHTML(name){
       <div><div style="font-size:28px;color:var(--dim)">Then type this code on the phone</div><div style="font-size:96px;font-weight:800;letter-spacing:18px">4821</div><div style="font-size:26px;color:var(--dim);margin-top:10px">Works on your home Wi-Fi only</div></div></div>
       <div style="margin-top:60px" class="btn" data-f data-act="close">Done</div></div>
     <div class="phone"><div class="scr">
-      <div style="text-align:center;font-size:20px;color:var(--dim)">Retro Launcher remote</div>
+      <div style="text-align:center;font-size:20px;color:var(--dim)">AntonOS remote</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:18px 0 24px">${['Home','TV','Radio','YouTube','Games','Apps'].map(t=>`<span style="font-size:17px;font-weight:600;padding:8px 14px;border-radius:16px;background:rgba(255,255,255,.12)">${t}</span>`).join('')}</div>
       <div style="width:330px;height:330px;margin:0 auto;border-radius:50%;background:rgba(255,255,255,.07);position:relative;border:1px solid rgba(255,255,255,.12)">
         <span style="position:absolute;left:150px;top:20px;font-size:30px">▲</span><span style="position:absolute;left:150px;bottom:20px;font-size:30px">▼</span><span style="position:absolute;left:24px;top:146px;font-size:30px">◀</span><span style="position:absolute;right:24px;top:146px;font-size:30px">▶</span>
@@ -539,7 +539,7 @@ function layerHTML(name){
       <div style="text-align:center;font-size:16px;color:var(--dim);margin:12px 0 20px">or swipe anywhere on the circle</div>
       <div style="display:flex;justify-content:space-around">${['Back','Home','Vol −','Vol +'].map(b=>`<div style="width:78px;height:78px;border-radius:50%;background:rgba(255,255,255,.12);display:grid;place-items:center;font-size:17px;font-weight:700">${b}</div>`).join('')}</div>
       <div style="margin-top:26px;height:70px;border-radius:35px;background:#4f8cff;display:grid;place-items:center;font-size:22px;font-weight:700">⌨ Type with the keyboard</div>
-      <div style="text-align:center;font-size:15px;color:var(--dim);margin-top:16px">Arrows work inside Retro Launcher. In other apps: Back and Home only.</div>
+      <div style="text-align:center;font-size:15px;color:var(--dim);margin-top:16px">Arrows work inside AntonOS. In other apps: Back and Home only.</div>
     </div></div>`;}
   return '';
 }

@@ -102,7 +102,7 @@ class HomeActivity : Activity() {
         if (helperWarned) return
         helperWarned = true
         Perf.note("keys helper still off after re-attach")
-        dialog.show("The exit button isn't working", "Retro Launcher's key helper is off, so the Xbox button can't bring you back from games and apps. Restarting the box usually fixes it. The Home button on the remote always works.", "OK" to {})
+        dialog.show("The exit button isn't working", "AntonOS's key helper is off, so the Xbox button can't bring you back from games and apps. Restarting the box usually fixes it. The Home button on the remote always works.", "OK" to {})
     }
 
     /** Never blank the setting (if the app died halfway the helper would stay off): change it by adding ourselves
@@ -350,7 +350,7 @@ class HomeActivity : Activity() {
             out.add(SRow(ssid, { if (ssid in saved) "Saved" else if (open) "Open" else "Locked" }, value = { bars(r.level) }, onClick = { joinWifi(wm, ssid, open, ssid in saved) }))
             if (out.size > 12) break
         }
-        if (results.isEmpty()) out.add(SRow("Looking for networks…", { "If nothing shows, Retro Launcher needs location permission for Wi-Fi" }))
+        if (results.isEmpty()) out.add(SRow("Looking for networks…", { "If nothing shows, AntonOS needs location permission for Wi-Fi" }))
         out.add(SRow("Look again", onClick = { wm.startScan(); ui.postDelayed({ if (current == "Settings") settingsScreen.refresh() }, 3000) }))
         out.add(SRow("Advanced Wi-Fi settings", onClick = go(Settings.ACTION_WIFI_SETTINGS)))
         return out
@@ -420,7 +420,7 @@ class HomeActivity : Activity() {
         dialog.picture(PhoneRemote.qr(url, 440))
     }
 
-    /** What the phone page can do. Arrows and OK only reach Retro Launcher's own screens (Android doesn't let an app press keys in other apps). */
+    /** What the phone page can do. Arrows and OK only reach AntonOS's own screens (Android doesn't let an app press keys in other apps). */
     private val phoneBox = object : PhoneRemote.Box {
         private val am get() = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
         private fun press(code: Int) {
@@ -439,11 +439,11 @@ class HomeActivity : Activity() {
                 "home" -> { if (resumed) goHome() else if (!global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) front(); return null }
             }
             if (!resumed) return when (k) {
-                "back" -> if (global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) null else "Back only works in Retro Launcher right now"
+                "back" -> if (global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) null else "Back only works in AntonOS right now"
                 "playpause" -> { media(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); null }
                 "next" -> { media(KeyEvent.KEYCODE_MEDIA_NEXT); null }
                 "prev" -> { media(KeyEvent.KEYCODE_MEDIA_PREVIOUS); null }
-                else -> "Arrows work in Retro Launcher only. Use the TV remote in this app"
+                else -> "Arrows work in AntonOS only. Use the TV remote in this app"
             }
             val code = when (k) {
                 "up" -> KeyEvent.KEYCODE_DPAD_UP; "down" -> KeyEvent.KEYCODE_DPAD_DOWN; "left" -> KeyEvent.KEYCODE_DPAD_LEFT; "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
@@ -571,7 +571,7 @@ class HomeActivity : Activity() {
         out.add(SRow("Box storage", {
             val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
             gb(st.availableBytes) + " free of " + gb(st.totalBytes) + if (st.availableBytes < LOW_STORAGE) "  ·  almost full: apps may stop installing" else "" }))
-        out.add(SRow("Retro Launcher's own files", { "Logos and box art " + gb(Images.sizeOnDisk()) + " (kept under 40 MB), TV guide " + gb(java.io.File(filesDir, "guide.db").length()) },
+        out.add(SRow("AntonOS's own files", { "Logos and box art " + gb(Images.sizeOnDisk()) + " (kept under 40 MB), TV guide " + gb(java.io.File(filesDir, "guide.db").length()) },
             value = { "Clear" }, onClick = { bg.execute { Images.clear(); ui.post { notice("Cleared", "Logos and box art download again when shown"); settingsScreen.refresh() } } }))
         for (u in usbRoots()) { val s = try { android.os.StatFs(u.path) } catch (e: Exception) { null }; out.add(SRow("USB drive ${u.name}", { s?.let { gb(it.availableBytes) + " free" } }, onClick = { offerGamesFrom(listOf(u), quietIfNone = false) })) }
         out.add(SRow("Add games from a USB drive", onClick = { offerGamesFrom(usbRoots(), quietIfNone = false) }))
@@ -590,13 +590,14 @@ class HomeActivity : Activity() {
     private fun settingsEntries(): List<Item.Action> {
         fun intent(a: String): (Context) -> Unit = { _ -> safeStart(Intent(a)) }
         return listOf(
+            Item.Action("set:phone", "Phone remote", "Control the TV from your phone", "remote") { _ -> openKey("phone") },
             Item.Action("set:wifi", "Wi-Fi & Internet", "", "wifi", intent(Settings.ACTION_WIFI_SETTINGS)),
             Item.Action("set:picture", "Picture", "", "image", intent(Settings.ACTION_DISPLAY_SETTINGS)),
             Item.Action("set:wall", "Wallpaper", wallpaperName(store.wallpaper), "image") { _ -> nextWallpaper() },
             Item.Action("set:sound", "Sound", "", "sound", intent(Settings.ACTION_SOUND_SETTINGS)),
             Item.Action("set:apps", "Apps", "", "apps", intent(Settings.ACTION_APPLICATION_SETTINGS)),
             Item.Action("set:storage", "Storage", "", "usb", intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)),
-            Item.Action("set:about", "About", "Retro Launcher " + BuildConfig.VERSION_NAME, "info", intent(Settings.ACTION_DEVICE_INFO_SETTINGS)),
+            Item.Action("set:about", "About", "AntonOS " + BuildConfig.VERSION_NAME + " by AntonRetro", "info", intent(Settings.ACTION_DEVICE_INFO_SETTINGS)),
             Item.Action("set:classic", "Classic launcher", "the box's original menu", "grid") { _ -> openClassic() },
             Item.Action("set:android", "Advanced Android settings", "", "gear", intent(Settings.ACTION_SETTINGS)),
         )
@@ -834,6 +835,7 @@ class HomeActivity : Activity() {
     private fun openKey(key: String) {
         // also used by tools/soundcheck.sh to start each kind of sound without steering the remote
         when {
+            key == "phone" -> { if (!PhoneRemote.enabled(this)) PhoneRemote.setEnabled(this, true); showPhoneCode(); return }
             key.startsWith("song:") || key == "test:song" -> { if (songs.isNotEmpty()) playSong(songs, songs.indexOfFirst { it.key == key }.coerceAtLeast(0)); return }
             key.startsWith("bi:") -> { openBuiltIn(key.removePrefix("bi:")); return }
             key == "test:tv" || key == "test:radio" -> { val l = byNumber(key == "test:radio"); if (l.isNotEmpty()) openPlayer(l, 0); return }
@@ -946,7 +948,7 @@ class HomeActivity : Activity() {
                 if (!ok) {
                     val denied = android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     if (denied && !channelsAsked) { channelsAsked = true; requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 7) }
-                    val msg = if (denied) "Retro Launcher needs permission to read your channel list." else "No channel list yet. Put one at /sdcard/RetroLauncher/channels.m3u"
+                    val msg = if (denied) "AntonOS needs permission to read your channel list." else "No channel list yet. Put one at /sdcard/RetroLauncher/channels.m3u"
                     (screens["TV"] as RowsScreen).setEmptyText(msg); (screens["Radio"] as RowsScreen).setEmptyText(msg)
                 }
                 rebuildChannelRows()
@@ -1277,6 +1279,7 @@ class HomeActivity : Activity() {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
             addView(ImageView(this@HomeActivity).apply { setImageResource(R.drawable.ic_launcher) }, LinearLayout.LayoutParams(Kit.dpi(this@HomeActivity, 84f), Kit.dpi(this@HomeActivity, 84f)))
             addView(Kit.text(this@HomeActivity, 34f, true).apply { setText(R.string.app_name) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 18f) })
+            addView(Kit.text(this@HomeActivity, 16f, false, Kit.TEXT_DIM).apply { text = "by AntonRetro" }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(this@HomeActivity, 4f) })
         }
         val black = View(this).apply { setBackgroundColor(Color.BLACK) }
         root.addView(black, -1, -1); root.addView(mark, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))

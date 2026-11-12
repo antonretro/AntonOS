@@ -71,7 +71,7 @@ class AppRepo(private val ctx: Context) {
         /** Shown first in the dock on a fresh box, if installed. */
         val DOCK_DEFAULTS = listOf("org.smarttube.stable", "com.teamsmart.videomanager.tv", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv", "org.xbmc.kodi",
             "com.antonretro.subwaysurfersde", "com.antonretro.multiverse", "com.android.vending", "org.fdroid.fdroid", "com.droidlogic.FileBrower")
-        /** Hidden from Apps by default (Retro Launcher replaces them). */
+        /** Hidden from Apps by default (AntonOS replaces them). */
         val HIDDEN_DEFAULTS = setOf("com.android.settings", "com.droidlogic.mboxsettings", "com.spocky.projengmenu",
             "com.droidlogic.mboxlauncher", "com.android.launcher", "com.android.tv.settings",
             "com.retroarch.ra32", "com.retroarch", "com.retroarch.aarch64")   // RetroArch is the hidden game engine

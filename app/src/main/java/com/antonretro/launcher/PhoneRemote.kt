@@ -14,7 +14,7 @@ import java.security.SecureRandom
 import kotlin.concurrent.thread
 
 /**
- * The phone remote: a tiny web server inside Retro Launcher on the home network. Scanning the QR code on the TV
+ * The phone remote: a tiny web server inside AntonOS on the home network. Scanning the QR code on the TV
  * opens the remote page (assets/remote) in the phone's browser; no app, so iPhone and Android both work.
  *
  * Safety: off until switched on in Settings; every request must carry the secret from the QR code (so only a phone
@@ -120,7 +120,7 @@ object PhoneRemote {
         val tok = lines.firstOrNull { it.lowercase().startsWith("x-remote-token:") }?.substringAfter(':')?.trim() ?: query["t"]
         if (tok == null || tok != token(ctx)) return send(out, 403, "application/json", """{"ok":false,"note":"Scan the QR code on the TV again"}""".toByteArray())
         val j = try { JSONObject(body.ifEmpty { "{}" }) } catch (e: Exception) { JSONObject() }
-        val h = handler ?: return send(out, 503, "application/json", """{"ok":false,"note":"Retro Launcher is starting"}""".toByteArray())
+        val h = handler ?: return send(out, 503, "application/json", """{"ok":false,"note":"AntonOS is starting"}""".toByteArray())
         val note = runOnMain {
             when (path) {
                 "/api/key" -> h.key(j.optString("k"))

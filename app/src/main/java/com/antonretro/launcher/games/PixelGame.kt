@@ -22,7 +22,7 @@ import java.io.File
 import kotlin.random.Random
 
 /**
- * The shared shell for Retro Launcher's built-in games. Every game gets the same finished presentation:
+ * The shared shell for AntonOS's built-in games. Every game gets the same finished presentation:
  * - a 320x180 pixel canvas drawn straight to the screen at a whole-number scale with sharp pixels;
  * - screens: title (with its own menu), play, pause, how to play, best scores, options, game over / new best,
  *   all drawn in the game's own pixel style (carved-wood panels, a 5x7 pixel font, pixel buttons), never the
