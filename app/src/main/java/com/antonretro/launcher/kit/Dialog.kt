@@ -18,6 +18,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     private val title = Kit.text(ctx, 30f, true)
     private val body = Kit.text(ctx, Kit.BODY_TEXT, false, 0xD9FFFFFF.toInt())
     private val buttons = LinearLayout(ctx)
+    private val pic = android.widget.ImageView(ctx).apply { visibility = View.GONE }
     private val btns = ArrayList<TextView>()
     private var actions: List<() -> Unit> = emptyList()
     private var sel = 0
@@ -30,8 +31,9 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
         box.orientation = LinearLayout.VERTICAL; box.gravity = Gravity.CENTER_HORIZONTAL
         box.setPadding(Kit.dpi(ctx, 40f), Kit.dpi(ctx, 36f), Kit.dpi(ctx, 40f), Kit.dpi(ctx, 34f))
         box.background = GlassDrawable(box, Kit.dp(ctx, Kit.R_L), Kit.GLASS_STRONG)
-        title.gravity = Gravity.CENTER; body.gravity = Gravity.CENTER; body.isSingleLine = false; body.maxLines = 4
+        title.gravity = Gravity.CENTER; body.gravity = Gravity.CENTER; body.isSingleLine = false; body.maxLines = 6
         box.addView(title)
+        box.addView(pic, LinearLayout.LayoutParams(Kit.dpi(ctx, 220f), Kit.dpi(ctx, 220f)).apply { topMargin = Kit.dpi(ctx, 16f) })
         box.addView(body, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 12f); bottomMargin = Kit.dpi(ctx, 26f) })
         buttons.orientation = LinearLayout.HORIZONTAL; buttons.gravity = Gravity.CENTER
         buttons.clipChildren = false; box.clipChildren = false; box.clipToPadding = false   // keep a selected button's round corners
@@ -43,6 +45,7 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
 
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {
         title.text = t; body.text = b
+        pic.visibility = View.GONE; pic.setImageDrawable(null)
         buttons.removeAllViews(); btns.clear(); actions = choices.map { it.second }
         // side by side only when every label really fits: measured, not guessed (a guess once cut "Leave the game" short).
         // Each button is its text plus 28 dp padding on both sides and 8 dp margin on both sides; the box has 540 dp inside.
@@ -64,6 +67,9 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
         box.animate().scaleX(1f).scaleY(1f).setDuration(Kit.t(260)).setInterpolator(Kit.EASE).start()
         bringToFront()
     }
+
+    /** A picture under the title (the phone remote's QR code); call right after [show]. */
+    fun picture(b: android.graphics.Bitmap?) { pic.setImageBitmap(b); pic.visibility = if (b == null) View.GONE else View.VISIBLE }
 
     private fun paint() {
         for ((i, b) in btns.withIndex()) {

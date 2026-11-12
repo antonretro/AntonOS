@@ -245,6 +245,7 @@ class HomeActivity : Activity() {
         screens["Settings"] = SettingsScreen(this, settingsPages())
         // after every screen exists (this ran too early once and crashed the launcher at start)
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
+        PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
         player = PlayerOverlay(this, art).apply {
             onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
@@ -402,8 +403,91 @@ class HomeActivity : Activity() {
         val bt = packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_BLUETOOTH)
         if (bt) out.add(SRow("Pair a Bluetooth controller", onClick = go(Settings.ACTION_BLUETOOTH_SETTINGS)))
         else out.add(SRow("Connect a wireless controller", { "This box has no Bluetooth. Use a controller that comes with its own USB receiver, or an 8BitDo USB Wireless Adapter: plug it in, hold its pair button and your controller's pair button, done" }))
-        out.add(SRow("Use your phone as a remote", { "Coming soon" }))
+        out.add(SRow("Use your phone as a remote", { if (PhoneRemote.enabled(this)) "On: open to show the code" else "Any phone on your Wi-Fi, no app needed" },
+            toggle = { PhoneRemote.enabled(this) }, onClick = { if (!PhoneRemote.enabled(this)) PhoneRemote.setEnabled(this, true); showPhoneCode(); settingsScreen.refresh() }))
         return out
+    }
+
+    // ---------------------------------------------------------------- phone remote (PhoneRemote.kt serves the page)
+    private fun showPhoneCode() {
+        val url = PhoneRemote.url(this)
+        if (url == null) { dialog.show("Not on a network", "Connect the box to your Wi-Fi first, then try again.", "OK" to {}); return }
+        dialog.show("Use your phone as a remote",
+            "Point your phone's camera at the code. The phone must be on the same Wi-Fi.\nOr open ${PhoneRemote.shortUrl()} and type ${PhoneRemote.code(this)}",
+            "Done" to {},
+            "Forget phones" to { PhoneRemote.newToken(this); notice("Phones forgotten", "Scan the new code to connect again") },
+            "Turn off" to { PhoneRemote.setEnabled(this, false); settingsScreen.refresh() })
+        dialog.picture(PhoneRemote.qr(url, 440))
+    }
+
+    /** What the phone page can do. Arrows and OK only reach Retro Launcher's own screens (Android doesn't let an app press keys in other apps). */
+    private val phoneBox = object : PhoneRemote.Box {
+        private val am get() = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        private fun press(code: Int) {
+            val t = SystemClock.uptimeMillis()
+            dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t + 40, KeyEvent.ACTION_UP, code, 0))
+        }
+        private fun media(code: Int) { am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code)) }
+        private fun front() { if (!resumed) startActivity(Intent(this@HomeActivity, HomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
+        private fun global(a: Int) = RetroKeys.instance?.performGlobalAction(a) == true
+        override fun key(k: String): String? {
+            val vol = android.media.AudioManager.STREAM_MUSIC; val ui = android.media.AudioManager.FLAG_SHOW_UI
+            when (k) {
+                "volup" -> { am.adjustStreamVolume(vol, android.media.AudioManager.ADJUST_RAISE, ui); return null }
+                "voldown" -> { am.adjustStreamVolume(vol, android.media.AudioManager.ADJUST_LOWER, ui); return null }
+                "mute" -> { am.adjustStreamVolume(vol, android.media.AudioManager.ADJUST_TOGGLE_MUTE, ui); return null }
+                "home" -> { if (resumed) goHome() else if (!global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) front(); return null }
+            }
+            if (!resumed) return when (k) {
+                "back" -> if (global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) null else "Back only works in Retro Launcher right now"
+                "playpause" -> { media(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); null }
+                "next" -> { media(KeyEvent.KEYCODE_MEDIA_NEXT); null }
+                "prev" -> { media(KeyEvent.KEYCODE_MEDIA_PREVIOUS); null }
+                else -> "Arrows work in Retro Launcher only. Use the TV remote in this app"
+            }
+            val code = when (k) {
+                "up" -> KeyEvent.KEYCODE_DPAD_UP; "down" -> KeyEvent.KEYCODE_DPAD_DOWN; "left" -> KeyEvent.KEYCODE_DPAD_LEFT; "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
+                "ok" -> KeyEvent.KEYCODE_DPAD_CENTER; "back" -> KeyEvent.KEYCODE_BACK; "menu" -> KeyEvent.KEYCODE_MENU
+                "playpause" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE; "next" -> KeyEvent.KEYCODE_MEDIA_NEXT; "prev" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                else -> return "Unknown button"
+            }
+            press(code); return null
+        }
+        override fun text(t: String, submit: Boolean, target: String): String? {
+            val s = t.trim()
+            if (target != "youtube" && resumed && ::keyboard.isInitialized && keyboard.showing) { keyboard.fromPhone(t, submit); return null }
+            if (!submit) return null
+            if (s.isEmpty()) return "Type something first"
+            // Send to TV: a link opens where it plays; plain words search YouTube
+            val link = s.startsWith("http://") || s.startsWith("https://") || s.startsWith("www.") || s.startsWith("youtu")
+            front()
+            if (link) {
+                val u = if (s.startsWith("http")) s else "https://$s"
+                if (u.contains("youtube.com") || u.contains("youtu.be")) return if (openInSmartTube(u, null)) "Opening on the TV" else "SmartTube isn't installed"
+                return if (safeStart(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u)))) "Opening on the TV" else "The TV can't open that link"
+            }
+            return if (openInSmartTube("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(s), null)) "Searching YouTube on the TV" else "SmartTube isn't installed"
+        }
+        override fun tab(name: String): String? {
+            if (name !in tabs) return "Unknown tab"
+            front()
+            if (::player.isInitialized && player.showing) player.close(keepRadio = true)
+            if (::nowPlayingView.isInitialized && nowPlayingView.showing) { nowPlayingView.hide(); coverHome(false); musicChip() }
+            if (dialog.showing) dialog.hide()
+            showTab(name); return null
+        }
+        override fun number(n: String): String? {
+            val num = n.toIntOrNull() ?: return null
+            val c = (ChannelRepo.tv + ChannelRepo.radio).firstOrNull { numberOf(it) == num && it.url !in store.hiddenChannels } ?: return "No channel $num"
+            front(); digits = ""; for (ch in n) typeDigit(ch - '0'); finishDigits()
+            return "Tuning ${c.name}"
+        }
+        override fun status(): String = when {
+            ::player.isInitialized && player.showing && player.current != null -> player.current!!.let { "Watching ${numberOf(it)} · ${it.name}" }
+            ::music.isInitialized && music.active && music.current != null -> music.current!!.let { "Playing ${it.title}" + if (it.artist.isNotBlank()) " · ${it.artist}" else "" }
+            !resumed -> "The TV is in another app"
+            else -> "On the TV: $current"
+        }
     }
 
     private fun applyPlayerSettings() { if (::player.isInitialized) player.reconfigure(store.playerSmooth, if (store.quality == 1) 720 else 1080) }
@@ -587,7 +671,7 @@ class HomeActivity : Activity() {
 
     private fun playSong(list: List<Song>, i: Int) {
         // the song that's already playing: just open Now Playing again, the song and the visualizer carry on
-        if (::music.isInitialized && music.active && music.current?.key == list.getOrNull(i)?.key) { openNowPlaying(); return }
+        if (::music.isInitialized && music.active && music.current?.key == list.getOrNull(i)?.key) { if (!music.playing) { if (::player.isInitialized) player.stopBackground(); music.toggle() }; openNowPlaying(); return }
         if (::player.isInitialized && player.showing) player.close(keepRadio = false)
         if (::player.isInitialized) player.stopBackground()   // one thing at a time: radio stops
         nowPlaying(null)
@@ -622,6 +706,7 @@ class HomeActivity : Activity() {
     }
 
     private fun playVideo(v: LocalVideo) {
+        quietMusic()
         if (player.parent == null) root.addView(player, -1, -1)
         player.bringToFront()
         player.playVideo(v.file.path, v.title, store.positions[v.file.path] ?: 0L) { pos, dur ->
@@ -673,6 +758,7 @@ class HomeActivity : Activity() {
         val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); else -> com.antonretro.launcher.games.TotemTide(this) }
         // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
         g.onQuit = { closeGame(); showTab("Games") }
+        quietMusic()
         root.addView(g, -1, -1); dialog.bringToFront()
         game = g; coverHome(true); g.start()
         store.noteLaunch("bi:$id")
@@ -683,7 +769,7 @@ class HomeActivity : Activity() {
         val rom = key?.let { itemFor(it) as? Item.Game }?.rom ?: com.antonretro.launcher.GameOverlay.lastRom(this)
         Perf.note("game action $act rom=${rom?.title}")
         when (act) {
-            "leave" -> { gameAway = null; RetroKeys.beforeLauncher = null; ui.postDelayed({ endEngine() }, 700); showTab("Games"); rom?.let { notice("Game closed", it.title) } }
+            "leave" -> { gameAway = null; RetroKeys.beforeLauncher = null; ui.removeCallbacks(leaveKill); ui.postDelayed(leaveKill, 700); showTab("Games"); rom?.let { notice("Game closed", it.title) } }
             "restart" -> { RetroKeys.beforeLauncher = null; ui.postDelayed({ endEngine(); ui.postDelayed({ rom?.let { playGame(it, null) } }, 900) }, 600) }
             "settings" -> { RetroKeys.beforeLauncher = null; showTab("Settings"); settingsScreen.open("Games") }
         }
@@ -731,14 +817,28 @@ class HomeActivity : Activity() {
     /** Ends the paused game engine (Android lets the launcher do that while it is in the background). */
     private fun endEngine() {
         // the engine must be in the background for Android to end it: try now and once more a moment later
-        fun kill() = try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (e: Exception) { Perf.note("can't end the game engine: $e") }
-        kill(); ui.postDelayed({ kill() }, 2500)
+        killEngineNow(); ui.removeCallbacks(lateKill); ui.postDelayed(lateKill, 2500)
     }
+    private fun killEngineNow() = try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses("com.retroarch.ra32") } catch (e: Exception) { Perf.note("can't end the game engine: $e") }
+    private val lateKill = Runnable { killEngineNow() }
+    private val leaveKill = Runnable { endEngine() }
+    /** A game is starting: any engine-ending still waiting from the last game must not end the new one. */
+    private fun cancelEngineKills() { ui.removeCallbacks(lateKill); ui.removeCallbacks(leaveKill) }
+    private fun engineRunning(pkg: String): Boolean = try {
+        java.io.File("/proc").listFiles()?.any { f -> f.name.all { it.isDigit() } && try { java.io.File(f, "cmdline").readText().trimEnd('\u0000').startsWith(pkg) } catch (_: Exception) { false } } == true
+    } catch (_: Exception) { true }
     private var gameAway: Rom? = null
     private var homeFromGame = false
     private var homePressed = false
     /** The quick panel's Recent cards: an app, a channel or a game, by key. */
     private fun openKey(key: String) {
+        // also used by tools/soundcheck.sh to start each kind of sound without steering the remote
+        when {
+            key.startsWith("song:") || key == "test:song" -> { if (songs.isNotEmpty()) playSong(songs, songs.indexOfFirst { it.key == key }.coerceAtLeast(0)); return }
+            key.startsWith("bi:") -> { openBuiltIn(key.removePrefix("bi:")); return }
+            key == "test:tv" || key == "test:radio" -> { val l = byNumber(key == "test:radio"); if (l.isNotEmpty()) openPlayer(l, 0); return }
+            key == "test:video" -> { videoGroups.firstOrNull()?.second?.firstOrNull()?.let { playVideo(it) }; return }
+        }
         when (val item = itemFor(key)) {
             is Item.App -> safeStart(Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
             is Item.Ch -> { val l = byNumber(item.ch.radio); openPlayer(l, l.indexOfFirst { it.url == item.ch.url }.coerceAtLeast(0)) }
@@ -755,15 +855,25 @@ class HomeActivity : Activity() {
             return
         }
         val opts = cell?.let { ActivityOptions.makeScaleUpAnimation(it.card, 0, 0, it.card.width, it.card.height) }
-        val same = store.recentGames.firstOrNull() == rom.key
-        if (same) {
-            // the same game: bring it back where you left it
-            i.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        } else {
-            // a different game: close the engine first (swapping games inside RetroArch crashes it)
-            try { (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(i.component!!.packageName) } catch (_: Exception) {}
+        cancelEngineKills()
+        val pkg = i.component!!.packageName
+        val running = engineRunning(pkg)
+        val same = running && store.recentGames.firstOrNull() == rom.key
+        fun go() {
+            Perf.note("game start ${rom.title} same=$same running=$running")
+            if (safeStart(i, opts?.toBundle())) { gameAway = rom; homeFromGame = false; store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
         }
-        if (safeStart(i, opts?.toBundle())) { gameAway = rom; homeFromGame = false; store.noteGame(rom.key); returning = true; ui.postDelayed({ rebuildGames() }, 800) }
+        if (same) {
+            // the same game, still paused in the engine: bring it back where you left it
+            i.flags = Intent.FLAG_ACTIVITY_NEW_TASK; go()
+        } else if (running) {
+            // a different game while the engine still holds the last one: end it, and only start the new game once it
+            // has really gone (starting straight away hands the old, dying engine to Android and nothing opens)
+            killEngineNow()
+            var tries = 0
+            fun waitThenGo() { if (!engineRunning(pkg) || ++tries > 15) go() else ui.postDelayed({ waitThenGo() }, 100) }
+            ui.postDelayed({ waitThenGo() }, 150)
+        } else go()
     }
 
     /** Looks on USB drives for games and offers to copy them into the library in one press. */
@@ -1016,7 +1126,7 @@ class HomeActivity : Activity() {
     }
 
     private fun openPlayer(list: List<Channel>, index: Int) {
-        if (::music.isInitialized && music.active) { music.stop(); musicChip() }
+        quietMusic()
         if (player.parent == null) root.addView(player, -1, -1)
         player.bringToFront()
         player.play(list, index)
@@ -1566,7 +1676,13 @@ class HomeActivity : Activity() {
         }
     }
 
-    private fun safeStart(i: Intent, opts: Bundle? = null): Boolean = try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), opts); true } catch (e: Exception) { false }
+    private fun safeStart(i: Intent, opts: Bundle? = null): Boolean = try {
+        startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), opts)
+        if (i.action?.startsWith("android.settings") != true && i.action != Intent.ACTION_DELETE) quietMusic()
+        true
+    } catch (e: Exception) { false }
+    /** One sound at a time: whatever starts next, the music fades out and waits paused (it doesn't come back by itself). */
+    private fun quietMusic() { if (::music.isInitialized) { music.fadePause(); musicChip() } }
 
     private fun openClassic() {
         val i = packageManager.getLaunchIntentForPackage("com.droidlogic.mboxlauncher")
@@ -1742,6 +1858,7 @@ class HomeActivity : Activity() {
     override fun onStop() { super.onStop(); if (::player.isInitialized && player.showing && player.current?.radio != true) player.close(keepRadio = false) }
 
     override fun onDestroy() {
+        if (PhoneRemote.handler === phoneBox) PhoneRemote.handler = null
         try { unregisterReceiver(deviceReceiver) } catch (_: Exception) {}
         try { (getSystemService(Context.INPUT_SERVICE) as android.hardware.input.InputManager).unregisterInputDeviceListener(inputListener) } catch (_: Exception) {}
         if (::player.isInitialized) player.release(); try { unregisterReceiver(receiver) } catch (_: Exception) {}; bg.shutdown(); super.onDestroy() }

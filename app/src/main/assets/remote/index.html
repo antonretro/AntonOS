@@ -16,16 +16,16 @@
 :root{--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.12);--dim:#9aa0aa;--accent:#4f8cff;--r:22px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:#0b0d12;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",sans-serif;overscroll-behavior:none}
-body{background:radial-gradient(120% 70% at 50% -10%,#1f2a44 0,#0b0d12 60%) fixed;padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 92px);user-select:none;-webkit-user-select:none}
+body{background:radial-gradient(120% 70% at 50% -10%,#1f2a44 0,#0b0d12 60%) fixed;padding:calc(env(safe-area-inset-top) + 10px) 16px calc(env(safe-area-inset-bottom) + 90px);user-select:none;-webkit-user-select:none}
 header{display:flex;align-items:center;gap:10px}
 header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.2px}
 #dot{width:9px;height:9px;border-radius:50%;background:#666;box-shadow:0 0 0 3px rgba(255,255,255,.05);transition:background .3s}
 #dot.on{background:#3ddc84}
-#status{font-size:14px;color:var(--dim);margin:4px 0 16px;min-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status{font-size:13px;color:var(--dim);margin:2px 0 10px;min-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .page{display:none}.page.on{display:block;animation:in .22s ease}
 @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 /* the touch pad: swipe to move, tap to choose */
-#pad{position:relative;width:100%;aspect-ratio:1/1;max-width:380px;margin:0 auto;border-radius:34px;background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.03));border:1px solid var(--edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 20px 40px rgba(0,0,0,.35);touch-action:none;overflow:hidden}
+#pad{position:relative;width:min(100%,340px,max(200px,calc(100vh - 340px - env(safe-area-inset-top) - env(safe-area-inset-bottom))));width:min(100%,340px,max(200px,calc(100dvh - 340px - env(safe-area-inset-top) - env(safe-area-inset-bottom))));aspect-ratio:1/1;margin:0 auto;border-radius:34px;background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.03));border:1px solid var(--edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 20px 40px rgba(0,0,0,.35);touch-action:none;overflow:hidden}
 #pad .chev{position:absolute;color:rgba(255,255,255,.28);font-size:26px;font-weight:700;pointer-events:none}
 #pad .n{top:14px;left:50%;transform:translateX(-50%)}#pad .s{bottom:14px;left:50%;transform:translateX(-50%) rotate(180deg)}
 #pad .w{left:16px;top:50%;transform:translateY(-50%) rotate(-90deg)}#pad .e{right:16px;top:50%;transform:translateY(-50%) rotate(90deg)}
@@ -33,12 +33,15 @@ header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.2px}
 #ok.hit{background:rgba(255,255,255,.28);transform:translate(-50%,-50%) scale(.94)}
 .ripple{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border-radius:50%;background:rgba(255,255,255,.25);pointer-events:none;animation:rip .45s ease-out forwards}
 @keyframes rip{from{transform:scale(.3);opacity:1}to{transform:scale(2.2);opacity:0}}
-#padhint{text-align:center;font-size:13px;color:var(--dim);margin:10px 0 18px}
-.row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:380px;margin:0 auto 12px}
-.b{height:58px;border-radius:var(--r);background:var(--glass);border:1px solid var(--edge);color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .1s,background .1s;font-family:inherit}
+#padhint{position:absolute;left:0;right:0;bottom:44px;text-align:center;font-size:12px;color:rgba(255,255,255,.3);pointer-events:none}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:340px;margin:12px auto 10px}
+.vol{display:grid;grid-template-columns:1fr 1fr 1fr;max-width:340px;margin:0 auto;height:48px;border-radius:24px;background:var(--glass);border:1px solid var(--edge);overflow:hidden}
+.vol .b{height:46px;border:0;border-radius:0;background:none}
+.vol .b+.b{border-left:1px solid var(--edge)}
+.b{height:52px;border-radius:var(--r);background:var(--glass);border:1px solid var(--edge);color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .1s,background .1s;font-family:inherit}
 .b:active,.b.hit{transform:scale(.95);background:rgba(255,255,255,.18)}
 .b .i{font-size:20px}
-.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 2px;margin:14px -18px 0;padding-left:18px;scrollbar-width:none}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 16px 2px;margin:0 -16px 12px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;height:40px;padding:0 16px;border-radius:20px;background:var(--glass);border:1px solid var(--edge);font-weight:700;font-size:15px;display:flex;align-items:center;color:#ddd}
 .chip:active{background:rgba(255,255,255,.2)}
@@ -67,16 +70,15 @@ nav button.on{background:rgba(255,255,255,.12);color:#fff}
 <div id="status">Connecting…</div>
 
 <section class="page on" id="p-remote">
-  <div id="pad"><span class="chev n">⌃</span><span class="chev s">⌃</span><span class="chev w">⌃</span><span class="chev e">⌃</span><div id="ok">OK</div></div>
-  <div id="padhint">Swipe to move · tap to choose</div>
-  <div class="row"><button class="b" data-k="back"><span class="i">‹</span>Back</button><button class="b" data-k="home"><span class="i">⌂</span>Home</button><button class="b" data-k="playpause"><span class="i">⏯</span></button></div>
-  <div class="row"><button class="b" data-k="voldown"><span class="i">−</span>Vol</button><button class="b" data-k="mute">Mute</button><button class="b" data-k="volup"><span class="i">+</span>Vol</button></div>
   <div class="chips" id="tabs"></div>
+  <div id="pad"><span class="chev n">⌃</span><span class="chev s">⌃</span><span class="chev w">⌃</span><span class="chev e">⌃</span><div id="ok">OK</div><div id="padhint">Swipe or tap</div></div>
+  <div class="row"><button class="b" data-k="back"><span class="i">‹</span>Back</button><button class="b" data-k="home"><span class="i">⌂</span>Home</button><button class="b" data-k="playpause"><span class="i">⏯</span></button></div>
+  <div class="vol"><button class="b" data-k="voldown"><span class="i">−</span></button><button class="b" data-k="mute">Mute</button><button class="b" data-k="volup"><span class="i">+</span></button></div>
 </section>
 
 <section class="page" id="p-type">
   <div class="lbl">Speak or type</div>
-  <textarea id="txt" placeholder="Search, a Wi-Fi password, a web address…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+  <textarea id="txt" placeholder="Search, a Wi-Fi password, or paste a YouTube or video link…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
   <div class="tip">To speak, tap the 🎤 on your phone's keyboard. Words appear on the TV as you go when a box is open there.</div>
   <div class="wide"><button class="b primary" id="send">Send to TV</button><button class="b" id="yt">Search YouTube</button></div>
 </section>
@@ -87,7 +89,9 @@ nav button.on{background:rgba(255,255,255,.12);color:#fff}
   <div class="keys" id="keys"></div>
 </section>
 
-<div id="lost">This remote needs its key from the TV.<br>On the TV open <b>Settings → Controllers &amp; Remotes → Use your phone</b> and scan the code.</div>
+<div id="lost"><h1 style="font-size:24px;margin:0 0 8px;color:#fff">Connect to your TV</h1>Enter the 4-digit code shown on the TV in<br><b>Settings → Controllers &amp; Remotes → Use your phone</b>
+<input id="code" inputmode="numeric" maxlength="4" autocomplete="one-time-code" style="display:block;margin:22px auto 14px;width:200px;height:64px;border-radius:22px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;font:800 34px/1 inherit;text-align:center;letter-spacing:10px;outline:none">
+<button class="b primary" id="pair" style="width:200px;margin:0 auto">Connect</button></div>
 <nav><button class="on" data-p="remote">Remote</button><button data-p="type">Type</button><button data-p="num">Numbers</button></nav>
 <div id="toast"></div>
 
@@ -98,6 +102,12 @@ let token = q.get('t') || localStorage.getItem('rl-token');
 if (q.get('t')) { localStorage.setItem('rl-token', q.get('t')); history.replaceState(null, '', location.pathname); }
 const $ = id => document.getElementById(id);
 if (!token) { document.querySelectorAll('section,nav,header,#status').forEach(e => e.style.display = 'none'); $('lost').style.display = 'block'; }
+$('pair').onclick = async () => {
+  const r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('code').value }) }).catch(() => null);
+  const j = r ? await r.json() : { note: 'Not connected: same Wi-Fi as the TV?' };
+  if (j.token) { localStorage.setItem('rl-token', j.token); location.replace('/'); } else toast(j.note || 'Try again');
+};
+$('code').addEventListener('input', () => { if ($('code').value.length === 4) $('pair').click(); });
 
 // ---- transport: every press goes through send(); swap this for another channel later without touching the page
 async function send(path, data) {
@@ -107,7 +117,7 @@ async function send(path, data) {
     $('dot').classList.toggle('on', r.ok);
     if (j.status) $('status').textContent = j.status;
     if (j.note) toast(j.note);
-    if (r.status === 403) { localStorage.removeItem('rl-token'); toast(j.note || 'Scan the code on the TV again'); }
+    if (r.status === 403) { localStorage.removeItem('rl-token'); setTimeout(() => location.replace('/'), 1200); }
     return j;
   } catch (e) { $('dot').classList.remove('on'); $('status').textContent = 'Not connected: same Wi-Fi as the TV?'; }
 }
@@ -149,7 +159,7 @@ pad.addEventListener('pointercancel', () => { clearInterval(rep); st = null; });
 // ---- buttons
 document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
 ['Home', 'TV', 'Radio', 'YouTube', 'Media', 'Games', 'Apps', 'Settings'].forEach(t => {
-  const c = document.createElement('button'); c.className = 'chip b'; c.style.height = '40px'; c.textContent = t; c.onclick = () => { buzz(); send('tab', { name: t }); }; $('tabs').appendChild(c);
+  const c = document.createElement('button'); c.className = 'chip'; c.textContent = t; c.onclick = () => { buzz(); send('tab', { name: t }); }; $('tabs').appendChild(c);
 });
 
 // ---- typing and dictation: text streams to an open box on the TV as it changes (dictation sends whole phrases)

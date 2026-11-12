@@ -51,8 +51,15 @@ object PhoneRemote {
     fun newToken(ctx: Context): String {
         val b = ByteArray(9); SecureRandom().nextBytes(b)
         val t = android.util.Base64.encodeToString(b, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
-        prefs(ctx).edit().putString("token", t).apply(); return t
+        val code = "%04d".format(SecureRandom().nextInt(10000))
+        prefs(ctx).edit().putString("token", t).putString("code", code).apply(); return t
     }
+    /** the 4-digit code on the TV, for a phone that types the address instead of scanning */
+    fun code(ctx: Context): String { token(ctx); return prefs(ctx).getString("code", null) ?: "%04d".format(SecureRandom().nextInt(10000)).also { prefs(ctx).edit().putString("code", it).apply() } }
+    @Volatile private var wrongTries = 0
+    @Volatile private var lockedUntil = 0L
+    /** the plain address to type (no secret in it) */
+    fun shortUrl(): String? = address()?.let { "http://$it:$PORT" }
     fun enabled(ctx: Context) = prefs(ctx).getBoolean("on", false)
     fun setEnabled(ctx: Context, on: Boolean) { prefs(ctx).edit().putBoolean("on", on).apply(); if (on) start(ctx) else stop() }
 
@@ -99,6 +106,15 @@ object PhoneRemote {
             val bytes = try { ctx.assets.open("remote/$file").use { it.readBytes() } } catch (e: Exception) { return send(out, 404, "text/plain", "Not found".toByteArray()) }
             val type = when { file.endsWith(".html") -> "text/html; charset=utf-8"; file.endsWith(".json") -> "application/manifest+json"; else -> "image/png" }
             return send(out, 200, type, bytes)
+        }
+        // typing the 4-digit code from the TV swaps it for the secret; 5 wrong tries lock it for a minute
+        if (path == "/api/pair") {
+            val now = System.currentTimeMillis()
+            if (now < lockedUntil) return send(out, 403, "application/json", """{"ok":false,"note":"Too many tries. Wait a minute"}""".toByteArray())
+            val given = try { JSONObject(body).optString("code") } catch (e: Exception) { "" }
+            if (given == code(ctx)) { wrongTries = 0; return send(out, 200, "application/json", JSONObject().put("ok", true).put("token", token(ctx)).toString().toByteArray()) }
+            if (++wrongTries >= 5) { wrongTries = 0; lockedUntil = now + 60_000 }
+            return send(out, 403, "application/json", """{"ok":false,"note":"That's not the code on the TV"}""".toByteArray())
         }
         // every press needs the secret from the QR code
         val tok = lines.firstOrNull { it.lowercase().startsWith("x-remote-token:") }?.substringAfter(':')?.trim() ?: query["t"]

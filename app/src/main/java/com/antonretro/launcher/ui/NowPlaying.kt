@@ -75,13 +75,13 @@ class MusicPlayer(private val ctx: Context) {
                 androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf<androidx.media3.common.audio.AudioProcessor>(tap)).build()
         }
         androidx.media3.exoplayer.ExoPlayer.Builder(ctx, rf).build().also { p ->
-            p.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(androidx.media3.common.C.USAGE_MEDIA).setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+            p.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(androidx.media3.common.C.USAGE_MEDIA).setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             p.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     Perf.note("music state $state on ${current?.title}")
                     if (state == androidx.media3.common.Player.STATE_ENDED) next(auto = true) else onChanged?.invoke()
                 }
-                override fun onIsPlayingChanged(isPlaying: Boolean) { onChanged?.invoke() }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { Perf.note("music playing=$isPlaying"); onChanged?.invoke() }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) { Perf.note("music error ${error.errorCodeName} on ${current?.title}"); next(auto = true) }
             })
             exo = p
@@ -116,6 +116,20 @@ class MusicPlayer(private val ctx: Context) {
         exo?.let { if (it.mediaItemCount > 0) { it.playWhenReady = !it.playWhenReady; onChanged?.invoke(); return } }
         mp?.let { if (it.isPlaying) it.pause() else it.start(); onChanged?.invoke(); return }
         start()
+    }
+    /** One sound at a time: something else is starting, so fade the music out over a moment and pause it.
+     *  It stays paused (Now Playing and the corner card show it paused) and one press carries on. */
+    fun fadePause() {
+        val e = exo; val m = mp
+        if (!playing) return
+        Perf.note("music fade-pause on ${current?.title}")
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        for (i in 1..6) h.postDelayed({ val v = 1f - i / 6f; try { e?.volume = v; m?.setVolume(v, v) } catch (_: Exception) {} }, i * 40L)
+        h.postDelayed({
+            try { e?.playWhenReady = false; e?.volume = 1f } catch (_: Exception) {}
+            try { if (m?.isPlaying == true) m.pause(); m?.setVolume(1f, 1f) } catch (_: Exception) {}
+            onChanged?.invoke()
+        }, 260L)
     }
     fun next(auto: Boolean = false) {
         if (queue.isEmpty()) return
