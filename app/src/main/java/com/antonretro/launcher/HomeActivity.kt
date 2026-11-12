@@ -224,6 +224,7 @@ class HomeActivity : Activity() {
         statusRow.orientation = LinearLayout.HORIZONTAL; statusRow.gravity = Gravity.CENTER_VERTICAL
         statusRow.addView(clock)
         root.addView(statusRow, FrameLayout.LayoutParams(-2, Kit.dpi(this, 52f), Gravity.END).apply { rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); topMargin = Kit.dpi(this@HomeActivity, 28f) })
+        root.addView(hintBar, FrameLayout.LayoutParams(-1, Kit.dpi(this, 40f), Gravity.BOTTOM))
         tickClock()
     }
 
@@ -248,6 +249,8 @@ class HomeActivity : Activity() {
         // after every screen exists (this ran too early once and crashed the launcher at start)
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
+        com.antonretro.launcher.kit.UiSound.init(this)
+        com.antonretro.launcher.kit.UiSound.quiet = { (::player.isInitialized && player.showing) || (::music.isInitialized && music.playing) || game != null || !resumed }
         // the Guide button saves the game's place in RetroArch (it used to quit, and leaving then lost the place)
         bg.execute { if (RetroConfig.get("input_save_state_btn") != "110") { RetroConfig.set("input_exit_emulator_btn", "nul"); RetroConfig.set("input_save_state_btn", "110") } }
         player = PlayerOverlay(this, art).apply {
@@ -309,6 +312,8 @@ class HomeActivity : Activity() {
         ) },
         SPage("sound", "Sound") { listOf(
             SRow("Start-up sound", { "The chime when the box starts" }, toggle = { store.startupSound }, onClick = { store.startupSound = !store.startupSound; store.save() }),
+            SRow("Interface sounds", { "Soft sounds when you move, choose and go back" }, toggle = { com.antonretro.launcher.kit.UiSound.on }, onClick = { com.antonretro.launcher.kit.UiSound.on = !com.antonretro.launcher.kit.UiSound.on; com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.SELECT) }),
+            SRow("Interface sound level", value = { arrayOf("Low", "Medium", "High")[com.antonretro.launcher.kit.UiSound.level] }, onClick = { com.antonretro.launcher.kit.UiSound.level = (com.antonretro.launcher.kit.UiSound.level + 1) % 3; com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.SELECT) }),
             SRow("Volume and sound output", onClick = go(Settings.ACTION_SOUND_SETTINGS)),
         ) },
         SPage("pad", "Controllers & Remotes") { controllerRows() },
@@ -1337,6 +1342,7 @@ class HomeActivity : Activity() {
     private val hideNotice = Runnable { noticeView?.animate()?.translationX(Kit.dp(this, 420f))?.alpha(0f)?.setDuration(Kit.t(350))?.start() }
     /** A small glass pill top right for three seconds; never takes focus. */
     fun notice(title: String, sub: String) {
+        com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.NOTICE)
         val n = noticeView ?: Kit.text(this, 17f, true).also { t ->
             t.isSingleLine = false; t.maxLines = 2
             t.setPadding(Kit.dpi(this, 22f), Kit.dpi(this, 12f), Kit.dpi(this, 22f), Kit.dpi(this, 12f))
@@ -1561,6 +1567,7 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- tabs
     private fun showTab(name: String, animate: Boolean = true) {
+        ui.post { updateHints() }
         if (name == "TV") maybeRefreshGuide(12 * HOUR)
         val t0 = SystemClock.uptimeMillis()
         val old = screens[current]; val new = screens[name] ?: return
@@ -1583,6 +1590,22 @@ class HomeActivity : Activity() {
         if (!inTabBar) new.enter()
         drawTabs(); updateShelf(); updateScrolled()
         Perf.afterFrame("tab", t0)
+    }
+
+    // ---------------------------------------------------------------- the button-hint bar (kit/HintBar.kt)
+    private val hintBar by lazy { com.antonretro.launcher.kit.HintBar(this) }
+    /** What the buttons do on the screen in front, in the glyphs of the last thing used. */
+    private fun updateHints() {
+        if (!::player.isInitialized) return
+        val h: List<Pair<com.antonretro.launcher.kit.HintBar.Btn, String>> = when {
+            overlayOpen() || (::nowPlayingView.isInitialized && nowPlayingView.showing) -> emptyList()
+            inTabBar -> listOf(com.antonretro.launcher.kit.HintBar.Btn.LR to "Tabs", com.antonretro.launcher.kit.HintBar.Btn.UD to "Into ${current}", com.antonretro.launcher.kit.HintBar.Btn.OK to "Open")
+            current == "Settings" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Change", com.antonretro.launcher.kit.HintBar.Btn.UD to "Move", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Back")
+            current == "TV" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Watch", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
+            current == "Games" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Game page", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
+            else -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
+        }
+        hintBar.set(h); hintBar.bringToFront()
     }
 
     private fun drawTabs(animate: Boolean = true) {
@@ -1608,6 +1631,10 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
+        if (e.action == KeyEvent.ACTION_DOWN) {
+            hintBar.pad = e.isFromSource(android.view.InputDevice.SOURCE_GAMEPAD) || e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK)
+            ui.post { updateHints() }
+        }
         RetroKeys.launcherKeyAt = e.eventTime   // the helper's watchdog checks keys really arrive here
         // test mode (file RetroLauncher/.test-mute, used by tools/hometest.sh): note the state after every key
         if (e.action == KeyEvent.ACTION_UP && testMode) ui.postDelayed({ noteState("key${e.keyCode}") }, 600)
@@ -1656,7 +1683,7 @@ class HomeActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_RIGHT -> { Perf.afterFrame("key2focus", e.eventTime); move(0, 1); return true }
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_PAGE_UP -> { switchTab(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_PAGE_DOWN -> { switchTab(1); return true }
-            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { onBackKey(); return true }
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BACK); onBackKey(); return true }
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BUTTON_START -> { if (!inTabBar) screens[current]?.longOk(); return true }
         }
         return super.dispatchKeyEvent(e)
@@ -1664,7 +1691,7 @@ class HomeActivity : Activity() {
 
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
-            if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]) } }
+            if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.TAB) } else com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BUMP) }
             if (dr > 0) {
                 if (current == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { inTabBar = false; drawTabs(); openGuide(null); guide.focusBar(); return }
                 inTabBar = false; screens[current]?.enter(); drawTabs()
@@ -1672,12 +1699,16 @@ class HomeActivity : Activity() {
             return
         }
         val s = screens[current] ?: return
-        if (!s.move(dr, dc) && dr < 0) { inTabBar = true; tabIdx = tabs.indexOf(current); s.leave(); drawTabs(); updateShelf() }
+        val moved = s.move(dr, dc)
+        if (moved) com.antonretro.launcher.kit.UiSound.play(if (dr > 0 || dc > 0) com.antonretro.launcher.kit.UiSound.Kind.MOVE2 else com.antonretro.launcher.kit.UiSound.Kind.MOVE)
+        else if (dr < 0) { inTabBar = true; tabIdx = tabs.indexOf(current); s.leave(); drawTabs(); updateShelf(); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.MOVE) }
+        else com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BUMP)
     }
 
     private fun switchTab(d: Int) { val n = nextVisibleTab(tabs.indexOf(current), d); showTab(tabs[n]) }
 
     private fun onOk() {
+        com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.SELECT)
         if (inTabBar) { inTabBar = false; screens[current]?.enter(); drawTabs(); return }
         screens[current]?.ok()
     }
