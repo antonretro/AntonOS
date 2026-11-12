@@ -42,6 +42,8 @@ class RetroKeys : AccessibilityService() {
     companion object {
         @Volatile var alive = false
         @Volatile var instance: RetroKeys? = null
+        /** when the Guide button last asked RetroArch to save the game's place (0 = never this session) */
+        @Volatile var savedByGuideAt = 0L
         /** The app that was in front just before AntonOS came back (so Home knows it came from a game). */
         @Volatile var beforeLauncher: String? = null
         /** set by the launcher while one of its own screens is in front (no Home pill there) */
@@ -226,7 +228,12 @@ class RetroKeys : AccessibilityService() {
             return false
         }
 
-        // Guide / Xbox button
+        // Guide / Xbox button. In a game RetroArch gets it first (its save-state hotkey: the exact place is saved),
+        // then the game menu opens a moment later; the release goes to RetroArch too so it never sees a held button
+        if (code == KeyEvent.KEYCODE_BUTTON_MODE && inGame()) {
+            if (down && e.repeatCount == 0) { savedByGuideAt = System.currentTimeMillis(); ui.postDelayed({ if (inGame()) trigger("Guide") }, 450) }
+            return false
+        }
         if (code == KeyEvent.KEYCODE_BUTTON_MODE) { if (down && e.repeatCount == 0) trigger("Guide"); return true }
 
         // Select + Start pressed within a second of each other

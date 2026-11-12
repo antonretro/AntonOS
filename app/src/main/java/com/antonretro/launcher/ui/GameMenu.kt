@@ -137,7 +137,7 @@ class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayou
     }
 
     private fun mainPage() = setPage("main", if (alive) "Paused" else "Game closed",
-        if (alive) "Your game waits right where you left it." else "Play again starts it from its last save.", listOf(
+        if (alive) "Your game waits right where you left it." else "Play again starts it from your last saved place, if there is one.", listOf(
         MRow({ if (alive) "Resume" else "Play again" }, ok = { resume() }),
         MRow({ "Leave game" }, ok = { leavePage() }),
         MRow({ "Game options" }, ok = { optionsPage() }),

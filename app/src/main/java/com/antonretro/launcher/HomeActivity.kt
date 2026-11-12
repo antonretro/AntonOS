@@ -248,6 +248,8 @@ class HomeActivity : Activity() {
         // after every screen exists (this ran too early once and crashed the launcher at start)
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
+        // the Guide button saves the game's place in RetroArch (it used to quit, and leaving then lost the place)
+        bg.execute { if (RetroConfig.get("input_save_state_btn") != "110") { RetroConfig.set("input_exit_emulator_btn", "nul"); RetroConfig.set("input_save_state_btn", "110") } }
         player = PlayerOverlay(this, art).apply {
             onTuned = { c -> store.noteChannel(c); if (!c.radio) nowPlaying(null) }
             onClosed = { c, keep -> nowPlaying(if (keep) c else null); rebuildChannelRows() }
@@ -525,7 +527,7 @@ class HomeActivity : Activity() {
         val shapes = listOf("22" to "As the game was made", "0" to "4:3 (old TV)", "1" to "16:9 (fill the screen)")
         return listOf(
             SRow("Pause menu", { "In a game: the Guide button, Start + Select, or Back on the remote" }),
-            SRow("Pick up where you left off", { "Saves your place when you leave a game" }, toggle = { on("savestate_auto_save") }, onClick = { flip("savestate_auto_save"); RetroConfig.set("savestate_auto_load", RetroConfig.get("savestate_auto_save") ?: "true") }),
+            SRow("Pick up where you left off", { "Press the controller's Guide button in a game to save your place; Continue starts there" }, toggle = { on("savestate_auto_save") }, onClick = { flip("savestate_auto_save"); RetroConfig.set("savestate_auto_load", RetroConfig.get("savestate_auto_save") ?: "true") }),
             SRow("Save in-game progress often", { "Writes battery saves every 10 seconds" }, toggle = { (RetroConfig.get("autosave_interval") ?: "0") != "0" }, onClick = { RetroConfig.set("autosave_interval", if ((RetroConfig.get("autosave_interval") ?: "0") != "0") "0" else "10") }),
             SRow("Picture shape", value = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; shapes.firstOrNull { it.first == v }?.second ?: "As the game was made" },
                 onClick = { val v = RetroConfig.get("aspect_ratio_index") ?: "22"; val i = shapes.indexOfFirst { it.first == v }; RetroConfig.set("aspect_ratio_index", shapes[(i + 1) % shapes.size].first) }),
@@ -781,7 +783,12 @@ class HomeActivity : Activity() {
         val rom = key?.let { itemFor(it) as? Item.Game }?.rom ?: com.antonretro.launcher.GameOverlay.lastRom(this)
         Perf.note("game action $act rom=${rom?.title}")
         when (act) {
-            "leave" -> { gameAway = null; RetroKeys.beforeLauncher = null; ui.removeCallbacks(leaveKill); ui.postDelayed(leaveKill, 700); showTab("Games"); rom?.let { notice("Game closed", it.title) } }
+            "leave" -> {
+                gameAway = null; RetroKeys.beforeLauncher = null; ui.removeCallbacks(leaveKill); ui.postDelayed(leaveKill, 700); showTab("Games")
+                // say what was really kept: the exact place only if the Guide button saved it in the last half hour
+                val placed = rom?.let { r -> autoSave(r)?.lastModified()?.let { System.currentTimeMillis() - it < 30 * 60_000 } } == true
+                rom?.let { notice("Game closed", if (placed) "${it.title} · your place is saved" else "${it.title} · in-game saves are kept") }
+            }
             "restart" -> { RetroKeys.beforeLauncher = null; ui.postDelayed({ endEngine(); ui.postDelayed({ rom?.let { playGame(it, null) } }, 900) }, 600) }
             "settings" -> { RetroKeys.beforeLauncher = null; showTab("Settings"); settingsScreen.open("Games") }
         }
@@ -865,11 +872,22 @@ class HomeActivity : Activity() {
     private var gamePageView: com.antonretro.launcher.ui.GamePage? = null
     private var gamePageRoms: List<Rom> = emptyList()
 
-    /** RetroArch's automatic save for this game, if there is one (Saves/states, any sub-folder). */
-    private fun autoSave(rom: Rom): java.io.File? {
+    /** The game's saved places: RetroArch's automatic save (.state.auto, written when it quits properly) and the
+     *  Guide button's save (.state, slot 0). Either can be newer. */
+    private fun saveFiles(rom: Rom): List<java.io.File> {
         val dir = java.io.File(ChannelRepo.dir, "Saves/states")
-        val name = rom.file.nameWithoutExtension + ".state.auto"
-        return dir.walkTopDown().maxDepth(2).firstOrNull { it.isFile && it.name == name }
+        val base = rom.file.nameWithoutExtension
+        return dir.walkTopDown().maxDepth(2).filter { it.isFile && (it.name == "$base.state.auto" || it.name == "$base.state") }.toList()
+    }
+    private fun autoSave(rom: Rom): java.io.File? = saveFiles(rom).maxByOrNull { it.lastModified() }
+    /** RetroArch loads only .state.auto at start: if the Guide button's save is newer, put it there first. */
+    private fun newestSaveLoads(rom: Rom) {
+        val all = saveFiles(rom); val slot = all.firstOrNull { it.name.endsWith(".state") } ?: return
+        val auto = all.firstOrNull { it.name.endsWith(".state.auto") }
+        if (auto == null || slot.lastModified() > auto.lastModified() + 1000) try {
+            slot.copyTo(java.io.File(slot.parentFile, slot.name + ".auto"), overwrite = true)
+            Perf.note("continue from the Guide save of ${rom.title}")
+        } catch (e: Exception) { Perf.note("can't use the Guide save: $e") }
     }
 
     private fun showGamePage(roms: List<Rom>, index: Int) {
@@ -881,7 +899,7 @@ class HomeActivity : Activity() {
             pg.onPlay = { e, fresh ->
                 gamePageRoms.firstOrNull { it.key == e.key }?.let { rom ->
                     // starting over keeps the old save as a backup next to it instead of deleting it
-                    if (fresh) autoSave(rom)?.let { f -> f.renameTo(java.io.File(f.path + ".before-restart")) }
+                    if (fresh) saveFiles(rom).forEach { f -> f.renameTo(java.io.File(f.path + ".before-restart")) }
                     pg.hide(); playGame(rom, null)
                 }
             }
@@ -906,6 +924,7 @@ class HomeActivity : Activity() {
         }
         val opts = cell?.let { ActivityOptions.makeScaleUpAnimation(it.card, 0, 0, it.card.width, it.card.height) }
         cancelEngineKills()
+        if (gameAway?.key != rom.key) newestSaveLoads(rom)
         // Android won't let us see RetroArch's process, so don't guess whether it's alive: we know ourselves whether
         // this game is the one waiting paused (gameAway is cleared when you Leave)
         val same = gameAway?.key == rom.key
