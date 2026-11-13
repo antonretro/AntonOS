@@ -340,8 +340,8 @@ class HomeActivity : Activity() {
             SRow("This box", value = { android.os.Build.MODEL + " · Android " + android.os.Build.VERSION.RELEASE }),
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
-            SRow("Music", { "Songs by Anthony Micallef, rendered with GeneralUser GS by S. Christian Collins" }),
-            SRow("Music visualizer", { "Retro Visualizer by Anthony Micallef (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
+            SRow("Music", { "Songs by AntonRetro, rendered with GeneralUser GS by S. Christian Collins" }),
+            SRow("Music visualizer", { "Retro Visualizer by AntonRetro (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
         ) },
     )

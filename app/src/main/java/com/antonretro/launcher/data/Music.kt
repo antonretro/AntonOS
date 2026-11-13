@@ -22,9 +22,9 @@ object MusicRepo {
 
     /** Anthony's three songs (his own, MIT), rendered with the GeneralUser GS SoundFont by S. Christian Collins (licence in assets/music). */
     val builtIn = listOf(
-        Song("Jetpack Postcard", "Anthony Micallef", "AntonOS", null, "music/jetpack-postcard.mp3"),
-        Song("Lemonade Satellite", "Anthony Micallef", "AntonOS", null, "music/lemonade-satellite.mp3"),
-        Song("Slap Happy Forklift", "Anthony Micallef", "AntonOS", null, "music/slap-happy-forklift.mp3"))
+        Song("Jetpack Postcard", "AntonRetro", "AntonOS", null, "music/jetpack-postcard.mp3"),
+        Song("Lemonade Satellite", "AntonRetro", "AntonOS", null, "music/lemonade-satellite.mp3"),
+        Song("Slap Happy Forklift", "AntonRetro", "AntonOS", null, "music/slap-happy-forklift.mp3"))
 
     val home get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher/Music")
 
