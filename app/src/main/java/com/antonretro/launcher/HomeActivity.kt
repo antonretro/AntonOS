@@ -813,12 +813,13 @@ class HomeActivity : Activity() {
     private val builtInGames: List<Item> by lazy { listOf(
         Item.Action("bi:tiki", "Totem Tide", "Swap the masks, stop the tide", "tiki") { openBuiltIn("tiki") },
         Item.Action("bi:gear", "Gear & Ghost", "Route the energy, wake the portal", "gear") { openBuiltIn("gear") },
-        Item.Action("bi:crate", "Crate Cascade", "Stack the cargo, clear the dock", "crate") { openBuiltIn("crate") }) }
+        Item.Action("bi:crate", "Crate Cascade", "Stack the cargo, clear the dock", "crate") { openBuiltIn("crate") },
+        Item.Action("bi:orchard", "Orchard Swap", "Line up the fruit, beat the target", "orchard") { openBuiltIn("orchard") }) }
     private var game: com.antonretro.launcher.games.PixelGame? = null
 
     private fun openBuiltIn(id: String) {
         if (game != null) return
-        val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); "crate" -> com.antonretro.launcher.games.CrateCascade(this); else -> com.antonretro.launcher.games.TotemTide(this) }
+        val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); "crate" -> com.antonretro.launcher.games.CrateCascade(this); "orchard" -> com.antonretro.launcher.games.OrchardSwap(this); else -> com.antonretro.launcher.games.TotemTide(this) }
         // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
         g.onQuit = { closeGame(); showTab("Games") }
         quietMusic()
@@ -854,6 +855,21 @@ class HomeActivity : Activity() {
     private fun builtInCover(key: String, w: Int, h: Int): android.graphics.Bitmap {
         val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
         val c = android.graphics.Canvas(b)
+        if (key == "bi:orchard") {
+            // Orchard Swap: warm golden-hour sky, a row of round fruit, the name on top
+            c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF7EB0DC.toInt(), 0xFF4A7838.toInt(), android.graphics.Shader.TileMode.CLAMP) })
+            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            val cols = intArrayOf(0xFFDE3A34.toInt(), 0xFFF49228.toInt(), 0xFFF6D640.toInt(), 0xFF7AC446.toInt(), 0xFF9254C4.toInt(), 0xFF4878E2.toInt())
+            val r = h / 9f
+            for (i in cols.indices) {
+                val x = w / 2f + (i - 2.5f) * r * 2.3f; val y = h * .72f + (if (i % 2 == 0) 0f else -r * .5f)
+                p.color = 0xFF2B1408.toInt(); c.drawCircle(x, y, r + 2, p); p.color = cols[i]; c.drawCircle(x, y, r, p)
+                p.color = 0x99FFFFFF.toInt(); c.drawCircle(x - r * .35f, y - r * .35f, r * .22f, p)
+            }
+            val tp = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFF4DC.toInt(); textSize = h * .17f; typeface = android.graphics.Typeface.DEFAULT_BOLD; textAlign = android.graphics.Paint.Align.CENTER; setShadowLayer(6f, 0f, 2f, 0xAA000000.toInt()) }
+            c.drawText("Orchard Swap", w / 2f, h * .32f, tp)
+            return b
+        }
         if (key == "bi:crate") {
             // Crate Cascade: a sunset harbour sky, painted crates stacked like the game's pieces, the name on top
             c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF5A2E58.toInt(), 0xFFE07A48.toInt(), android.graphics.Shader.TileMode.CLAMP) })
