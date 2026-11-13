@@ -42,9 +42,11 @@ object ChannelRepo {
     fun parse(lines: List<String>): List<Channel> {
         val out = ArrayList<Channel>(lines.size / 2)
         var info: String? = null; var n = 0
+        val seen = HashSet<String>()   // the same stream listed twice would get the same number twice: keep the first
         for (raw in lines) {
             val line = raw.trim()
             if (line.startsWith("#EXTINF")) info = line
+            else if (line.isNotEmpty() && !line.startsWith("#") && info != null && !seen.add(line)) info = null
             else if (line.isNotEmpty() && !line.startsWith("#") && info != null) {
                 val name = info.substringAfterLast(',').trim()
                     .replace(Regex("""\s*\((\d{3,4}p|SD|HD)\)"""), "")      // "(1080p)" is noise for a viewer
