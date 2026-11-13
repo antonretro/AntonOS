@@ -256,7 +256,7 @@ class OrchardSwap(ctx: Context) : PixelGame(ctx, "orchard", "Orchard Swap") {
         well(c, lx + 8, 76, lx + 78, 79); rect(c, lx + 9, 77, lx + 9 + (68 * minOf(1f, score / target.toFloat())).toInt(), 78, GOLD)
         panel(c, lx, 84, lx + 86, 116); text(c, "MOVES", lx + 8, 89, GOLD); text(c, "$moves", lx + 78, 100, if (moves <= 5) RED else BONE, 2, align = 1)
         panel(c, lx, 120, lx + 86, 138); text(c, "ROUND $round", lx + 43, 126, BONE, align = 0)
-        hint(c, lx, 146, "A", "OK", if (picked) "LET GO" else "PICK"); hint(c, lx, 160, "◀", "◀", if (picked) "SWAP" else "MOVE")
+        hint(c, lx, 146, "A", "OK", if (picked) "LET GO" else "PICK"); hint(c, lx, 160, "<>", "<>", if (picked) "SWAP" else "MOVE")
         if (roundT > 0) { panel(c, 110, 66, 210, 96); text(c, "ROUND $round", 160, 72, GOLD, align = 0); text(c, "REACH $target", 160, 84, BONE, align = 0) }
     }
 }
