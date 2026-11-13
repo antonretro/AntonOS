@@ -1774,7 +1774,8 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- AntonOS's own apps (Files, ...)
     private fun builtInApps(): List<Item> = listOf(
-        Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() })
+        Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() },
+        Item.Action("os:web", "Web", "Browse the internet", "web") { openWeb(null) })
     private var files: FilesView? = null
     private fun openFiles() {
         val f = files ?: FilesView(this).also { v ->
@@ -1786,6 +1787,16 @@ class HomeActivity : Activity() {
         }
         coverHome(true); f.show(); dialog.bringToFront()
     }
+    private var web: WebView2? = null
+    fun openWeb(url: String?) {
+        val w = web ?: WebView2(this).also { v ->
+            root.addView(v, -1, -1); web = v
+            v.onClose = { coverHome(false); calmKeys() }
+            v.askAddress = { now, then -> keyboard.open("Address or search", initial = now.removePrefix("https://").removePrefix("http://"), doneText = "Go") { t -> then(t) } }
+        }
+        quietMusic(); coverHome(true); w.show(url); dialog.bringToFront(); keyboard.bringToFront()
+    }
+
     /** Videos and music play in AntonOS, games start, everything else goes to whatever app opens it. */
     private fun openFile(f: java.io.File) {
         val ext = f.extension.lowercase()
@@ -1900,6 +1911,7 @@ class HomeActivity : Activity() {
             (overlayOpen() || (::nowPlayingView.isInitialized && nowPlayingView.showing)) && files?.showing != true -> emptyList()
             chipFocus >= 0 -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Stop", com.antonretro.launcher.kit.HintBar.Btn.LR to "Move")
             inTabBar -> listOf(com.antonretro.launcher.kit.HintBar.Btn.LR to "Tabs", com.antonretro.launcher.kit.HintBar.Btn.UD to "Into ${current}", com.antonretro.launcher.kit.HintBar.Btn.OK to "Open")
+            web?.showing == true -> emptyList()
             files?.showing == true -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Delete", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Up a folder")
             current == "Settings" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Change", com.antonretro.launcher.kit.HintBar.Btn.UD to "Move", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Back")
             current == "TV" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Watch", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
@@ -1946,6 +1958,7 @@ class HomeActivity : Activity() {
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         welcome?.let { if (it.showing) return it.onKey(e) }
+        web?.let { if (it.showing && !(::keyboard.isInitialized && keyboard.showing)) return it.onKey(e) }
         files?.let { if (it.showing && !(::player.isInitialized && player.showing) && !(::nowPlayingView.isInitialized && nowPlayingView.showing)) return it.onKey(e) }
         if (waitingForPad > SystemClock.uptimeMillis() && e.keyCode == KeyEvent.KEYCODE_BUTTON_A && com.antonretro.launcher.kit.Pads.isPad(e.device)) {
             if (e.action == KeyEvent.ACTION_UP) { waitingForPad = 0L; com.antonretro.launcher.kit.Pads.makeFirst(e.device.descriptor); notice(com.antonretro.launcher.kit.Pads.nameOf(e.device) + " is Player 1", ""); if (current == "Settings") settingsScreen.refresh() }
