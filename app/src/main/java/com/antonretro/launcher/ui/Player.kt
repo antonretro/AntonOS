@@ -207,6 +207,33 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         alpha = 1f
         onMini?.invoke(c)
     }
+    /** The channel you were watching, small in the Guide's top-right corner while you browse it. */
+    var peeking = false; private set
+    fun peek() {
+        if (current == null || video != null || current?.radio == true) return
+        peeking = true; mini = true
+        ui.removeCallbacks(fadeBanner); controlsOn = false; controls.visibility = View.GONE
+        if (stripOn) { stripOn = false; stripBox.visibility = View.GONE }
+        banner.alpha = 0f; mouseBack.alpha = 0f
+        setBackgroundColor(Color.TRANSPARENT)
+        layoutParams = (layoutParams as FrameLayout.LayoutParams).apply {
+            width = Kit.dpi(context, 272f); height = Kit.dpi(context, 153f); gravity = Gravity.TOP or Gravity.END
+            rightMargin = Kit.dpi(context, Kit.SAFE_X); topMargin = Kit.dpi(context, 16f); bottomMargin = 0
+        }
+        if (miniFrame.parent == null) addView(miniFrame, LayoutParams(-1, -1))
+        miniFrame.visibility = View.VISIBLE; miniFrame.bringToFront()
+        // stays under the Guide: the Guide cuts a see-through window over it (a video layer drawn above other
+        // views made the whole screen black on this box)
+    }
+    /** The Guide closed: the channel goes back to full screen. */
+    fun unpeek() {
+        if (!peeking) return
+        peeking = false; mini = false; miniFrame.visibility = View.GONE
+        setBackgroundColor(Color.BLACK)
+        layoutParams = (layoutParams as FrameLayout.LayoutParams).apply { width = -1; height = -1; rightMargin = 0; topMargin = 0; bottomMargin = 0; gravity = Gravity.NO_GRAVITY }
+        bringToFront()
+    }
+
     /** Back to full screen (Menu, or picking the same channel again). */
     fun expand() {
         if (!mini) return

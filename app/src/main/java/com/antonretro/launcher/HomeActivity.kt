@@ -1282,7 +1282,12 @@ class HomeActivity : Activity() {
         guide.onSearch = { keyboard.open("Find a channel", doneText = "Find") { q -> guide.search(q) } }
         guide.onCards = { tvGuideFirst = false; guide.hide(); inTabBar = false; screens[current]?.enter(); drawTabs(); notice("Cards view", "The Guide is still the first card") }
         guide.onTop = { guide.hide(); inTabBar = true; tabIdx = tabs.indexOf(current); drawTabs() }
+        val watching = player.showing && player.current?.radio == false
+        guide.onHidden = { if (player.peeking) { player.unpeek(); dialog.bringToFront() } }
         guide.show(guideList(), startUrl ?: player.current?.takeIf { player.showing }?.url ?: store.lastTv)
+        // what you were watching keeps playing behind the Guide, named in its corner
+        val w = player.current?.takeIf { watching }
+        guide.preview(w, w?.let { numberOf(it) } ?: 0, w?.let { player.nowLine?.invoke(it) })
         dialog.bringToFront()
         if (Guide.channelCount == 0) maybeRefreshGuide(0)
     }

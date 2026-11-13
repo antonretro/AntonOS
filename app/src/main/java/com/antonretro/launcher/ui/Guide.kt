@@ -49,6 +49,31 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     var onSearch: (() -> Unit)? = null
     /** "Cards" chip: back to the card view of the TV tab (remembered by the launcher) */
     var onCards: (() -> Unit)? = null
+    /** the Guide closed (any way) */
+    var onHidden: (() -> Unit)? = null
+    /** The channel you were watching plays small in the top-right corner: the hint there steps aside. */
+    /** "Watching now" in the top-right corner: the channel still playing behind the Guide (Back returns to it).
+     *  Live video there was tried: on this box the video layer can't show through the Guide. */
+    private val watchCard = Kit.text(ctx, 17f, true).apply {
+        isSingleLine = false; maxLines = 3
+        setPadding(Kit.dpi(ctx, 18f), Kit.dpi(ctx, 12f), Kit.dpi(ctx, 18f), Kit.dpi(ctx, 12f))
+        visibility = View.GONE
+    }
+    fun preview(c: Channel?, number: Int, now: String?) {
+        hint.visibility = if (c != null) View.GONE else View.VISIBLE
+        if (c == null) { watchCard.visibility = View.GONE; return }
+        if (watchCard.parent == null) {
+            watchCard.background = com.antonretro.launcher.kit.GlassDrawable(watchCard, Kit.dp(context, Kit.R_M), Kit.GLASS_STRONG)
+            addView(watchCard, LayoutParams(Kit.dpi(context, 330f), -2, android.view.Gravity.END).apply { rightMargin = Kit.dpi(context, Kit.SAFE_X); topMargin = Kit.dpi(context, 28f) })
+        }
+        val nl = "\n"
+        watchCard.text = android.text.SpannableStringBuilder("▶  Watching now" + nl).apply {
+            setSpan(android.text.style.ForegroundColorSpan(Kit.TEXT_DIM), 0, length, 0); setSpan(android.text.style.RelativeSizeSpan(.8f), 0, length, 0)
+            append("$number  ${c.name}")
+            if (!now.isNullOrBlank()) { append(nl); val st = length; append(now); setSpan(android.text.style.ForegroundColorSpan(Kit.TEXT_DIM), st, length, 0); setSpan(android.text.style.RelativeSizeSpan(.85f), st, length, 0) }
+        }
+        watchCard.visibility = View.VISIBLE; watchCard.bringToFront()
+    }
     /** Up from the filter bar: back to the tab bar */
     var onTop: (() -> Unit)? = null
 
@@ -130,7 +155,7 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         focusChanged(); ui.removeCallbacks(tick); ui.postDelayed(tick, 30_000)
     }
 
-    fun hide() { ui.removeCallbacks(tick); onCover?.invoke(false); animate().alpha(0f).setDuration(Kit.t(180)).withEndAction { visibility = View.GONE; cache.clear() }.start() }
+    fun hide() { ui.removeCallbacks(tick); onHidden?.invoke(); onCover?.invoke(false); animate().alpha(0f).setDuration(Kit.t(180)).withEndAction { visibility = View.GONE; cache.clear() }.start() }
 
     /** New guide data arrived: forget what was read and redraw. */
     fun reload() { if (!showing) return; cache.clear(); loading.clear(); fProg = null; focusChanged() }
