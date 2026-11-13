@@ -254,6 +254,7 @@ class HomeActivity : Activity() {
         // after every screen exists (this ran too early once and crashed the launcher at start)
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
+        com.antonretro.launcher.kit.Pads.init(this); watchPads()
         com.antonretro.launcher.kit.UiSound.init(this)
         com.antonretro.launcher.kit.UiSound.quiet = { (::player.isInitialized && player.showing) || (::music.isInitialized && music.playing) || game != null || !resumed }
         // the Guide button saves the game's place in RetroArch (it used to quit, and leaving then lost the place)
@@ -407,9 +408,15 @@ class HomeActivity : Activity() {
         out.add(SRow("Get out of any app", { "Controller: the Guide button, or hold Start, or press Select and Start together. Then OK goes Home" }))
         out.add(SRow("With the remote", { "Home, or hold Back for a second. A short Back works as normal" }))
         out.add(SRow("With a mouse or keyboard", { "Touch the top edge of the screen with the pointer, or hold Esc" }))
+        val pads = com.antonretro.launcher.kit.Pads.connected()
+        for ((i, d) in pads.withIndex())
+            out.add(SRow("Player ${i + 1}  ·  " + com.antonretro.launcher.kit.Pads.nameOf(d), { if (i == 0) "Player 1 in games and menus" else "Press OK to make this Player 1" },
+                onClick = { if (i > 0) { com.antonretro.launcher.kit.Pads.makeFirst(d.descriptor); notice(com.antonretro.launcher.kit.Pads.nameOf(d) + " is Player 1", ""); settingsScreen.refresh() } }))
+        if (pads.size > 1) out.add(SRow("Choose Player 1 by pressing A", { "Then press A on the controller that should be Player 1" }, onClick = { waitingForPad = SystemClock.uptimeMillis() + 15_000; notice("Press A on the controller", "that should be Player 1") }))
+        if (pads.isEmpty()) out.add(SRow("No controller connected", { "Plug in a USB controller or its wireless receiver" }))
         for (id in InputDevice.getDeviceIds()) {
             val d = InputDevice.getDevice(id) ?: continue
-            if (d.isVirtual) continue
+            if (d.isVirtual || com.antonretro.launcher.kit.Pads.isPad(d)) continue
             val s = d.sources
             val kind = when {
                 s and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || s and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK -> "Controller"
@@ -1690,6 +1697,31 @@ class HomeActivity : Activity() {
         return true
     }
 
+    // ---------------------------------------------------------------- controllers coming and going
+    /** until when "press A on the controller that should be Player 1" is waiting (0 = not) */
+    private var waitingForPad = 0L
+    private val padNames = HashMap<Int, Pair<String, Int>>()   // device id -> (name, player) while connected
+    private fun watchPads() {
+        for (d in com.antonretro.launcher.kit.Pads.connected()) padNames[d.id] = com.antonretro.launcher.kit.Pads.nameOf(d) to com.antonretro.launcher.kit.Pads.playerOf(d)
+        (getSystemService(INPUT_SERVICE) as android.hardware.input.InputManager).registerInputDeviceListener(object : android.hardware.input.InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(id: Int) {
+                val d = InputDevice.getDevice(id) ?: return
+                if (!com.antonretro.launcher.kit.Pads.isPad(d)) return
+                val p = com.antonretro.launcher.kit.Pads.playerOf(d); padNames[id] = com.antonretro.launcher.kit.Pads.nameOf(d) to p
+                notice(com.antonretro.launcher.kit.Pads.nameOf(d) + " connected", "Player $p")
+                if (current == "Settings") settingsScreen.refresh()
+            }
+            override fun onInputDeviceRemoved(id: Int) {
+                val (name, p) = padNames.remove(id) ?: return
+                // a built-in game waits for its player instead of carrying on without them
+                game?.let { g -> if (g.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) g.pauseGame() }
+                notice("Player $p's controller disconnected", name)
+                if (current == "Settings") settingsScreen.refresh()
+            }
+            override fun onInputDeviceChanged(id: Int) {}
+        }, ui)
+    }
+
     // ---------------------------------------------------------------- the button-hint bar (kit/HintBar.kt)
     private val hintBar by lazy { com.antonretro.launcher.kit.HintBar(this) }
     /** What the buttons do on the screen in front, in the glyphs of the last thing used. */
@@ -1743,6 +1775,10 @@ class HomeActivity : Activity() {
         if (SystemClock.uptimeMillis() < keysCalmUntil) return true
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
+        if (waitingForPad > SystemClock.uptimeMillis() && e.keyCode == KeyEvent.KEYCODE_BUTTON_A && com.antonretro.launcher.kit.Pads.isPad(e.device)) {
+            if (e.action == KeyEvent.ACTION_UP) { waitingForPad = 0L; com.antonretro.launcher.kit.Pads.makeFirst(e.device.descriptor); notice(com.antonretro.launcher.kit.Pads.nameOf(e.device) + " is Player 1", ""); if (current == "Settings") settingsScreen.refresh() }
+            return true
+        }
         gamePageView?.let { if (it.showing) return it.onKey(e) }
         if (chipFocus >= 0 && inTabBar && !overlayOpen()) return chipKey(e)
         if (::player.isInitialized && player.mini && (e.keyCode == KeyEvent.KEYCODE_MENU || e.keyCode == KeyEvent.KEYCODE_BUTTON_Y || e.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
