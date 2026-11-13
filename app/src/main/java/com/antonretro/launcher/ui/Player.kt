@@ -175,7 +175,60 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private var stripOn = false
     private var tunedAt = 0L
     private var firstTune = true
-    val showing get() = visibility == View.VISIBLE
+    /** the full-screen player is up (not the corner mini picture) */
+    val showing get() = visibility == View.VISIBLE && !mini
+
+    // ------------------------------------------------------------------ the corner mini player (TV only)
+    /** TV keeps playing in a small window in the corner while you browse ("kind of like how phones do it") */
+    var mini = false; private set
+    /** Settings → TV & Radio: what Back does while watching a channel. 0 stop, 1 keep the sound, 2 small picture */
+    var backMode = 0
+    var onMini: ((Channel?) -> Unit)? = null
+    private val miniFrame = View(ctx).apply {
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 6f); setColor(0); setStroke(Kit.dpi(ctx, 2f), 0xCCFFFFFF.toInt()) }
+        visibility = View.GONE
+    }
+    /** Back while watching a channel: shrink into the corner instead of stopping. */
+    fun goMini() {
+        val c = current ?: return
+        if (video != null || c.radio || error.visibility == View.VISIBLE) { close(keepRadio = true); return }
+        mini = true
+        ui.removeCallbacks(fadeBanner); controlsOn = false; controls.visibility = View.GONE
+        if (stripOn) { stripOn = false; stripBox.visibility = View.GONE }
+        banner.alpha = 0f; mouseBack.alpha = 0f
+        setBackgroundColor(Color.TRANSPARENT)
+        val w = Kit.dpi(context, 352f); val h = Kit.dpi(context, 198f)
+        layoutParams = (layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(w, h)).apply {
+            width = w; height = h; gravity = Gravity.BOTTOM or Gravity.END
+            rightMargin = Kit.dpi(context, Kit.SAFE_X); bottomMargin = Kit.dpi(context, 56f)
+        }
+        if (miniFrame.parent == null) addView(miniFrame, LayoutParams(-1, -1))
+        miniFrame.visibility = View.VISIBLE; miniFrame.bringToFront()
+        alpha = 1f
+        onMini?.invoke(c)
+    }
+    /** Back to full screen (Menu, or picking the same channel again). */
+    fun expand() {
+        if (!mini) return
+        mini = false; miniFrame.visibility = View.GONE
+        setBackgroundColor(Color.BLACK)
+        layoutParams = (layoutParams as FrameLayout.LayoutParams).apply { width = -1; height = -1; rightMargin = 0; bottomMargin = 0; gravity = Gravity.NO_GRAVITY }
+        bringToFront()
+        current?.let { showGuideLines(it) }
+        banner.animate().cancel(); banner.alpha = 1f; ui.removeCallbacks(fadeBanner); ui.postDelayed(fadeBanner, 4000)
+        onMini?.invoke(null)
+    }
+    /** Stop the corner picture (something else starts, or Back on the tab bar). */
+    fun closeMini() {
+        if (!mini) return
+        mini = false; miniFrame.visibility = View.GONE
+        player?.stop()
+        setBackgroundColor(Color.BLACK)
+        layoutParams = (layoutParams as FrameLayout.LayoutParams).apply { width = -1; height = -1; rightMargin = 0; bottomMargin = 0; gravity = Gravity.NO_GRAVITY }
+        visibility = View.GONE
+        onMini?.invoke(null)
+        current?.let { onClosed?.invoke(it, false) }
+    }
     val current: Channel? get() = list.getOrNull(idx)
     val playing get() = player?.isPlaying == true || player?.playbackState == Player.STATE_BUFFERING
 
@@ -444,7 +497,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> showStrip()
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_GUIDE -> current?.let { if (it.radio) onStar?.invoke(it) else onGuide?.invoke(it) }
             KeyEvent.KEYCODE_BUTTON_Y -> current?.let { onStar?.invoke(it) }
-            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> close(keepRadio = true)
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> if (current?.radio == false && video == null && backMode == 2) goMini() else close(keepRadio = true)
             else -> return false
         }
         return true
@@ -455,7 +508,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         if (video != null) { endVideo(false); return }
         ui.removeCallbacks(watchdog); ui.removeCallbacks(fadeBanner)
         val c = current
-        val keep = keepRadio && c?.radio == true && error.visibility != View.VISIBLE && player?.playWhenReady == true
+        val keep = keepRadio && (c?.radio == true || (c != null && video == null && backMode == 1)) && error.visibility != View.VISIBLE && player?.playWhenReady == true
         if (!keep) player?.stop()
         if (stripOn) { stripOn = false; stripBox.visibility = View.GONE }
         controlsOn = false; controls.visibility = View.GONE; ui.removeCallbacks(hideControls)
@@ -463,7 +516,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         if (c != null) onClosed?.invoke(c, keep)
     }
 
-    fun stopBackground() { player?.stop() }
+    fun stopBackground() { if (mini) closeMini(); player?.stop() }
     fun resumeView() { if (current != null) { visibility = View.VISIBLE; alpha = 1f } }
     fun release() { player?.release(); player = null }
 }

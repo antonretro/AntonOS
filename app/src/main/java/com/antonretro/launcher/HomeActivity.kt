@@ -264,6 +264,8 @@ class HomeActivity : Activity() {
             onStar = { c -> star(c) }
             numberOf = { c -> this@HomeActivity.numberOf(c) }
             onBroken = { c -> markBroken(c.url, true) }
+            backMode = getSharedPreferences("tv", MODE_PRIVATE).getInt("backMode", 0)
+            onMini = { c -> if (c != null) { bringToFront(); hintBar.bringToFront(); dialog.bringToFront(); notice("Still watching ${c.name}", "Menu: full screen  ·  Back on the tabs: stop") } ; ui.post { updateHints() } }
             onWorks = { c -> markBroken(c.url, false) }
         }
         applyPlayerSettings()
@@ -281,7 +283,7 @@ class HomeActivity : Activity() {
         }
         root.addView(gameMenu, -1, -1)
         music = MusicPlayer(this).apply { onChanged = { ui.post { if (::nowPlayingView.isInitialized && nowPlayingView.showing) nowPlayingView.refresh(); musicChip() } } }
-        nowPlayingView = NowPlaying(this, music).apply { onClose = { coverHome(false); musicChip(); calmKeys() } }
+        nowPlayingView = NowPlaying(this, music).apply { onClose = { coverHome(false); musicChip(); ui.postDelayed({ musicChip() }, Kit.t(260)); calmKeys() } }
         player.onGuide = { c -> openGuide(c.url) }
         player.nowNext = { c -> Guide.nowNext(c.url) }
         player.timeText = { t -> timeFmt.format(Date(t)) }
@@ -513,6 +515,9 @@ class HomeActivity : Activity() {
         val qualities = listOf("Automatic", "Save data (720p)", "Best (1080p)")
         out.add(SRow("Channel list", { "${ChannelRepo.tv.size} TV channels, ${ChannelRepo.radio.size} radio stations" }, value = { "RetroLauncher/channels.m3u" }))
         out.add(SRow("Reload the channel list", { "After putting a new list on the box" }, onClick = { loadChannels(); notice("Channel list reloaded", "") }))
+        val backModes = listOf("Stop", "Keep the sound", "Small picture in the corner")
+        out.add(SRow("Back while watching TV", { when (player.backMode) { 1 -> "The channel keeps playing as sound, its card by the clock"; 2 -> "Keeps playing in a corner while you browse (browsing stutters on this box)"; else -> "Stops the channel" } },
+            value = { backModes[player.backMode] }, onClick = { player.backMode = (player.backMode + 1) % 3; tvPrefs.edit().putInt("backMode", player.backMode).apply() }))
         out.add(SRow("Starting a channel", { if (store.playerSmooth) "Waits a little longer, then fewer pauses" else "Picture comes up as fast as possible" }, value = { if (store.playerSmooth) "Smoother" else "Faster" },
             onClick = { store.playerSmooth = !store.playerSmooth; store.save(); applyPlayerSettings() }))
         out.add(SRow("Picture quality", value = { qualities[store.quality.coerceIn(0, 2)] }, onClick = { store.quality = (store.quality + 1) % 3; store.save(); applyPlayerSettings() }))
@@ -1215,6 +1220,10 @@ class HomeActivity : Activity() {
     }
 
     private fun openPlayer(list: List<Channel>, index: Int) {
+        if (player.mini) {
+            if (list.getOrNull(index)?.url == player.current?.url) { player.expand(); dialog.bringToFront(); return }
+            player.closeMini()
+        }
         quietMusic()
         if (player.parent == null) root.addView(player, -1, -1)
         player.bringToFront()
@@ -1598,6 +1607,60 @@ class HomeActivity : Activity() {
         Perf.afterFrame("tab", t0)
     }
 
+    // ---------------------------------------------------------------- the playing cards by the clock, with the remote
+    /** -1 = not on the cards; else which card (TV/radio first, then music) has focus */
+    private var chipFocus = -1
+    private fun playingChips(): List<TextView> = listOfNotNull(nowChip, musicChipView).filter { it.visibility == View.VISIBLE }
+    private fun paintChips() {
+        for ((i, c) in listOfNotNull(nowChip, musicChipView).withIndex()) {
+            val on = chipFocus >= 0 && playingChips().getOrNull(chipFocus) === c
+            c.background = if (on) android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(this@HomeActivity, Kit.pill(36f)); setColor(Kit.FOCUS_FILL) } else GlassDrawable(c, Kit.dp(this, Kit.pill(36f)))
+            c.setTextColor(if (on) Kit.FOCUS_TEXT else Kit.TEXT)
+            c.animate().scaleX(if (on) 1.06f else 1f).scaleY(if (on) 1.06f else 1f).setDuration(Kit.t(140)).start()
+        }
+    }
+    private fun leaveChips() { chipFocus = -1; paintChips(); ui.post { updateHints() } }
+    /** OK opens what plays (Now Playing, or the channel full screen); holding OK stops it. */
+    private var chipHeldFired = false
+    /** held for 0.6 s: stop what plays (timed, so it works however the remote repeats its keys) */
+    private val chipHold = Runnable {
+        if (chipFocus < 0) return@Runnable
+        val c = playingChips().getOrNull(chipFocus) ?: return@Runnable
+        chipHeldFired = true
+        if (c === musicChipView) { music.stop(); musicChip(); notice("Music stopped", "") } else { player.stopBackground(); nowPlaying(null); notice("Stopped", "") }
+        leaveChips(); drawTabs()
+    }
+    private fun chipKey(e: KeyEvent): Boolean {
+        val chips = playingChips()
+        if (chips.isEmpty()) { leaveChips(); return false }
+        val c = chips.getOrNull(chipFocus) ?: chips[0]
+        val isMusic = c === musicChipView
+        val ok = e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER || e.keyCode == KeyEvent.KEYCODE_BUTTON_A
+        if (ok) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) { chipHeldFired = false; ui.removeCallbacks(chipHold); ui.postDelayed(chipHold, 600) }
+            if (e.action == KeyEvent.ACTION_UP) ui.removeCallbacks(chipHold)
+            if (false) {
+                chipHeldFired = true
+                if (isMusic) { music.stop(); musicChip(); notice("Music stopped", "") } else { player.stopBackground(); nowPlaying(null); notice("Stopped", "") }
+                leaveChips(); drawTabs()
+            }
+            if (e.action == KeyEvent.ACTION_UP && !chipHeldFired) {
+                leaveChips(); inTabBar = false; drawTabs()
+                if (isMusic) openNowPlaying() else player.current?.let { if (player.mini) player.expand() else openPlayer(listOf(it), 0) }
+            }
+            return true
+        }
+        if (e.action != KeyEvent.ACTION_DOWN) return true
+        when (e.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { if (chipFocus > 0) { chipFocus--; paintChips() } else { leaveChips(); drawTabs() } }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { if (chipFocus < chips.size - 1) { chipFocus++; paintChips() } else com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BUMP) }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { leaveChips(); inTabBar = false; screens[current]?.enter(); drawTabs() }
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_DPAD_UP -> { leaveChips(); drawTabs() }
+            else -> return false
+        }
+        return true
+    }
+
     // ---------------------------------------------------------------- the button-hint bar (kit/HintBar.kt)
     private val hintBar by lazy { com.antonretro.launcher.kit.HintBar(this) }
     /** What the buttons do on the screen in front, in the glyphs of the last thing used. */
@@ -1605,6 +1668,7 @@ class HomeActivity : Activity() {
         if (!::player.isInitialized) return
         val h: List<Pair<com.antonretro.launcher.kit.HintBar.Btn, String>> = when {
             overlayOpen() || (::nowPlayingView.isInitialized && nowPlayingView.showing) -> emptyList()
+            chipFocus >= 0 -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Stop", com.antonretro.launcher.kit.HintBar.Btn.LR to "Move")
             inTabBar -> listOf(com.antonretro.launcher.kit.HintBar.Btn.LR to "Tabs", com.antonretro.launcher.kit.HintBar.Btn.UD to "Into ${current}", com.antonretro.launcher.kit.HintBar.Btn.OK to "Open")
             current == "Settings" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Change", com.antonretro.launcher.kit.HintBar.Btn.UD to "Move", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Back")
             current == "TV" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Watch", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
@@ -1651,6 +1715,11 @@ class HomeActivity : Activity() {
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         gamePageView?.let { if (it.showing) return it.onKey(e) }
+        if (chipFocus >= 0 && inTabBar && !overlayOpen()) return chipKey(e)
+        if (::player.isInitialized && player.mini && (e.keyCode == KeyEvent.KEYCODE_MENU || e.keyCode == KeyEvent.KEYCODE_BUTTON_Y || e.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) { player.expand(); dialog.bringToFront() }
+            return true
+        }
         // channel numbers: digits in the TV or Radio tab, or while watching
         val digit = when (e.keyCode) { in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> e.keyCode - KeyEvent.KEYCODE_0; in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> e.keyCode - KeyEvent.KEYCODE_NUMPAD_0; else -> -1 }
         val inChannels = (::player.isInitialized && player.showing && player.current != null) || ((current == "TV" || current == "Radio") && !(::keyboard.isInitialized && keyboard.showing))
@@ -1697,6 +1766,7 @@ class HomeActivity : Activity() {
 
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
+            if (dc > 0 && nextVisibleTab(tabIdx, dc) == tabIdx && playingChips().isNotEmpty()) { chipFocus = 0; paintChips(); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.MOVE2); ui.post { updateHints() }; return }
             if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.TAB) } else com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BUMP) }
             if (dr > 0) {
                 if (current == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { inTabBar = false; drawTabs(); openGuide(null); guide.focusBar(); return }
@@ -1745,6 +1815,7 @@ class HomeActivity : Activity() {
     private fun noteState(why: String) = Perf.note("state $why tab=$current tabbar=$inTabBar player=${::player.isInitialized && player.showing} dialog=${dialog.showing} keyboard=${keyboard.showing}")
 
     private fun onBackKey() {
+        if (inTabBar && ::player.isInitialized && player.mini) { player.closeMini(); notice("Stopped", "") ; return }
         // Back goes one step up. At the top of any tab it goes to the Home tab; on Home it does nothing.
         if (inTabBar) { if (current != "Home") goHome() else { inTabBar = false; screens["Home"]?.enter(); drawTabs() }; return }
         val s = screens[current] ?: return
@@ -1836,7 +1907,7 @@ class HomeActivity : Activity() {
         true
     } catch (e: Exception) { false }
     /** One sound at a time: whatever starts next, the music fades out and waits paused (it doesn't come back by itself). */
-    private fun quietMusic() { if (::music.isInitialized) { music.fadePause(); musicChip() } }
+    private fun quietMusic() { if (::player.isInitialized && player.mini) player.closeMini(); if (::music.isInitialized) { music.fadePause(); musicChip() } }
 
     private fun openClassic() {
         val i = packageManager.getLaunchIntentForPackage("com.droidlogic.mboxlauncher")
@@ -1942,7 +2013,7 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
+    override fun onPause() { super.onPause(); resumed = false; if (::player.isInitialized && player.mini) player.closeMini(); drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
 
     override fun onResume() {
         super.onResume()

@@ -218,6 +218,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
             ctls.add(Ctl(tv, run, side)); return tv
         }
         ctl("⏮", 64f, { music.previous() }); ctl("⏯", 64f, { music.toggle() }); ctl("⏭", 64f, { music.next() })
+        ctl("■  Stop", 110f, { music.stop(); hide(); onClose?.invoke() })
         ctl("Shuffle", 120f, { music.shuffle = !music.shuffle })
         ctl("Repeat", 120f, { music.repeat = (music.repeat + 1) % 3 })
         ctl("Plasma", 130f, { setStyle(if (style == "battery") "barswaves" else "battery") })
