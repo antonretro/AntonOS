@@ -335,6 +335,7 @@ class HomeActivity : Activity() {
             SRow("Volume and sound output", onClick = go(Settings.ACTION_SOUND_SETTINGS)),
         ) },
         SPage("pad", "Controllers & Remotes") { controllerRows() },
+        SPage("cast", "Casting") { castRows() },
         SPage("home", "Home screen") { listOf(
             SRow("Style", { when (homeStyle) { 1 -> "Big tiles for TV, Radio, Games and more, favourites along the bottom"; 2 -> "Only your favourites, extra large"; else -> "Big picture at the top, your dock and rows" } },
                 value = { homeStyles[homeStyle] }, onClick = { homeStyle = (homeStyle + 1) % 3; applyHomeStyle(homeStyle, true); notice("Home style: " + homeStyles[homeStyle], "Press Home to see it") }),
@@ -1772,10 +1773,26 @@ class HomeActivity : Activity() {
         }, ui)
     }
 
+    // ---------------------------------------------------------------- Casting: what this box can really receive
+    private fun hasPkg(p: String) = try { packageManager.getPackageInfo(p, 0); true } catch (e: Exception) { false }
+    private fun castRows(): List<SRow> {
+        val out = ArrayList<SRow>()
+        out.add(SRow("From YouTube on your phone", { "In SmartTube: Settings, Link to phone, note the code. On your phone's YouTube app: Settings, Watch on TV, enter the code. Then the cast button sends videos here" },
+            onClick = { smartTube?.let { safeStart(packageManager.getLeanbackLaunchIntentForPackage(it) ?: packageManager.getLaunchIntentForPackage(it) ?: return@let) } ?: notice("SmartTube isn't installed", "") }))
+        if (hasPkg("com.droidlogic.miracast")) out.add(SRow("Mirror an Android phone or a Windows PC", { "Opens the box's screen-mirroring receiver (Miracast). On Android: Cast or Smart View. On Windows: press Windows + K" },
+            onClick = { safeStart(Intent().setComponent(android.content.ComponentName("com.droidlogic.miracast", "com.droidlogic.miracast.WiFiDirectMainActivity"))) }))
+        out.add(SRow("Send a link from any phone", { "The phone remote's Type page: paste a YouTube or video link and it plays here. Works on iPhone too" }, onClick = { openKey("phone") }))
+        if (hasPkg("com.droidlogic.mediacenter")) out.add(SRow("The box maker's Media Center", { "Receives photos, music and videos from some phone apps (DLNA). Made by the box maker; it includes a third-party advertising part" },
+            onClick = { safeStart(Intent().setComponent(android.content.ComponentName("com.droidlogic.mediacenter", "com.droidlogic.mediacenter.MediaCenterActivity"))) }))
+        out.add(SRow("Mirroring an iPhone", { "iPhones mirror with AirPlay, which this box can't receive. Use the phone remote's Send a link, or YouTube's TV code above" }))
+        return out
+    }
+
     // ---------------------------------------------------------------- AntonOS's own apps (Files, ...)
     private fun builtInApps(): List<Item> = listOf(
         Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() },
-        Item.Action("os:web", "Web", "Browse the internet", "web") { openWeb(null) })
+        Item.Action("os:web", "Web", "Browse the internet", "web") { openWeb(null) },
+        Item.Action("os:cast", "Casting", "Phone to TV", "cast") { showTab("Settings"); settingsScreen.open("Casting") })
     private var files: FilesView? = null
     private fun openFiles() {
         val f = files ?: FilesView(this).also { v ->
