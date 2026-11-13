@@ -51,7 +51,7 @@ android {
 dependencies {
     // the built-in player for TV, radio and videos (HLS streams from the channel list)
     // Anthony's Retro Visualizer engine, native (C++ via JNI; armeabi-v7a + arm64-v8a), drawn in Now Playing
-    implementation(files("libs/retro-visualizer-0.1.0.aar"))
+    implementation(files("libs/retro-visualizer-0.1.1.aar"))
     implementation("com.google.zxing:core:3.5.3")   // the phone remote's QR code
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
