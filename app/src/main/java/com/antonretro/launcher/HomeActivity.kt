@@ -283,7 +283,10 @@ class HomeActivity : Activity() {
         }
         root.addView(gameMenu, -1, -1)
         music = MusicPlayer(this).apply { onChanged = { ui.post { if (::nowPlayingView.isInitialized && nowPlayingView.showing) nowPlayingView.refresh(); musicChip() } } }
-        nowPlayingView = NowPlaying(this, music).apply { onClose = { coverHome(false); musicChip(); ui.postDelayed({ musicChip() }, Kit.t(260)); calmKeys() } }
+        nowPlayingView = NowPlaying(this, music).apply {
+            onClose = { coverHome(false); musicChip(); ui.postDelayed({ musicChip() }, Kit.t(260)); calmKeys() }
+            onVersion = { d -> switchSongVersion(d) }
+        }
         player.onGuide = { c -> openGuide(c.url) }
         player.nowNext = { c -> Guide.nowNext(c.url) }
         player.timeText = { t -> timeFmt.format(Date(t)) }
@@ -342,7 +345,7 @@ class HomeActivity : Activity() {
             SRow("This box", value = { android.os.Build.MODEL + " · Android " + android.os.Build.VERSION.RELEASE }),
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
-            SRow("Music", { "Songs by AntonRetro, rendered with GeneralUser GS by S. Christian Collins" }),
+            SRow("Music", { "Songs by AntonRetro, rendered with MuseScore General (MIT, from FluidR3 by Frank Wen) and GeneralUser GS by S. Christian Collins, plus the original MIDI" }),
             SRow("Music visualizer", { "Retro Visualizer by AntonRetro (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
         ) },
@@ -671,12 +674,14 @@ class HomeActivity : Activity() {
             val groups = try { VideoRepo.scan() } catch (e: Exception) { emptyList() }
             val found = try { MusicRepo.scan() } catch (e: Exception) { emptyList() }
             ui.post {
-                songs = MusicRepo.builtIn + found
+                songs = MusicRepo.builtIn(songVersion) + found
                 videoGroups = groups
                 val all = groups.flatMap { it.second }.associateBy { it.file.path }
                 val keep = store.positions.keys.mapNotNull { all[it] }.map { Item.Vid(it) }
                 val rows = ArrayList<Row>()
                 rows.add(Row("Music", songs.map { Item.Track(it) }, alwaysLabel = true, poster = true, aspect = 1f))
+                // every version as its own album, to play a whole set in one sound
+                for (v in MusicRepo.VERSIONS.indices) rows.add(Row("AntonRetro · " + MusicRepo.VERSIONS[v] + if (v == songVersion) "  (chosen)" else "", MusicRepo.builtIn(v).map { Item.Track(it) }, alwaysLabel = true, poster = true, aspect = 1f))
                 if (keep.isNotEmpty()) rows.add(Row("Keep watching", keep, alwaysLabel = true))
                 for ((name, vids) in groups) rows.add(Row(name, vids.map { Item.Vid(it) }, alwaysLabel = true))
                 val vs = screens["Media"] as RowsScreen
@@ -687,6 +692,24 @@ class HomeActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- music (Media tab)
+    /** which version of AntonRetro's songs plays by default (0 MuseScore, 1 GeneralUser, 2 MIDI), remembered */
+    private var songVersion: Int
+        get() = getSharedPreferences("music", MODE_PRIVATE).getInt("version", 0)
+        set(v) { getSharedPreferences("music", MODE_PRIVATE).edit().putInt("version", v).apply() }
+    /** Now Playing's Version control: the same song, same place, in another version; remembered as the choice */
+    private fun switchSongVersion(d: Int) {
+        val cur = music.current ?: return
+        val from = MusicRepo.versionOf(cur.asset); if (from < 0) return
+        val to = ((from + d) % 3 + 3) % 3
+        val list = MusicRepo.builtIn(to)
+        val i = list.indexOfFirst { it.title == cur.title }.coerceAtLeast(0)
+        val at = music.position
+        songVersion = to
+        music.play(list, i); if (at > 1000) ui.postDelayed({ music.seekTo(at) }, 300)
+        nowPlayingView.showVersion(MusicRepo.VERSIONS[to])
+        rebuildVideos()
+        notice("Version: " + MusicRepo.VERSIONS[to], cur.title)
+    }
     private var songs: List<Song> = emptyList()
     private lateinit var music: MusicPlayer
     private lateinit var nowPlayingView: NowPlaying
@@ -702,6 +725,7 @@ class HomeActivity : Activity() {
     }
     private fun openNowPlaying() {
         if (nowPlayingView.parent == null) root.addView(nowPlayingView, -1, -1)
+        nowPlayingView.showVersion(MusicRepo.versionOf(music.current?.asset).takeIf { it >= 0 }?.let { MusicRepo.VERSIONS[it] })
         nowPlayingView.show(); dialog.bringToFront(); coverHome(true); musicChip()
     }
     /** The small "Now playing" chip by the clock while music plays with Now Playing closed. */
@@ -1887,7 +1911,12 @@ class HomeActivity : Activity() {
                 if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); if (item.isGame) store.noteGame(item.key); returning = true }
             }
             is Item.Action -> item.run(this)
-            is Item.Track -> { val i = songs.indexOfFirst { it.key == item.key }; playSong(songs, i.coerceAtLeast(0)) }
+            is Item.Track -> {
+                // a song from one of the version albums plays within that album
+                val v = MusicRepo.versionOf(item.s.asset)
+                val list = if (v >= 0 && v != songVersion) MusicRepo.builtIn(v) else songs
+                playSong(list, list.indexOfFirst { it.key == item.key }.coerceAtLeast(0))
+            }
             is Item.Ch -> {
                 val s = screens[current] as? RowsScreen
                 val row = s?.currentRowItems()?.filterIsInstance<Item.Ch>()?.map { it.ch } ?: listOf(item.ch)

@@ -1,7 +1,7 @@
 # Credits
 
 - **AntonOS**: AntonRetro (MIT).
-- **Built-in music**: "Jetpack Postcard", "Lemonade Satellite" and "Slap Happy Forklift" by AntonRetro, rendered with the **GeneralUser GS** SoundFont by S. Christian Collins (licence: `app/src/main/assets/music/LICENSE-GeneralUser-GS.txt`).
+- **Built-in music**: "Jetpack Postcard", "Lemonade Satellite" and "Slap Happy Forklift" by AntonRetro (MIT), in three versions: rendered with the **MuseScore General** SoundFont (MIT; FluidR3 by Frank Wen, FluidR3Mono by Michael Cowgill, adaptation by S. Christian Collins, Temple Blocks by Ethan Winer, Drumline Cymbals by Michael Schorsch; notices in `app/src/main/assets/music/LICENSE-MuseScore-General.md`), rendered with the **GeneralUser GS** SoundFont by S. Christian Collins (`app/src/main/assets/music/LICENSE-GeneralUser-GS.txt`), and the original MIDI files played by the box's own synthesiser.
 - **Music visualizer**: Retro Visualizer by AntonRetro (MIT, `app/src/main/assets/visualizer/LICENSE`). It contains maths lookup tables from **AMD LibM** (aocl-libm-ose), BSD 3-Clause (`app/src/main/assets/visualizer/THIRD_PARTY_AMD_LIBM.txt`). No Microsoft code or data is included.
 - **Totem Tide** (built-in game): original game, pixel art and sounds by this project, made by the scripts in `games/`.
 - **Media playback**: AndroidX Media3 / ExoPlayer (Apache 2.0).

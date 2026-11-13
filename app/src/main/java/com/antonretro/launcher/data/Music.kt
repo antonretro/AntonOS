@@ -20,11 +20,19 @@ class Song(val title: String, val artist: String, val album: String, val file: F
 object MusicRepo {
     private val EXT = setOf("mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "mid", "midi")
 
-    /** Anthony's three songs (his own, MIT), rendered with the GeneralUser GS SoundFont by S. Christian Collins (licence in assets/music). */
-    val builtIn = listOf(
-        Song("Jetpack Postcard", "AntonRetro", "AntonOS", null, "music/jetpack-postcard.mp3"),
-        Song("Lemonade Satellite", "AntonRetro", "AntonOS", null, "music/lemonade-satellite.mp3"),
-        Song("Slap Happy Forklift", "AntonRetro", "AntonOS", null, "music/slap-happy-forklift.mp3"))
+    /** AntonRetro's three songs (his own, MIT) in three versions: rendered with the MuseScore General SoundFont (the
+     *  default: drier and punchier, measured), with GeneralUser GS (both by S. Christian Collins; licences in
+     *  assets/music), or the original MIDI played by the box's own synth. */
+    val VERSIONS = listOf("MuseScore", "GeneralUser", "MIDI")
+    private val SONGS = listOf("Jetpack Postcard" to "jetpack-postcard", "Lemonade Satellite" to "lemonade-satellite", "Slap Happy Forklift" to "slap-happy-forklift")
+    fun builtIn(version: Int): List<Song> = SONGS.map { (title, file) ->
+        val asset = when (version) { 1 -> "music/$file.mp3"; 2 -> "music/midi/$file.mid"; else -> "music/musescore/$file.mp3" }
+        Song(title, "AntonRetro", "AntonOS · " + VERSIONS[version], null, asset)
+    }
+    /** which version of a built-in song an asset path is (-1: not one of them) */
+    fun versionOf(asset: String?): Int = when {
+        asset == null -> -1; asset.startsWith("music/musescore/") -> 0; asset.startsWith("music/midi/") -> 2; asset.startsWith("music/") -> 1; else -> -1
+    }
 
     val home get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher/Music")
 

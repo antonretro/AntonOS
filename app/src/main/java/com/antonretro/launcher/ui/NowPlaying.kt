@@ -139,7 +139,7 @@ class MusicPlayer(private val ctx: Context) {
         start()
     }
     fun previous() { if (position > 3000) seekTo(0) else { index = if (index > 0) index - 1 else queue.size - 1; start() } }
-    private fun seekTo(ms: Int) { exo?.seekTo(ms.toLong()) ?: mp?.seekTo(ms) }
+    fun seekTo(ms: Int) { exo?.seekTo(ms.toLong()) ?: mp?.seekTo(ms) }
     fun seekBy(ms: Int) { seekTo((position + ms).coerceIn(0, duration.coerceAtLeast(0))) }
     fun stop() {
         try { mp?.release() } catch (_: Exception) {}; mp = null
@@ -157,6 +157,12 @@ class MusicPlayer(private val ctx: Context) {
 class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx) {
     val showing get() = visibility == View.VISIBLE
     var onClose: (() -> Unit)? = null
+    private val rowScroll = android.widget.HorizontalScrollView(ctx)
+    /** the built-in songs' version (MuseScore / GeneralUser / MIDI): +1 or -1 to switch */
+    var onVersion: ((Int) -> Unit)? = null
+    private var versionBtn: TextView? = null
+    /** the Version control shows only for AntonRetro's own songs */
+    fun showVersion(label: String?) { versionBtn?.let { it.visibility = if (label == null) View.GONE else View.VISIBLE; if (label != null) it.text = "◀ $label ▶" } }
     private val ui = Handler(Looper.getMainLooper())
     /** the visualizer behind the controls, behind one small interface (see Visualizer.kt) */
     private var vis: VisualizerHost? = null
@@ -218,12 +224,16 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
             ctls.add(Ctl(tv, run, side)); return tv
         }
         ctl("⏮", 64f, { music.previous() }); ctl("⏯", 64f, { music.toggle() }); ctl("⏭", 64f, { music.next() })
-        ctl("■  Stop", 110f, { music.stop(); hide(); onClose?.invoke() })
+        ctl("■ Stop", 96f, { music.stop(); hide(); onClose?.invoke() })
+        versionBtn = ctl("Version", 176f, { onVersion?.invoke(1) }, { d -> onVersion?.invoke(d) })
         ctl("Shuffle", 120f, { music.shuffle = !music.shuffle })
         ctl("Repeat", 120f, { music.repeat = (music.repeat + 1) % 3 })
         ctl("Plasma", 130f, { setStyle(if (style == "battery") "barswaves" else "battery") })
         ctl("Random", 190f, { setPreset(preset + 1) }, { d -> setPreset(preset + d) })
-        col.addView(row, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(ctx, 14f) })
+        // the controls scroll sideways when they don't all fit, keeping the chosen one in view
+        rowScroll.isHorizontalScrollBarEnabled = false; rowScroll.clipChildren = false; rowScroll.clipToPadding = false
+        rowScroll.addView(row)
+        col.addView(rowScroll, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 14f) })
         bar.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
         addView(bar, LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); rightMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
         styleText.text = "Visualizer"
@@ -252,10 +262,10 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
         cover.setImageBitmap(coverFor(s, Kit.dpi(context, 150f)))
         Thread { val b = MusicRepo.cover(s, Kit.dpi(context, 150f)); if (b != null) ui.post { if (music.current === s) cover.setImageBitmap(b) } }.start()
         ctls[1].view.text = if (music.playing) "⏸" else "▶"
-        ctls[3].view.text = if (music.shuffle) "Shuffle on" else "Shuffle"
-        ctls[4].view.text = when (music.repeat) { 1 -> "Repeat all"; 2 -> "Repeat one"; else -> "Repeat" }
-        ctls[5].view.text = if (style == "battery") "Plasma" else "Spectrum"
-        ctls[6].view.text = "◀ " + (presets.getOrNull(preset) ?: "Random") + " ▶"
+        ctls[5].view.text = if (music.shuffle) "Shuffle on" else "Shuffle"
+        ctls[6].view.text = when (music.repeat) { 1 -> "Repeat all"; 2 -> "Repeat one"; else -> "Repeat" }
+        ctls[7].view.text = if (style == "battery") "Plasma" else "Spectrum"
+        ctls[8].view.text = "◀ " + (presets.getOrNull(preset) ?: "Random") + " ▶"
         progress(); paint()
         if (showing) music.tap.listener = { b, ch, r -> vis?.feedPcm(b, ch, r) }
     }
@@ -269,6 +279,8 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     }
 
     private fun paint() {
+        ctls.getOrNull(sel)?.view?.let { v -> rowScroll.post { val l = v.left; val r = v.right; val w = rowScroll.width
+            if (r - rowScroll.scrollX > w) rowScroll.smoothScrollTo(r - w + Kit.dpi(context, 12f), 0) else if (l < rowScroll.scrollX) rowScroll.smoothScrollTo((l - Kit.dpi(context, 12f)).coerceAtLeast(0), 0) } }
         for ((i, c) in ctls.withIndex()) {
             val on = i == sel
             c.view.background = GradientDrawable().apply { cornerRadius = Kit.dp(context, Kit.pill(48f)); setColor(if (on) Kit.FOCUS_FILL else 0x24FFFFFF) }
