@@ -1531,7 +1531,7 @@ class HomeActivity : Activity() {
         if (store.dock.isEmpty()) store.dock = dock.map { it.key }.toMutableList()
         homeDock = dock; homeRecent = recent; rebuildHome()
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
-        (screens["Apps"] as RowsScreen).setRows(ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
+        (screens["Apps"] as RowsScreen).setRows(listOf(Row("Built in", builtInApps(), alwaysLabel = true)) + ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
         androidGames = visible.filter { it.isGame }
         rebuildGames()
         smartTube = all.firstOrNull { it.component.packageName in AppRepo.YOUTUBE_APPS }?.component?.packageName
@@ -1583,6 +1583,10 @@ class HomeActivity : Activity() {
                 return
             }
             cell.card.art = artCache.getOrPut(item.key) { Art(builtInCover(item.key, Kit.dpi(this, cell.wDp), Kit.dpi(this, cell.hDp)), 0xFF0C2228.toInt(), 0xFF061012.toInt()) }; return }
+        if (item.key == "os:files") { cell.card.art = Art(null, 0xFF2E7A9A.toInt(), 0xFF10303E.toInt(), null, null, bigText = "📁  Files"); return }
+        if (item.key == "os:web") { cell.card.art = Art(null, 0xFF3A6AD8.toInt(), 0xFF14285A.toInt(), null, null, bigText = "🌐  Web"); return }
+        if (item.key == "os:store") { cell.card.art = Art(null, 0xFF2E8A5A.toInt(), 0xFF103A22.toInt(), null, null, bigText = "🛍  Store"); return }
+        if (item.key == "os:cast") { cell.card.art = Art(null, 0xFF8A4AD8.toInt(), 0xFF2E1450.toInt(), null, null, bigText = "📡  Casting"); return }
         if (item.key == "tv:guide") { cell.card.art = Art(null, 0xFF3B6FD9.toInt(), 0xFF121A33.toInt(), null, null, bigText = "TV Guide", badge = if (Guide.channelCount > 0) "${Guide.channelCount} CHANNELS" else null, badgeColor = 0x99000000.toInt()); return }
         if (item is Item.AddGames) { cell.card.art = Art(null, 0xFF3A3F55.toInt(), 0xFF15171F.toInt(), null, null, bigText = "+  Add games from a USB drive"); return }
         if (item is Item.YtSearch) { cell.card.art = Art(null, 0xFFE5383B.toInt(), 0xFF6A040F.toInt(), null, null, bigText = "Search YouTube"); return }
@@ -1768,6 +1772,31 @@ class HomeActivity : Activity() {
         }, ui)
     }
 
+    // ---------------------------------------------------------------- AntonOS's own apps (Files, ...)
+    private fun builtInApps(): List<Item> = listOf(
+        Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() })
+    private var files: FilesView? = null
+    private fun openFiles() {
+        val f = files ?: FilesView(this).also { v ->
+            root.addView(v, -1, -1); files = v
+            v.onClose = { coverHome(false); calmKeys() }
+            v.onOpen = { file -> openFile(file) }
+            v.onDelete = { file, then -> dialog.show("Delete ${file.name}?", if (file.isDirectory) "The folder and everything in it is deleted. This can't be undone." else "This can't be undone.",
+                "Delete" to { if (file.deleteRecursively()) { notice("Deleted", file.name); then() } else notice("Couldn't delete it", file.name) }, "Cancel" to {}) }
+        }
+        coverHome(true); f.show(); dialog.bringToFront()
+    }
+    /** Videos and music play in AntonOS, games start, everything else goes to whatever app opens it. */
+    private fun openFile(f: java.io.File) {
+        val ext = f.extension.lowercase()
+        when {
+            ext in setOf("mp4", "mkv", "avi", "mov", "webm", "ts", "m4v") -> playVideo(LocalVideo(f, f.parentFile?.name ?: ""))
+            ext in setOf("mp3", "m4a", "flac", "ogg", "wav", "aac", "mid", "midi", "opus") -> playSong(listOf(Song(f.nameWithoutExtension, "", "", f, null)), 0)
+            GameRepo.systemFor(f, f.parentFile?.name) != null -> { files?.hide(); playGame(Rom(f, GameRepo.systemFor(f, f.parentFile?.name)!!), null) }
+            else -> if (!safeStart(com.antonretro.launcher.kit.FileShare.viewIntent(this, f))) notice("Nothing on this box opens that", f.name)
+        }
+    }
+
     // ---------------------------------------------------------------- first-time welcome (ui/Welcome.kt)
     private var welcome: Welcome? = null
     private fun isHomeApp(): Boolean = try {
@@ -1868,9 +1897,10 @@ class HomeActivity : Activity() {
     private fun updateHints() {
         if (!::player.isInitialized) return
         val h: List<Pair<com.antonretro.launcher.kit.HintBar.Btn, String>> = when {
-            overlayOpen() || (::nowPlayingView.isInitialized && nowPlayingView.showing) -> emptyList()
+            (overlayOpen() || (::nowPlayingView.isInitialized && nowPlayingView.showing)) && files?.showing != true -> emptyList()
             chipFocus >= 0 -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Stop", com.antonretro.launcher.kit.HintBar.Btn.LR to "Move")
             inTabBar -> listOf(com.antonretro.launcher.kit.HintBar.Btn.LR to "Tabs", com.antonretro.launcher.kit.HintBar.Btn.UD to "Into ${current}", com.antonretro.launcher.kit.HintBar.Btn.OK to "Open")
+            files?.showing == true -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Delete", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Up a folder")
             current == "Settings" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Change", com.antonretro.launcher.kit.HintBar.Btn.UD to "Move", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Back")
             current == "TV" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Watch", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
             current == "Games" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Game page", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
@@ -1916,6 +1946,7 @@ class HomeActivity : Activity() {
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         welcome?.let { if (it.showing) return it.onKey(e) }
+        files?.let { if (it.showing && !(::player.isInitialized && player.showing) && !(::nowPlayingView.isInitialized && nowPlayingView.showing)) return it.onKey(e) }
         if (waitingForPad > SystemClock.uptimeMillis() && e.keyCode == KeyEvent.KEYCODE_BUTTON_A && com.antonretro.launcher.kit.Pads.isPad(e.device)) {
             if (e.action == KeyEvent.ACTION_UP) { waitingForPad = 0L; com.antonretro.launcher.kit.Pads.makeFirst(e.device.descriptor); notice(com.antonretro.launcher.kit.Pads.nameOf(e.device) + " is Player 1", ""); if (current == "Settings") settingsScreen.refresh() }
             return true
