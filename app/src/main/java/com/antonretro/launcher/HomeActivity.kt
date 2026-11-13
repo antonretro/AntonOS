@@ -258,6 +258,7 @@ class HomeActivity : Activity() {
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
         com.antonretro.launcher.kit.Pads.init(this); watchPads()
         if (homeStyle != 0) applyHomeStyle(homeStyle, false)
+        if (!getSharedPreferences("welcome", MODE_PRIVATE).getBoolean("done", false) && !java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists()) ui.postDelayed({ safely("welcome") { showWelcome() } }, 2500)
         // just switched theme: come back to the Themes page, not Home
         getSharedPreferences("theme", MODE_PRIVATE).let { tp -> if (tp.getBoolean("reopen", false)) { tp.edit().putBoolean("reopen", false).apply(); ui.post { showTab("Settings", false); settingsScreen.open("Themes") } } }
         com.antonretro.launcher.kit.UiSound.init(this)
@@ -354,6 +355,7 @@ class HomeActivity : Activity() {
             SRow("This box", value = { android.os.Build.MODEL + " · Android " + android.os.Build.VERSION.RELEASE }),
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
+            SRow("Show the welcome again", { "The short first-time setup" }, onClick = { showWelcome() }),
             SRow("Music", { "Songs by AntonRetro, rendered with MuseScore General (MIT, from FluidR3 by Frank Wen) and GeneralUser GS by S. Christian Collins, plus the original MIDI" }),
             SRow("Music visualizer", { "Retro Visualizer by AntonRetro (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
@@ -1766,6 +1768,39 @@ class HomeActivity : Activity() {
         }, ui)
     }
 
+    // ---------------------------------------------------------------- first-time welcome (ui/Welcome.kt)
+    private var welcome: Welcome? = null
+    private fun isHomeApp(): Boolean = try {
+        packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName == packageName
+    } catch (e: Exception) { false }
+    private fun wifiOk(): Boolean = try {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        @Suppress("DEPRECATION") cm.activeNetworkInfo?.isConnected == true
+    } catch (e: Exception) { false }
+
+    fun showWelcome() {
+        val w = welcome ?: Welcome(this).also { v -> root.addView(v, -1, -1); welcome = v }
+        w.onFinish = { getSharedPreferences("welcome", MODE_PRIVATE).edit().putBoolean("done", true).apply(); showTab("Home"); screens["Home"]?.enter(); calmKeys() }
+        w.steps = listOf(
+            Welcome.Step("Welcome to AntonOS", "Your TV, radio, YouTube, music and games in one place, made for this box.\nThis takes under a minute. You can skip any step.",
+                listOf("Let's go" to { w.next() }, "Skip all" to { w.finish() })),
+            Welcome.Step("Internet", "Channels, the guide, YouTube and box art need the internet. A cable is best; Wi-Fi works too.",
+                listOf("Wi-Fi settings" to { safeStart(Intent(Settings.ACTION_WIFI_SETTINGS)) }, "Next" to { w.next() }), { wifiOk() }, "Connected"),
+            Welcome.Step("Make AntonOS your home", "So the Home button always brings you here. Choose Set it now, then pick AntonOS and Always.",
+                listOf("Set it now" to { safeStart(Intent(Settings.ACTION_HOME_SETTINGS).takeIf { it.resolveActivity(packageManager) != null } ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }, "Next" to { w.next() }), { isHomeApp() }, "AntonOS is your home screen"),
+            Welcome.Step("The Xbox button", "Lets a controller's Guide button bring you home from any app, and shows a menu over games. In the next screen choose AntonOS buttons and switch it on. It reads no screen content.",
+                listOf("Switch it on" to { safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, "Next" to { w.next() }), { RetroKeys.alive }, "Switched on"),
+            Welcome.Step("How you move", "Arrows move, OK opens, Back goes back, Home always brings you here.\nA controller, a mouse or your phone work too: Settings, Controllers and Remotes.",
+                listOf("Got it" to { w.next() })),
+            Welcome.Step("Pick a home style", "You can change it any time in Settings, Home screen.",
+                homeStyles.mapIndexed { k, n -> n to { homeStyle = k; applyHomeStyle(k, false); w.next() } }),
+            Welcome.Step("Pick a look", "Themes change the colours everywhere. More in Settings, Themes.",
+                com.antonretro.launcher.kit.Themes.builtIn.take(4).map { t -> t.name to { com.antonretro.launcher.kit.Themes.choose(this, t); com.antonretro.launcher.kit.Themes.apply(t); w.next() } }),
+            Welcome.Step("You're ready", "Your channels are in TV, your music in Media and your games in Games.\nHold OK on anything to pin it to Home.",
+                listOf("Start" to { w.finish(); if (com.antonretro.launcher.kit.Themes.current(this).id != "glass") recreate() })))
+        w.start()
+    }
+
     // ---------------------------------------------------------------- home styles (ui/Tiles.kt)
     private lateinit var cinemaHome: RowsScreen
     private val homeStyles = listOf("Cinema", "Classic grid", "Simple")
@@ -1880,6 +1915,7 @@ class HomeActivity : Activity() {
         if (SystemClock.uptimeMillis() < keysCalmUntil) return true
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
+        welcome?.let { if (it.showing) return it.onKey(e) }
         if (waitingForPad > SystemClock.uptimeMillis() && e.keyCode == KeyEvent.KEYCODE_BUTTON_A && com.antonretro.launcher.kit.Pads.isPad(e.device)) {
             if (e.action == KeyEvent.ACTION_UP) { waitingForPad = 0L; com.antonretro.launcher.kit.Pads.makeFirst(e.device.descriptor); notice(com.antonretro.launcher.kit.Pads.nameOf(e.device) + " is Player 1", ""); if (current == "Settings") settingsScreen.refresh() }
             return true
@@ -2192,6 +2228,7 @@ class HomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        welcome?.let { w -> ui.postDelayed({ w.recheck() }, 600) }
         resumed = true; lastInput = SystemClock.uptimeMillis()
         RetroKeys.launcherShowing = true; RetroKeys.instance?.launcherChanged()
         game?.hostPause(false)
