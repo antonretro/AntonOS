@@ -1,6 +1,6 @@
 <resources>
     <!-- The one place the display name lives. -->
-    <string name="app_name">AntonOS</string>
-    <string name="keys_name">AntonOS buttons</string>
-    <string name="keys_desc">Lets the controller Guide button go Home from anywhere and open the AntonOS pause menu in games. Reads no screen content.</string>
+    <string name="app_name">RetroOS</string>
+    <string name="keys_name">RetroOS buttons</string>
+    <string name="keys_desc">Lets the controller Guide button go Home from anywhere and open the RetroOS pause menu in games. Reads no screen content.</string>
 </resources>

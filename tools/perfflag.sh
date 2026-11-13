@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Speed experiment: run the dock<->rows move with some of AntonOS's test switches on (kit/Kit.kt perfFlags).
+# Speed experiment: run the dock<->rows move with some of RetroOS's test switches on (kit/Kit.kt perfFlags).
 #   bash tools/perfflag.sh "<flags>" [device]      e.g. "noglass nofade"   ("" = normal)
 set -u
 [ -f "$(dirname "$0")/box.env" ] && . "$(dirname "$0")/box.env"

@@ -14,9 +14,9 @@ import com.antonretro.launcher.kit.Kit
 import java.io.File
 
 /**
- * Files: AntonOS's own simple file browser (PLAN.md "Our own Files and Store"). The box's storage and any USB
+ * Files: RetroOS's own simple file browser (PLAN.md "Our own Files and Store"). The box's storage and any USB
  * drives, folders first, big readable rows. OK opens a folder or hands a file to [onOpen] (videos and music play in
- * AntonOS, games start, other files go to whatever app can open them). Hold OK: delete, after asking.
+ * RetroOS, games start, other files go to whatever app can open them). Hold OK: delete, after asking.
  */
 class FilesView(ctx: Context) : FrameLayout(ctx) {
     var onOpen: ((File) -> Unit)? = null

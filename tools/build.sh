@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build AntonOS with Gradle's cache, the build output and temp files on D: (C: is nearly full).
+# Build RetroOS with Gradle's cache, the build output and temp files on D: (C: is nearly full).
 #   bash tools/build.sh [gradle tasks...]   (default: assembleRelease)
 # The APK lands in "D:\rl-build\out\app\outputs\apk\release\app-release.apk".
 set -u

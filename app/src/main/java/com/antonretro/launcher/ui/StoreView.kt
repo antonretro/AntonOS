@@ -18,7 +18,7 @@ import com.antonretro.launcher.kit.Images
 import com.antonretro.launcher.kit.Kit
 
 /**
- * The Store (PLAN.md "Our own Files and Store"): F-Droid's open-source catalogue in AntonOS's style. One list: Search,
+ * The Store (PLAN.md "Our own Files and Store"): F-Droid's open-source catalogue in RetroOS's style. One list: Search,
  * Featured for TV, Updates, then every app that runs on this box, A to Z. OK opens an app's page (Install / Update /
  * Open / Remove), handled by the launcher through [onApp].
  */

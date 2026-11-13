@@ -15,7 +15,7 @@ import java.io.File
 
 /**
  * Lets another app open one file from Files (a PDF, a picture, an APK to install), read-only, for that one request.
- * Only files on the box's storage and USB drives are shared, never AntonOS's own private files.
+ * Only files on the box's storage and USB drives are shared, never RetroOS's own private files.
  */
 class FileShare : ContentProvider() {
     companion object {

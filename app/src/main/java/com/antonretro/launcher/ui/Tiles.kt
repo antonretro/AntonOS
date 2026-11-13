@@ -18,7 +18,7 @@ class Tile(val label: String, val sub: String, val from: Int, val to: Int, val i
 /**
  * The Home tab in the Classic grid and Simple styles (PLAN.md "Home styles"): same content, another arrangement.
  * Classic grid: large colourful tiles for the main places, in two rows, with the favourite apps small along the
- * bottom (a nod to the box's original menu, drawn in AntonOS's own style). Simple: only the favourites, as a few
+ * bottom (a nod to the box's original menu, drawn in RetroOS's own style). Simple: only the favourites, as a few
  * extra-large tiles with extra-large text; nothing scrolls.
  */
 class TileScreen(ctx: Context, private val simple: Boolean, private val places: () -> List<Tile>, private val favourites: () -> List<Tile>) : Screen(ctx) {

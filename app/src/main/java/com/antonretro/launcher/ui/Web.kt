@@ -22,7 +22,7 @@ import com.antonretro.launcher.kit.GlassDrawable
 import com.antonretro.launcher.kit.Kit
 
 /**
- * Web: AntonOS's own browser for the TV, on the box's system web engine (WebView 119 here). The remote's arrows steer
+ * Web: RetroOS's own browser for the TV, on the box's system web engine (WebView 119 here). The remote's arrows steer
  * a pointer (it speeds up when held, the page scrolls when it reaches an edge), OK clicks, Back goes back a page,
  * Menu (or Up at the very top) opens the address bar. A mouse just works. Pages ask nothing of the box: no file
  * access, no location, no camera; links to other apps (market://, intent://) are not followed.
@@ -195,6 +195,6 @@ class WebView2(ctx: Context) : FrameLayout(ctx) {
             a:hover{background:#2c3550}</style></head><body>
             <h1>Web</h1><p>Arrows move the pointer · OK clicks · Menu or Up at the top: type an address · Back: back a page</p>
             <div class=g><a href="https://duckduckgo.com">Search</a><a href="https://en.wikipedia.org">Wikipedia</a><a href="https://www.bbc.com/weather">Weather</a><a href="https://news.google.com">News</a>
-            <a href="https://archive.org">Internet Archive</a><a href="https://antonretro.com">AntonRetro</a><a href="https://github.com/antonretro/antonos">AntonOS</a><a href="https://maps.google.com">Maps</a></div></body></html>"""
+            <a href="https://archive.org">Internet Archive</a><a href="https://antonretro.com">AntonRetro</a><a href="https://github.com/antonretro/RetroOS">RetroOS</a><a href="https://maps.google.com">Maps</a></div></body></html>"""
     }
 }

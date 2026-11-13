@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesises AntonOS's interface sounds from scratch (original, no samples, no console's real sounds).
+"""Synthesises RetroOS's interface sounds from scratch (original, no samples, no console's real sounds).
 
 Soft, short, tonal: a quiet glassy tick to move (a touch higher going right/down), a two-note lift to select,
 a falling pair for back, an airy whoosh for a tab change, a dull low bump at the end of a row, and a small

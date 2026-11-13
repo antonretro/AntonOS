@@ -106,7 +106,7 @@ class NativeVisualizer(ctx: Context, private val ui: Handler, style: String) : V
             shorts[f * 2] = l; shorts[f * 2 + 1] = r
         }
         // in pieces of at most 1024 frames: a bigger block (the player hands one over when a song changes) once
-        // overran a fixed buffer inside the native engine and crashed AntonOS ("stack corruption detected")
+        // overran a fixed buffer inside the native engine and crashed RetroOS ("stack corruption detected")
         var at = 0
         while (at < frames) {
             val n = minOf(1024, frames - at)

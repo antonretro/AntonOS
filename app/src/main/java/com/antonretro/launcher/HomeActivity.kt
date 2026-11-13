@@ -102,7 +102,7 @@ class HomeActivity : Activity() {
         if (helperWarned) return
         helperWarned = true
         Perf.note("keys helper still off after re-attach")
-        dialog.show("The exit button isn't working", "AntonOS's key helper is off, so the Xbox button can't bring you back from games and apps. Restarting the box usually fixes it. The Home button on the remote always works.", "OK" to {})
+        dialog.show("The exit button isn't working", "RetroOS's key helper is off, so the Xbox button can't bring you back from games and apps. Restarting the box usually fixes it. The Home button on the remote always works.", "OK" to {})
     }
 
     /** Never blank the setting (if the app died halfway the helper would stay off): change it by adding ourselves
@@ -383,7 +383,7 @@ class HomeActivity : Activity() {
             out.add(SRow(ssid, { if (ssid in saved) "Saved" else if (open) "Open" else "Locked" }, value = { bars(r.level) }, onClick = { joinWifi(wm, ssid, open, ssid in saved) }))
             if (out.size > 12) break
         }
-        if (results.isEmpty()) out.add(SRow("Looking for networks…", { "If nothing shows, AntonOS needs location permission for Wi-Fi" }))
+        if (results.isEmpty()) out.add(SRow("Looking for networks…", { "If nothing shows, RetroOS needs location permission for Wi-Fi" }))
         out.add(SRow("Look again", onClick = { wm.startScan(); ui.postDelayed({ if (current == "Settings") settingsScreen.refresh() }, 3000) }))
         out.add(SRow("Advanced Wi-Fi settings", onClick = go(Settings.ACTION_WIFI_SETTINGS)))
         return out
@@ -459,7 +459,7 @@ class HomeActivity : Activity() {
         dialog.picture(PhoneRemote.qr(url, 440))
     }
 
-    /** What the phone page can do. Arrows and OK only reach AntonOS's own screens (Android doesn't let an app press keys in other apps). */
+    /** What the phone page can do. Arrows and OK only reach RetroOS's own screens (Android doesn't let an app press keys in other apps). */
     private val phoneBox = object : PhoneRemote.Box {
         private val am get() = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
         private fun press(code: Int) {
@@ -478,11 +478,11 @@ class HomeActivity : Activity() {
                 "home" -> { if (resumed) goHome() else if (!global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) front(); return null }
             }
             if (!resumed) return when (k) {
-                "back" -> if (global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) null else "Back only works in AntonOS right now"
+                "back" -> if (global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) null else "Back only works in RetroOS right now"
                 "playpause" -> { media(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); null }
                 "next" -> { media(KeyEvent.KEYCODE_MEDIA_NEXT); null }
                 "prev" -> { media(KeyEvent.KEYCODE_MEDIA_PREVIOUS); null }
-                else -> "Arrows work in AntonOS only. Use the TV remote in this app"
+                else -> "Arrows work in RetroOS only. Use the TV remote in this app"
             }
             val code = when (k) {
                 "up" -> KeyEvent.KEYCODE_DPAD_UP; "down" -> KeyEvent.KEYCODE_DPAD_DOWN; "left" -> KeyEvent.KEYCODE_DPAD_LEFT; "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
@@ -613,7 +613,7 @@ class HomeActivity : Activity() {
         out.add(SRow("Box storage", {
             val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
             gb(st.availableBytes) + " free of " + gb(st.totalBytes) + if (st.availableBytes < LOW_STORAGE) "  ·  almost full: apps may stop installing" else "" }))
-        out.add(SRow("AntonOS's own files", { "Logos and box art " + gb(Images.sizeOnDisk()) + " (kept under 40 MB), TV guide " + gb(java.io.File(filesDir, "guide.db").length()) },
+        out.add(SRow("RetroOS's own files", { "Logos and box art " + gb(Images.sizeOnDisk()) + " (kept under 40 MB), TV guide " + gb(java.io.File(filesDir, "guide.db").length()) },
             value = { "Clear" }, onClick = { bg.execute { Images.clear(); ui.post { notice("Cleared", "Logos and box art download again when shown"); settingsScreen.refresh() } } }))
         for (u in usbRoots()) { val s = try { android.os.StatFs(u.path) } catch (e: Exception) { null }; out.add(SRow("USB drive ${u.name}", { s?.let { gb(it.availableBytes) + " free" } }, onClick = { offerGamesFrom(listOf(u), quietIfNone = false) })) }
         out.add(SRow("Add games from a USB drive", onClick = { offerGamesFrom(usbRoots(), quietIfNone = false) }))
@@ -639,7 +639,7 @@ class HomeActivity : Activity() {
             Item.Action("set:sound", "Sound", "", "sound", intent(Settings.ACTION_SOUND_SETTINGS)),
             Item.Action("set:apps", "Apps", "", "apps", intent(Settings.ACTION_APPLICATION_SETTINGS)),
             Item.Action("set:storage", "Storage", "", "usb", intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)),
-            Item.Action("set:about", "About", "AntonOS " + BuildConfig.VERSION_NAME + " by AntonRetro", "info", intent(Settings.ACTION_DEVICE_INFO_SETTINGS)),
+            Item.Action("set:about", "About", "RetroOS " + BuildConfig.VERSION_NAME + " by AntonRetro", "info", intent(Settings.ACTION_DEVICE_INFO_SETTINGS)),
             Item.Action("set:classic", "Classic launcher", "the box's original menu", "grid") { _ -> openClassic() },
             Item.Action("set:android", "Advanced Android settings", "", "gear", intent(Settings.ACTION_SETTINGS)),
         )
@@ -1118,7 +1118,7 @@ class HomeActivity : Activity() {
                 if (!ok) {
                     val denied = android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     if (denied && !channelsAsked) { channelsAsked = true; requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 7) }
-                    val msg = if (denied) "AntonOS needs permission to read your channel list." else "No channel list yet. Put one at /sdcard/RetroLauncher/channels.m3u"
+                    val msg = if (denied) "RetroOS needs permission to read your channel list." else "No channel list yet. Put one at /sdcard/RetroLauncher/channels.m3u"
                     (screens["TV"] as RowsScreen).setEmptyText(msg); (screens["Radio"] as RowsScreen).setEmptyText(msg)
                 }
                 rebuildChannelRows()
@@ -1788,7 +1788,7 @@ class HomeActivity : Activity() {
         return out
     }
 
-    // ---------------------------------------------------------------- AntonOS's own apps (Files, ...)
+    // ---------------------------------------------------------------- RetroOS's own apps (Files, ...)
     private fun builtInApps(): List<Item> = listOf(
         Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() },
         Item.Action("os:web", "Web", "Browse the internet", "web") { openWeb(null) },
@@ -1869,7 +1869,7 @@ class HomeActivity : Activity() {
         quietMusic(); coverHome(true); w.show(url); dialog.bringToFront(); keyboard.bringToFront()
     }
 
-    /** Videos and music play in AntonOS, games start, everything else goes to whatever app opens it. */
+    /** Videos and music play in RetroOS, games start, everything else goes to whatever app opens it. */
     private fun openFile(f: java.io.File) {
         val ext = f.extension.lowercase()
         when {
@@ -1894,13 +1894,13 @@ class HomeActivity : Activity() {
         val w = welcome ?: Welcome(this).also { v -> root.addView(v, -1, -1); welcome = v }
         w.onFinish = { getSharedPreferences("welcome", MODE_PRIVATE).edit().putBoolean("done", true).apply(); showTab("Home"); screens["Home"]?.enter(); calmKeys() }
         w.steps = listOf(
-            Welcome.Step("Welcome to AntonOS", "Your TV, radio, YouTube, music and games in one place, made for this box.\nThis takes under a minute. You can skip any step.",
+            Welcome.Step("Welcome to RetroOS", "Your TV, radio, YouTube, music and games in one place, made for this box.\nThis takes under a minute. You can skip any step.",
                 listOf("Let's go" to { w.next() }, "Skip all" to { w.finish() })),
             Welcome.Step("Internet", "Channels, the guide, YouTube and box art need the internet. A cable is best; Wi-Fi works too.",
                 listOf("Wi-Fi settings" to { safeStart(Intent(Settings.ACTION_WIFI_SETTINGS)) }, "Next" to { w.next() }), { wifiOk() }, "Connected"),
-            Welcome.Step("Make AntonOS your home", "So the Home button always brings you here. Choose Set it now, then pick AntonOS and Always.",
-                listOf("Set it now" to { safeStart(Intent(Settings.ACTION_HOME_SETTINGS).takeIf { it.resolveActivity(packageManager) != null } ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }, "Next" to { w.next() }), { isHomeApp() }, "AntonOS is your home screen"),
-            Welcome.Step("The Xbox button", "Lets a controller's Guide button bring you home from any app, and shows a menu over games. In the next screen choose AntonOS buttons and switch it on. It reads no screen content.",
+            Welcome.Step("Make RetroOS your home", "So the Home button always brings you here. Choose Set it now, then pick RetroOS and Always.",
+                listOf("Set it now" to { safeStart(Intent(Settings.ACTION_HOME_SETTINGS).takeIf { it.resolveActivity(packageManager) != null } ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }, "Next" to { w.next() }), { isHomeApp() }, "RetroOS is your home screen"),
+            Welcome.Step("The Xbox button", "Lets a controller's Guide button bring you home from any app, and shows a menu over games. In the next screen choose RetroOS buttons and switch it on. It reads no screen content.",
                 listOf("Switch it on" to { safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, "Next" to { w.next() }), { RetroKeys.alive }, "Switched on"),
             Welcome.Step("How you move", "Arrows move, OK opens, Back goes back, Home always brings you here.\nA controller, a mouse or your phone work too: Settings, Controllers and Remotes.",
                 listOf("Got it" to { w.next() })),

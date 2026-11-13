@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AntonOS smoke test: run after every install, before telling anyone it's ready.
+# RetroOS smoke test: run after every install, before telling anyone it's ready.
 #   bash tools/smoke.sh [device] [--game]
 # Checks: the key helper (exit button) is running, the launcher starts without crashing, it is the Home app, Home brings it back after it was
 # killed (the "killed behind a game" case), and (with --game, sound muted) Home from inside a RetroArch
@@ -19,7 +19,7 @@ crashed() { a "logcat -d -b crash 2>/dev/null; logcat -d" | grep -q "FATAL EXCEP
 # sound off for the whole run (games, chime, TV); it stays off until tools/unmute.sh at the end of the session
 bash "$(dirname "$0")/mute.sh" "$DEV" || { echo "FAIL  could not mute the box: not testing with sound on"; exit 9; }
 a "logcat -c"
-bound() { a "dumpsys accessibility" | grep -q "services:{Service[label=(AntonOS|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
+bound() { a "dumpsys accessibility" | grep -q "services:{Service[label=(RetroOS|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }
 check "key helper running" "$(bound)"
 # the helper must pass REAL remote keys on (a stale helper once swallowed every key and left the remote dead)
 LOG=/sdcard/Android/data/$PKG/files/perf.log
@@ -28,13 +28,13 @@ realkey() { n=$(a "cat $LOG | wc -l" | tr -d '
 check "real remote keys pass through the key helper" "$(realkey)"
 a "cmd package set-home-activity $ACT" >/dev/null 2>&1
 home=$(a "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | tail -1 | tr -d '\r')
-check "AntonOS is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home goes to $home")"
+check "RetroOS is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home goes to $home")"
 
 # never force-stop the launcher here: Android then switches its key helper off (accessibility rule).
 # "am kill" while another app is in front is what a low-memory close looks like.
 a "am start -n com.android.settings/.Settings" >/dev/null; sleep 2; a "am kill $PKG"; sleep 1
 a "am start -W -n $ACT" >/dev/null; sleep 3
-check "cold start shows AntonOS" "$(focus | grep -q $PKG && echo ok || echo "$(focus)")"
+check "cold start shows RetroOS" "$(focus | grep -q $PKG && echo ok || echo "$(focus)")"
 check "no crash at start" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 
 # killed behind another app, then Home (what happens when memory is short during a game)
@@ -54,7 +54,7 @@ if [ "${2:-}" = "--game" ]; then
     sleep 8
     ingame=$(focus | grep -q retroarch && echo ok || echo "game didn't open: $(focus)")
     a "input keyevent 3"; sleep 4
-    check "game $i: Home returns to AntonOS" "$( [ "$ingame" = ok ] && (focus | grep -q $PKG && echo ok || echo "$(focus)") || echo "$ingame")"
+    check "game $i: Home returns to RetroOS" "$( [ "$ingame" = ok ] && (focus | grep -q $PKG && echo ok || echo "$(focus)") || echo "$ingame")"
   done
   # the Xbox pad's Guide button, sent as a real device press (the key helper ignores simulated keys)
   PAD=$(a "getevent -p 2>/dev/null" | tr -d '

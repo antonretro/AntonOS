@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install AntonOS on the box. ALWAYS use this, never a bare `adb install`:
+# Install RetroOS on the box. ALWAYS use this, never a bare `adb install`:
 # Android switches the key helper (the Xbox button / exit panel) off when the app is reinstalled, and a box
 # without it can trap you in a game. This puts it back and fails loudly if it isn't running afterwards.
 #   bash tools/install.sh [device] [apk]
@@ -29,7 +29,7 @@ case "$out" in *Success*) ;; *) echo "FAIL  install"; exit 1;; esac
 a "cmd package set-home-activity $PKG/.HomeActivity" >/dev/null 2>&1
 
 # 1. ahead-of-time compile FIRST: it kills the app process, and the key helper lives in that process.
-#    speed-profile compiles only the code AntonOS actually runs (about 2 MB; full `speed` took ~70 MB and filled the box).
+#    speed-profile compiles only the code RetroOS actually runs (about 2 MB; full `speed` took ~70 MB and filled the box).
 #    Measured on the box: Home key 759 -> 548 ms, janky frames 13.5% -> 9.7% versus interpret-only.
 #    (Compiling after switching the helper on left Android holding a dead helper that swallowed every remote key.)
 a "cmd package compile -m speed-profile -f $PKG >/dev/null 2>&1; echo compiled" | sed 's/^/  /'
@@ -63,9 +63,9 @@ a "sendevent /dev/input/event0 1 114 1; sendevent /dev/input/event0 0 0 0; sende
 if a "tail -n +$((n+1)) $LOG" | grep -q "keys helper saw 25"; then echo "PASS  key helper connected and real remote keys pass through it"
 else echo "FAIL  remote keys are NOT reaching the helper: switching it off so the remote keeps working"; a "settings put secure enabled_accessibility_services '${others}'"; exit 3; fi
 
-# 6. ...and on into AntonOS itself (once a key went through the helper but never arrived, and the box looked frozen)
+# 6. ...and on into RetroOS itself (once a key went through the helper but never arrived, and the box looked frozen)
 # Up arrow (a navigation key always reaches the app; Android sometimes keeps the volume keys for itself)
-# AntonOS is cold-starting after the install: give it time, and try twice before deciding keys don't arrive
+# RetroOS is cold-starting after the install: give it time, and try twice before deciding keys don't arrive
 reached=no
 for attempt in 1 2; do
   a "sendevent /dev/input/event0 1 102 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 102 0; sendevent /dev/input/event0 0 0 0"; sleep 7
@@ -73,5 +73,5 @@ for attempt in 1 2; do
   a "sendevent /dev/input/event0 1 103 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 103 0; sendevent /dev/input/event0 0 0 0"; sleep 3
   if a "tail -n +$((n+1)) $LOG" | grep -q "state key19"; then reached=yes; break; fi
 done
-if [ $reached = yes ]; then echo "PASS  real remote keys reach AntonOS"
-else echo "FAIL  remote keys pass the helper but do NOT reach AntonOS: switching the helper off"; a "settings put secure enabled_accessibility_services '${others}'"; exit 4; fi
+if [ $reached = yes ]; then echo "PASS  real remote keys reach RetroOS"
+else echo "FAIL  remote keys pass the helper but do NOT reach RetroOS: switching the helper off"; a "settings put secure enabled_accessibility_services '${others}'"; exit 4; fi

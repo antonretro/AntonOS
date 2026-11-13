@@ -7,13 +7,13 @@ import android.media.MediaMetadataRetriever
 import android.os.Environment
 import java.io.File
 
-/** One song: a file on the box, or one of the songs that come with AntonOS (in the app's assets). */
+/** One song: a file on the box, or one of the songs that come with RetroOS (in the app's assets). */
 class Song(val title: String, val artist: String, val album: String, val file: File?, val asset: String?) {
     val key get() = "song:" + (file?.path ?: "asset:$asset")
 }
 
 /**
- * The music library for the Media tab: Anthony's own songs that ship with AntonOS first, then music found in
+ * The music library for the Media tab: Anthony's own songs that ship with RetroOS first, then music found in
  * RetroLauncher/Music, Music, Download and USB drives. Tags (title, artist, album) and embedded cover art are read
  * from the files; anything without them gets a tidy name from the file name and a drawn cover.
  */
@@ -27,7 +27,7 @@ object MusicRepo {
     private val SONGS = listOf("Jetpack Postcard" to "jetpack-postcard", "Lemonade Satellite" to "lemonade-satellite", "Slap Happy Forklift" to "slap-happy-forklift")
     fun builtIn(version: Int): List<Song> = SONGS.map { (title, file) ->
         val asset = when (version) { 1 -> "music/$file.mp3"; 2 -> "music/midi/$file.mid"; else -> "music/musescore/$file.mp3" }
-        Song(title, "AntonRetro", "AntonOS · " + VERSIONS[version], null, asset)
+        Song(title, "AntonRetro", "RetroOS · " + VERSIONS[version], null, asset)
     }
     /** which version of a built-in song an asset path is (-1: not one of them) */
     fun versionOf(asset: String?): Int = when {

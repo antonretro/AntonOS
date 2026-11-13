@@ -4,7 +4,7 @@ Handoff for the model that builds this. Written Nov 10, 2026. Read `C:\tmp\mxq-p
 
 ## Goal
 
-Replace Projectivy Launcher on Anthony's MXQ Pro with our own home screen app, **AntonOS**, that feels like a modern Apple TV: calm, sharp, big artwork, smooth focus motion. Then ship it in this repo so the skill installs it on any box.
+Replace Projectivy Launcher on Anthony's MXQ Pro with our own home screen app, **RetroOS**, that feels like a modern Apple TV: calm, sharp, big artwork, smooth focus motion. Then ship it in this repo so the skill installs it on any box.
 
 Anthony's brief, in his words: it should feel like one operating system, not a pile of separate apps, "so clean and easy to use that even an old person could use it". Three things follow from that, and they matter more than any visual detail:
 
@@ -99,7 +99,7 @@ A YouTube tab in our own style, with SmartTube (already installed by the skill) 
 Anthony: "a music player hasn't been built, a custom one". No ninth tab: the Radio tab becomes the home for all listening (keep the label "Radio" unless Anthony prefers "Music"; ask). "My music" shelves above the stations: Albums, Artists, Playlists, Recently played, read from `/sdcard/RetroLauncher/Music/`, Downloads and USB drives (tags and embedded cover art; a generated cover when there is none), and an "Add music" card like Games and Videos. Now Playing: large cover over the blurred wallpaper, title and artist, progress, previous/play/next, shuffle, repeat, queue. Keeps playing in the background with the same "Now playing" chip as radio; media keys on remote, pad and keyboard work everywhere. Same Media3 player as TV and radio; MP3, AAC/M4A, FLAC, OGG, WAV. Local files only, no streaming services.
 
 
-**Optional visualizer in Now Playing** (late, with the music player): Anthony's own engine from his `WMP-Visualizations-Decomp` project (plain-JS players plus an audio analysis module). That project prepares an embeddable folder with a small JS API (set preset, feed audio, resize); AntonOS hosts it in a WebView behind Now Playing and feeds it PCM tapped from Media3. It must run on the box's Chrome 76 WebView at 1280x720. Measure first: if it can't hold 60 fps alongside audio on this box, use a simple native bars view instead. Setting "Use original presets" on/off. **Licensing rule:** only Anthony's own engine code ships in this public MIT repo and the APK. The "Classic pack" of original preset data and names is Microsoft's: never in the repo or the release, only loaded from a folder on the box if he puts it there himself (`/sdcard/RetroLauncher/Visualizer/classic/`).
+**Optional visualizer in Now Playing** (late, with the music player): Anthony's own engine from his `WMP-Visualizations-Decomp` project (plain-JS players plus an audio analysis module). That project prepares an embeddable folder with a small JS API (set preset, feed audio, resize); RetroOS hosts it in a WebView behind Now Playing and feeds it PCM tapped from Media3. It must run on the box's Chrome 76 WebView at 1280x720. Measure first: if it can't hold 60 fps alongside audio on this box, use a simple native bars view instead. Setting "Use original presets" on/off. **Licensing rule:** only Anthony's own engine code ships in this public MIT repo and the APK. The "Classic pack" of original preset data and names is Microsoft's: never in the repo or the release, only loaded from a folder on the box if he puts it there himself (`/sdcard/RetroLauncher/Visualizer/classic/`).
 
 *Visualizer status (2026-11-11):* an embeddable build exists at his visualizer project's `dist/embed/` folder (`index.html` + `visualizer.js`, 141 KB; API in its `README.md`: feedPcmBase64 in batches, feedPcm, feedLevel, setVisualizer, setPreset, listPresets, setOriginals, loadClassicPack, setSize, pause/resume). It reports no Microsoft data inside and passes a Chrome 76 parse check, but frame times were measured on a throttled desktop only (light presets 6.5 to 17 ms, heavy classic presets 36 to 69 ms), so some presets will miss 60 fps on the S905W. Measure on the box first; consider capping the visualizer at 30 fps or a smaller internal buffer while the audio stays smooth. **Before copying anything into this public repo:** read the files, confirm they hold only Anthony's own engine code, and wait for Anthony's OK.
 
@@ -114,7 +114,7 @@ Your own videos and films, one press away. Big poster cards (a frame grabbed fro
 ### Games (built in)
 
 - One shelf per system, box art cards, plus "Keep playing". Anthony's own Android games (Subway Surfers DE, Theme Park, Mario Multiverse) sit in the same section, so "Games" means every game, whatever it runs on.
-- **Version 1: the launcher is the library, RetroArch is the hidden engine.** Install the official 32-bit RetroArch, hide it from Apps, and start a game by sending it the game file and the right core directly (`com.retroarch.ra32` / `RetroActivityFuture` with `ROM`, `LIBRETRO`, `CONFIGFILE` extras; confirm the exact names against the installed version). The user never sees a RetroArch menu: press a box, the game runs; press Home, back in AntonOS. Ship a tuned RetroArch config (controller auto-mapped, menu hotkey on one combo, save on exit, load on start so games resume).
+- **Version 1: the launcher is the library, RetroArch is the hidden engine.** Install the official 32-bit RetroArch, hide it from Apps, and start a game by sending it the game file and the right core directly (`com.retroarch.ra32` / `RetroActivityFuture` with `ROM`, `LIBRETRO`, `CONFIGFILE` extras; confirm the exact names against the installed version). The user never sees a RetroArch menu: press a box, the game runs; press Home, back in RetroOS. Ship a tuned RetroArch config (controller auto-mapped, menu hotkey on one combo, save on exit, load on start so games resume).
 - **Later option:** run the emulator cores inside the launcher itself (the LibretroDroid library). Truly one app, but it's GPL-3, so the launcher's licence would have to change from MIT, and it's a lot more work. Do version 1 first and only go here if the hand-off to RetroArch feels clunky on the real box.
 - **Adding games is part of the tab, not a file-manager job.** An "Add games" card at the end of the Games tab: pick a USB drive or folder, the launcher finds game files, works out the system from the file type, shows them with box art, and one press copies them into the library. Plugging in a USB drive with games on it also shows the notice "Found 12 games. Press OK to add them". Removing a game is a long press like any other card.
 - **Systems are invisible.** Users see games, not emulators or cores. The system only shows as a shelf title ("Nintendo", "Sega", ...) and a small badge. Per-game options (controls, save slots, reset) live in one in-game pause screen styled like the launcher, opened by Home or the controller's menu button combo.
@@ -128,7 +128,7 @@ Everything else, same 16:9 cards, most used first. Long press for move, pin to H
 
 ### Settings: one menu, not three
 
-Today the box has Android's Settings, the box maker's settings and Projectivy's settings, all different. AntonOS has **one** Settings tab, styled like the rest, with plain categories:
+Today the box has Android's Settings, the box maker's settings and Projectivy's settings, all different. RetroOS has **one** Settings tab, styled like the rest, with plain categories:
 
 - **Wi-Fi & Internet**: scan, pick a network, type the password with a big on-screen keyboard (done in our own screen through `WifiManager`, which apps may still do on Android 7).
 - **Picture**: resolution, screen size / overscan, wallpaper, screensaver timing.
@@ -138,13 +138,13 @@ Today the box has Android's Settings, the box maker's settings and Projectivy's 
 - **Home screen**: dock, hidden apps, card order, reset layout.
 - **Apps**: list with size, open, force stop, clear, uninstall.
 - **Storage**: space used, USB drives.
-- **About**: box model, Android version, AntonOS version, check for launcher update.
+- **About**: box model, Android version, RetroOS version, check for launcher update.
 
 Honest limits: some switches need system rights an ordinary app doesn't have (screen resolution, HDMI output mode, date/time, factory reset). For those: grant `WRITE_SECURE_SETTINGS` once over ADB during setup where that's enough; otherwise the row opens the exact Android page for that one thing (a direct intent, not the Android Settings home), and Back returns to our Settings. Find out on the box which items need which route and list them in `AGENTS.md`. Android's own Settings app and the maker's settings app are hidden from Apps (still reachable from About → "Advanced Android settings"). Projectivy gets uninstalled at the end, with Anthony's OK, so its settings go too.
 
 #### Everything in our own style (Anthony, Nov 10)
 
-His words: "I want like all the settings for like RetroArch to look in the style of the OS. I want the TV settings, the guide system, all the things to look in the settings of the OS as well." The rule: **no setting is reached through another app's menu.** Everything lives in AntonOS's Settings tab, built from the shared kit.
+His words: "I want like all the settings for like RetroArch to look in the style of the OS. I want the TV settings, the guide system, all the things to look in the settings of the OS as well." The rule: **no setting is reached through another app's menu.** Everything lives in RetroOS's Settings tab, built from the shared kit.
 
 - **Settings → Games:** what people actually change in RetroArch, written to the tuned `retroarch.cfg` (per-game overrides where it matters): controllers and button layout per pad, save and resume behaviour, picture (shape, whole-pixel scaling, smoothing, a few filter presets the Mali-450 can run), sound volume, rewind and fast-forward on/off, per-system engine (core) choice, BIOS files status, library folders and rescan. Curate, don't mirror RetroArch's hundreds of options; an "Advanced" row only for something common that's missing. RetroArch's own menu never needs to appear: the in-game pause panel (Guide, Start+Select or Back) drives RetroArch over its local command port.
 - **Settings → TV:** channel list source and countries shown, hidden channels, favourites management and order, guide sources and refresh, player options (start fast vs. smoother, preferred quality), reminders.
@@ -164,7 +164,7 @@ His words: "I want like all the settings for like RetroArch to look in the style
 | Classic launcher (vendor) | Settings → About → Classic launcher | Kept on purpose as the fallback home screen. |
 | Android runtime permission dialog | First run on a new box (storage) | Avoid: the skill grants permissions over ADB at setup. |
 | Android "app has stopped" dialogs, volume overlay | System | Can't be replaced by an app (System UI). Prevent crashes instead (smoke test). |
-| RetroArch menu | In a game (Start+Select, Back) | Replaced by our pause panel once the "AntonOS buttons" helper is on; RetroArch's fallback menu set to its simplest dark theme. |
+| RetroArch menu | In a game (Start+Select, Back) | Replaced by our pause panel once the "RetroOS buttons" helper is on; RetroArch's fallback menu set to its simplest dark theme. |
 | SmartTube | YouTube videos and search results | Can't be replaced by design: no own YouTube player (YouTube's terms). Our tab does search entry and channel shelves. |
 | Other apps (Kodi, games, Play Store, F-Droid) | Apps | By design: they're the user's apps. The "Get apps" page replaces store browsing for common apps. |
 
@@ -185,8 +185,8 @@ Anthony, after getting stuck in a game: "make sure that there's always a way to 
 
 - **Triggers, from any app** (the key helper, our accessibility service, sees keys before apps do): the pad's Guide/Xbox button; on pads without one, hold Start about 1 s, or Select+Start together; on the remote, Home as normal, plus hold Back about 1 s (a short Back still goes to the app as Back); on a keyboard, hold Esc or the Home key; with a mouse, a small Home pill that appears when the pointer touches the top edge. RetroArch's own menu combos (Start+Select, Back) stay on in the tuned `retroarch.cfg` only as a fallback: the helper takes those keys first, so the two never fight, and if the helper ever dies there is still a way out. The triggers are shown once in the welcome and always in Settings → Controllers.
 - **The panel:** glass, our style, over whatever is running, with big choices: **Go Home** (focused first, so trigger then OK always gets you home), **Back to the app**, **Close this app** (stops it and goes Home), **Recent** (the last few apps, channels and games), volume and the clock. In a game the same panel adds Save, Load and Restart: one pause/exit panel, not two.
-- **Guarantees:** pressing the trigger twice goes straight Home with no panel; if the panel can't open over an app, it goes Home instead; the helper lives in the launcher's process, and AntonOS switches it back on at start if Android turned it off. If an app swallows a key before the helper sees it, find another route on this box (ask before any system-partition change).
-- **Routes that need no helper** (the guarantee must not rest on one mechanism): in games, RetroArch's own Start + Select quits and saves on any pad, and Guide is RetroArch's exit hotkey; Home during a game shows the game panel inside AntonOS (Stay on Home first, Back to the game, Quit). Save/Load/Restart from our panels wait until RetroArch's command port works on this box (see BOX-FACTS.md).
+- **Guarantees:** pressing the trigger twice goes straight Home with no panel; if the panel can't open over an app, it goes Home instead; the helper lives in the launcher's process, and RetroOS switches it back on at start if Android turned it off. If an app swallows a key before the helper sees it, find another route on this box (ask before any system-partition change).
+- **Routes that need no helper** (the guarantee must not rest on one mechanism): in games, RetroArch's own Start + Select quits and saves on any pad, and Guide is RetroArch's exit hotkey; Home during a game shows the game panel inside RetroOS (Stay on Home first, Back to the game, Quit). Save/Load/Restart from our panels wait until RetroArch's command port works on this box (see BOX-FACTS.md).
 - **Installs:** always `bash launcher/tools/install.sh`, never a bare `adb install`. Android switches the helper off on every reinstall (that trapped Anthony in an NES game on 2026-11-10); the script switches it back on and fails if it isn't running, and the launcher does the same at every start and says so plainly if it can't.
 - **Showing the way out:** a short hint at the bottom when a game starts ("Xbox button or hold Start: menu and Home"), once per app for other apps, and with a mouse plugged in a small Home button in the top-right corner of every app and game.
 - **Test matrix** (muted, added to the smoke test): RetroArch, SmartTube while playing, Kodi, a full-screen Android game, the browser and Android's own Settings, each with the remote, the Xbox pad and the mouse. Report any app where it fails.
@@ -196,7 +196,7 @@ Anthony, after getting stuck in a game: "make sure that there's always a way to 
 One menu for every way out of a game: the remote's Home, the Xbox button, Select+Start, Back in a game, or the game closing by itself. Our own glass style; no console maker's artwork or sounds.
 
 - **What it shows:** the game's box art and title, its system, the controllers with player numbers, and big choices: **Resume** (first; pressing Home again also resumes), **Leave game** (confirm: "Leave *game*?" Leave / Stay), **Game options**, **Controls** (what each button does on that system), **All game settings** (Settings → Games).
-- **How it works on this box:** Home pauses RetroArch in the background (`pause_nonactive`), so Resume brings the game back exactly. The menu lives in AntonOS, so no overlay or key helper is needed.
+- **How it works on this box:** Home pauses RetroArch in the background (`pause_nonactive`), so Resume brings the game back exactly. The menu lives in RetroOS, so no overlay or key helper is needed.
 - **Game options**, per game, written as a RetroArch game override (`RetroLauncher/<core>/<game>.cfg`): picture (Sharp pixels / Smooth), screen (Whole pixels / Fill the screen), sound (Normal / Quieter / Louder), rewind (on / off). Applying restarts the game behind an "Applying…" card. Which pad is Player 1 waits for testing with real pads.
 - **Saving, honestly:** RetroArch's command port never opens on this box and no save state has ever been written here (`Saves/states` is empty), so the menu can't save your exact spot. Leaving or applying options goes back to the game's own last save (written every 10 s). The menu says so plainly instead of promising "your progress is saved". Find out why states aren't written (RetroArch's own Start+Select quit, `savestate_auto_save`, folder rights) and bring back Save/Load slots and "exactly where you were" when it works. RetroArch's `QUITFOCUS` launch option quits on Home but saves nothing: not used.
 - **Ordinary apps:** possible from the launcher side (the key helper knows the app that was in front, and Resume just reopens it), but it adds a step to every Home press, so it waits for Anthony's choice. For now Home goes straight Home from apps.
@@ -265,11 +265,11 @@ Anthony: "like the Wii U splash ... it shows the splash screen as it loaded the 
 
 ### Closing back "into its box" (polish stage)
 
-Anthony: "when you close the app for it to kind of go into the box of where it came from, like Apple ... nice and juicy". Android 7 doesn't let a launcher animate another app's window as it closes (only the opening zoom, which we already do), so we fake the return: the moment AntonOS comes back, the focused card's art starts full screen and shrinks smoothly into its card with a small spring at the end, while the rest of Home fades in. Same for built-in games and the players. Respects Reduce motion; stays within the speed budget.
+Anthony: "when you close the app for it to kind of go into the box of where it came from, like Apple ... nice and juicy". Android 7 doesn't let a launcher animate another app's window as it closes (only the opening zoom, which we already do), so we fake the return: the moment RetroOS comes back, the focused card's art starts full screen and shrinks smoothly into its card with a small spring at the end, while the rest of Home fades in. Same for built-in games and the players. Respects Reduce motion; stays within the speed budget.
 
 ### Web browser (built in)
 
-The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. AntonOS gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.
+The box has no good browser: its own `cyx.browser` is old and the system WebView is version 76 (2019), which breaks many current sites. RetroOS gets a **Web** card on Home and in Apps that opens our own browser, styled exactly like the rest.
 
 - **Screens:** a start page with big tiles for favourite sites and a search box; the page view with a slim glass bar on top (back, address, reload, bookmark) that hides while reading; tabs as cards; Downloads; History; Bookmarks. All in the same cards, glass and type as the launcher.
 - **Remote and controller:** a soft on-screen pointer moved with the arrows or the left stick (speeds up when held), OK clicks, a separate scroll mode, Back goes back a page. Mouse just works. Big on-screen keyboard for typing.
@@ -307,11 +307,11 @@ No accounts, no sign-ups, no terms screens. Under a minute end to end.
 
 ### Phone as a remote
 
-No app to install on the phone, so iPhone and Android both work. Settings → Controllers & Remotes → "Use your phone" shows a QR code; scanning it opens a remote in the phone's browser, served by a tiny web server inside AntonOS on the home network.
+No app to install on the phone, so iPhone and Android both work. Settings → Controllers & Remotes → "Use your phone" shows a QR code; scanning it opens a remote in the phone's browser, served by a tiny web server inside RetroOS on the home network.
 
 - The phone page: swipe pad and arrows, OK, Back, Home, volume, the tab names as shortcuts, and a **keyboard** so typing Wi-Fi passwords, searches and web addresses happens on the phone. Styled like the launcher.
 - Pairing: the TV shows a 4-digit code the first time a phone connects; remembered phones are listed in Settings and can be removed. Home network only, off until switched on, never reachable from the internet.
-- Honest limit: an ordinary app can fully drive its own screens (so Home, TV, Radio, Videos, Games library, browser and Settings all work), and can send Back and Home anywhere through an accessibility service, but Android does not let it press arrows inside *other* apps. Check on the box whether its debug build allows key injection another way; if not, say so in the phone page ("arrows work in AntonOS only") rather than failing silently.
+- Honest limit: an ordinary app can fully drive its own screens (so Home, TV, Radio, Videos, Games library, browser and Settings all work), and can send Back and Home anywhere through an accessibility service, but Android does not let it press arrows inside *other* apps. Check on the box whether its debug build allows key injection another way; if not, say so in the phone page ("arrows work in RetroOS only") rather than failing silently.
 - Build it late: it is an extra, and nothing else depends on it.
 - **A first-class design, not a utility page** (Anthony: "the mobile interface and the mobile app, I want to look really nice and be like designed correctly"). Same dark glass look as the launcher, built mobile-first for iPhone Safari and Android Chrome: safe-area insets, big thumb-reach targets, press feedback that feels like haptics, no layout jumps, portrait and one-handed, an "Add to Home Screen" manifest and icon so it opens full screen like an app. Sections: **Remote** (swipe pad, OK, Back, Home, volume), **Keyboard**, a **number pad** for channels, **tab shortcuts**, **Send to TV**, and **Now Playing** (current channel or video). Draw it in the mockup first and check it at phone sizes in the browser pane before wiring it up. Keep the page's transport (how presses reach the box) behind one small interface.
 - **Send to TV** (approved): a box where a YouTube link is pasted (opens in SmartTube) or a direct video/audio link (plays in the built-in player), plus pick-a-file upload from the phone into Videos if that's cheap. Home network only, same pairing code as the remote.
@@ -322,7 +322,7 @@ No app to install on the phone, so iPhone and Android both work. Settings → Co
 
 In our style and plain words, explain and set up what the box really supports: linking the phone's YouTube app to SmartTube with its TV code; Miracast screen mirroring from Android/Windows (start the box's `com.droidlogic.miracast` from our page); receiving media over the home network through the box's Media Center. No foreign menus where avoidable. **Not in scope:** real Google Cast receiving (needs a Google device certificate this box doesn't have; the workarounds reuse keys extracted from real devices: don't implement or install any of that). No closed-source AirPlay receiver apps without running the adware scan and asking Anthony first.
 
-- **Later: the phone as a motion pointer** (like pointing a remote at the screen). Constraint: phone browsers only give motion sensors to secure (https) pages, and iPhones also need a permission tap, so it can't work on the plain local http page; it needs the later hosted mode on Anthony's site or a local https setup. When available: a "Pointer" mode on the phone page (hold to point, tap to click, a recentre button) driving AntonOS's own on-screen pointer. It works in AntonOS, its built-in games and browser, not inside other apps.
+- **Later: the phone as a motion pointer** (like pointing a remote at the screen). Constraint: phone browsers only give motion sensors to secure (https) pages, and iPhones also need a permission tap, so it can't work on the plain local http page; it needs the later hosted mode on Anthony's site or a local https setup. When available: a "Pointer" mode on the phone page (hold to point, tap to click, a recentre button) driving RetroOS's own on-screen pointer. It works in RetroOS, its built-in games and browser, not inside other apps.
 ### Seeing where you are (Anthony's main complaint about Projectivy)
 
 In Projectivy, moving down hides or fades the rows you came from, so you lose your place and can't see all your apps. Rules for every grid and shelf here:
@@ -349,8 +349,8 @@ Projectivy is closed source (its GitHub page only hosts the downloads), so its c
 
 ## Works with no PC: the plain-APK rule
 
-Anthony asked about people who "don't really know tech". **AntonOS must be fully usable when installed as a plain APK on a box, with no PC, no ADB and no AI.** Everything ADB does today needs an in-app path, guided by the first-time welcome:
-- **Home app:** the welcome says "press Home and choose AntonOS, then Always" and notices when it's done.
+Anthony asked about people who "don't really know tech". **RetroOS must be fully usable when installed as a plain APK on a box, with no PC, no ADB and no AI.** Everything ADB does today needs an in-app path, guided by the first-time welcome:
+- **Home app:** the welcome says "press Home and choose RetroOS, then Always" and notices when it's done.
 - **Key helper:** a guided screen opens Android's accessibility page with a picture of exactly what to switch on, and notices when it works. Without it the launcher stays safe and never-stuck (RetroArch's Start+Select quit, the launcher's own menus).
 - **Anything that needs `WRITE_SECURE_SETTINGS` or root** (HDMI power setting, animation speeds, pre-compiling, the GPU speed lock): optional extras, hidden or shown as "needs the PC setup" when the permission isn't there. Never a switch that silently does nothing.
 - **RetroArch:** the Games tab offers to download it from the official libretro site and hands it to Android's installer (or the need disappears if the emulator cores are built in later).
@@ -380,7 +380,7 @@ What we control, and what we don't, stated honestly:
 
 How to get there:
 
-- **Compile everything ahead of time.** Android 7 normally compiles apps lazily. Run `cmd package compile -m speed -f <package>` over ADB for AntonOS and for the apps people open most (SmartTube, RetroArch, Kodi); this makes those apps themselves start and run faster, which is the "going from the system into an app" slowness Anthony noticed. Measure start time before and after (`am start -W`) and put the command in the skill.
+- **Compile everything ahead of time.** Android 7 normally compiles apps lazily. Run `cmd package compile -m speed -f <package>` over ADB for RetroOS and for the apps people open most (SmartTube, RetroArch, Kodi); this makes those apps themselves start and run faster, which is the "going from the system into an app" slowness Anthony noticed. Measure start time before and after (`am start -W`) and put the command in the skill.
 - **Never wait on the main thread.** Disk, network, image decoding and playlist parsing all happen in the background; the screen draws from what is already in memory. Parse the channel list once and keep a compact cached copy so TV opens instantly.
 - **Preload the next thing.** Neighbouring tabs are built before you reach them; card images are decoded just ahead of scrolling; the player is created at start-up so the first channel doesn't pay for it.
 - **Small and plain.** R8 shrinking on, no dependency-injection frameworks, no reflection, flat view layouts, images at exactly the size shown.
@@ -414,7 +414,7 @@ Consequences for the design:
 - `minSdk 21`, `targetSdk 34`, universal APK (no native code, so 32-bit boxes are fine).
 - Gradle project with the wrapper committed. Gradle isn't on PATH; JDK 21 is, and Android Studio plus SDK build-tools 34 and 36.1 are installed. `C:\tmp\motion-playground-app` shows the hand-rolled build used last time; use real Gradle here.
 - Few dependencies: AndroidX core, RecyclerView, Palette, Media3 ExoPlayer (HLS module only). Write a small image cache instead of pulling in a big image library.
-- Name **AntonOS** (Anthony's choice), package `com.antonretro.launcher`. Keep the display name in one place in case it changes.
+- Name **RetroOS** (Anthony's choice), package `com.antonretro.launcher`. Keep the display name in one place in case it changes.
 - Font: Inter (open licence), bundled.
 - Signing: make one release key, store it outside the repo on D:, and tell Anthony where. Never commit it.
 
@@ -445,8 +445,8 @@ Anthony wants plenty of choice, like the landscape screensavers on Google's TV d
 
 Motion is where "Apple quality" is felt, so it gets its own stage and its own checks.
 
-- **Start-up intro:** when AntonOS starts after power-on, a short (about 1.5 s) logo intro: the AntonOS mark fades and scales in over black, the wallpaper fades up behind it, then the tabs and dock rise into place one after another. Skippable with any key. Never shown again until the next boot.
-- **Boot animation (optional, ask first):** the Android boot animation can be replaced with a matching AntonOS one (`bootanimation.zip`), but that means writing to the box's system partition. Plan it as a separate, optional step with a backup of the original file and Anthony's OK.
+- **Start-up intro:** when RetroOS starts after power-on, a short (about 1.5 s) logo intro: the RetroOS mark fades and scales in over black, the wallpaper fades up behind it, then the tabs and dock rise into place one after another. Skippable with any key. Never shown again until the next boot.
+- **Boot animation (optional, ask first):** the Android boot animation can be replaced with a matching RetroOS one (`bootanimation.zip`), but that means writing to the box's system partition. Plan it as a separate, optional step with a backup of the original file and Anthony's OK.
 - **Opening an app:** the focused card zooms to fill the screen, then the app appears. Coming back Home: Home reappears with a gentle scale-down from 1.05x and fade, focus on the same card.
 - **Opening a channel or game:** the card expands into the player; the channel name banner slides up and fades.
 - **Tab switching:** content slides sideways and cross-fades (about 250 ms), the tab underline glides to the new tab.
@@ -488,20 +488,20 @@ Each stage ends with a screenshot from the real box shown to Anthony. Don't move
 
 ## Shipping in this repo
 
-- **Target for the skill (Anthony): running it on a box sets up everything.** It downloads the signed AntonOS APK from the GitHub release, installs it and RetroArch with the tuned config, pushes the channel list and guide sources, grants the launcher's permissions and switches its key helper on over ADB (with the real-key check from `tools/install.sh`), pre-compiles the main apps, applies the approved speed tuning, sets AntonOS as the home app (the classic launcher stays as a fallback), and finishes with the smoke test. README and screenshots updated to match. Nothing is pushed, released or published without Anthony's OK.
+- **Target for the skill (Anthony): running it on a box sets up everything.** It downloads the signed RetroOS APK from the GitHub release, installs it and RetroArch with the tuned config, pushes the channel list and guide sources, grants the launcher's permissions and switches its key helper on over ADB (with the real-key check from `tools/install.sh`), pre-compiles the main apps, applies the approved speed tuning, sets RetroOS as the home app (the classic launcher stays as a fallback), and finishes with the smoke test. README and screenshots updated to match. Nothing is pushed, released or published without Anthony's OK.
 - **The visualizer's "Classic pack" is never hosted in or downloaded from this repo or a release** (the data is Microsoft's). The only allowed route: an optional skill step that builds the pack on the user's own PC from their own installed Windows Media Player (the visualizer project's export step reading their `wmp.dll`), then pushes the result to `/sdcard/RetroLauncher/Visualizer/classic/` over ADB. It skips silently when the PC has no such file. Coordinate the export tool with the "Visualizations decomp Windows" session at that stage.
 
 - **The skill sets itself up** (Anthony): when someone uses the Android TV box skill in Claude Code, it detects their computer (Windows, macOS or Linux) and fetches what it needs itself, such as Android's platform tools (ADB) from Google's official download, into a folder it controls, instead of asking them to install things by hand. It asks before downloading and says where it put them.
 
 - Source lives in `launcher/`. The signed APK goes out as a GitHub Release, not into git.
-- `skills/android-tv-box/SKILL.md` (and the private copy at `C:\Users\Anthony\.claude\skills\android-tv-box\SKILL.md`): step 7 installs AntonOS from the release instead of Projectivy and RetroArch as its hidden game engine; step 6 pushes the channel list to `/sdcard/RetroLauncher/channels.m3u` (Kodi's IPTV add-on becomes optional); step 8 sets it as default home; keep the "classic launcher stays" rule.
+- `skills/android-tv-box/SKILL.md` (and the private copy at `C:\Users\Anthony\.claude\skills\android-tv-box\SKILL.md`): step 7 installs RetroOS from the release instead of Projectivy and RetroArch as its hidden game engine; step 6 pushes the channel list to `/sdcard/RetroLauncher/channels.m3u` (Kodi's IPTV add-on becomes optional); step 8 sets it as default home; keep the "classic launcher stays" rule.
 - `README.md`: new before/after image, replace the Projectivy mention, add a short "The home screen" section, update the "not affiliated" line.
 - Update `C:\tmp\mxq-pro\AGENTS.md` and the video doc.
 - Work is on branch `feat/tv-launcher`. Commit as you go. **Ask Anthony before pushing, opening the PR, or publishing the release.**
 
-## After release: "AntonOS Setup" desktop app
+## After release: "RetroOS Setup" desktop app
 
-Anthony: "an application version that ... makes it easy and connects with ADB ... very user friendly", for people without Claude Code or any AI tool. A small wizard, Windows first (kept portable to Mac and Linux), in AntonOS's visual style:
+Anthony: "an application version that ... makes it easy and connects with ADB ... very user friendly", for people without Claude Code or any AI tool. A small wizard, Windows first (kept portable to Mac and Linux), in RetroOS's visual style:
 1. Turn on USB debugging, with pictures of the seven taps on "Build number".
 2. Find the box on the network (scan for port 5555, or type its IP address).
 3. Approve the prompt on the TV.

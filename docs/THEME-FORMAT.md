@@ -1,6 +1,6 @@
-# AntonOS theme files
+# RetroOS theme files
 
-A theme is one small JSON file in `/sdcard/RetroLauncher/Themes/` on the box (for example `sunset.json`). AntonOS lists it in **Settings → Themes** under the built-in ones. Files over 16 KB, unknown values or colours that aren't `#RRGGBB` / `#AARRGGBB` are ignored, so a broken file can never half-apply.
+A theme is one small JSON file in `/sdcard/RetroLauncher/Themes/` on the box (for example `sunset.json`). RetroOS lists it in **Settings → Themes** under the built-in ones. Files over 16 KB, unknown values or colours that aren't `#RRGGBB` / `#AARRGGBB` are ignored, so a broken file can never half-apply.
 
 ```json
 {
@@ -23,7 +23,7 @@ A theme is one small JSON file in `/sdcard/RetroLauncher/Themes/` on the box (fo
 |---|---|
 | `accent` | progress bars, highlights |
 | `focusFill` | the focused card, button or tab (keep its alpha at FE: a fully solid fill draws square corners on Android 7) |
-| `focusText` | text on the focused item (AntonOS swaps it for black or white if the contrast is under 4.5:1) |
+| `focusText` | text on the focused item (RetroOS swaps it for black or white if the contrast is under 4.5:1) |
 | `glassTint`, `glassStrong`, `glassEdge` | the frosted glass panels, the stronger glass of dialogs and banners, and their thin edge |
 | `text`, `textDim` | normal and secondary text |
 | `dimScrolled` | how much the wallpaper darkens under the rows |

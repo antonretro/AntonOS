@@ -76,7 +76,7 @@ object Kit {
     /** Reduce motion switch (Settings); every animation multiplies its duration by this. */
     @JvmStatic var motion = 1f
     /** Android's "animator duration scale" (the box tuning sets 0.5 to speed up other apps); our own
-     *  timings divide it back out so AntonOS always moves exactly as designed. */
+     *  timings divide it back out so RetroOS always moves exactly as designed. */
     @JvmStatic var systemScale = 1f
     fun init(ctx: Context) {
         systemScale = try { android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }

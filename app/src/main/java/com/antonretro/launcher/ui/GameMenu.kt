@@ -22,7 +22,7 @@ import java.io.File
 
 /**
  * The game Home Menu: every way out of a game lands here. Box art and title on the left with the
- * controllers; big choices on the right (Resume first). Lives inside AntonOS, so it needs no overlay.
+ * controllers; big choices on the right (Resume first). Lives inside RetroOS, so it needs no overlay.
  */
 @SuppressLint("ViewConstructor")
 class GameMenu(ctx: Context, private val overGame: Boolean = false) : FrameLayout(ctx) {

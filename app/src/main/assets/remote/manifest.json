@@ -1,1 +1,1 @@
-{"name":"AntonOS remote","short_name":"TV Remote","start_url":"/","display":"standalone","background_color":"#0b0d12","theme_color":"#0b0d12","icons":[{"src":"icon.png","sizes":"512x512","type":"image/png"}]}
+{"name":"RetroOS remote","short_name":"TV Remote","start_url":"/","display":"standalone","background_color":"#0b0d12","theme_color":"#0b0d12","icons":[{"src":"icon.png","sizes":"512x512","type":"image/png"}]}

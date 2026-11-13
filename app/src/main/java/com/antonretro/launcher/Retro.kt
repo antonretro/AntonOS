@@ -35,7 +35,7 @@ object RetroCmd {
     }
 }
 
-/** Reads and writes single settings in AntonOS's tuned retroarch.cfg (Settings → Games). */
+/** Reads and writes single settings in RetroOS's tuned retroarch.cfg (Settings → Games). */
 object RetroConfig {
     val file: File get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher/retroarch.cfg")
     fun get(key: String): String? = try {

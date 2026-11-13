@@ -1,4 +1,4 @@
-# AntonOS
+# RetroOS
 
 *by AntonRetro.* A home screen and system for cheap Android TV boxes: TV, radio, YouTube, music, games and apps in one place, driven by a remote, a game controller, a mouse or your phone.
 
@@ -25,19 +25,19 @@
 
 ## Install (plain APK)
 
-1. Download `AntonOS-<version>.apk` from [Releases](https://github.com/antonretro/antonos/releases) and install it on the box (from a USB stick with a file manager, or `adb install AntonOS-<version>.apk`).
-2. Open AntonOS. When Android asks which home screen to use, pick **AntonOS → Always**.
-3. Optional, for the Xbox button and the never-stuck menu over games: Android Settings → Accessibility → **AntonOS buttons** → On.
+1. Download `RetroOS-<version>.apk` from [Releases](https://github.com/antonretro/RetroOS/releases) and install it on the box (from a USB stick with a file manager, or `adb install RetroOS-<version>.apk`).
+2. Open RetroOS. When Android asks which home screen to use, pick **RetroOS → Always**.
+3. Optional, for the Xbox button and the never-stuck menu over games: Android Settings → Accessibility → **RetroOS buttons** → On.
 4. Optional extras it uses when present: **RetroArch** (games), **SmartTube** (YouTube). Put your own games in `/sdcard/RetroLauncher/Games/<system>/` and a channel list at `/sdcard/RetroLauncher/channels.m3u`.
 
-The companion tool [android-tv-box-skill](https://github.com/antonretro/android-tv-box-skill) sets up a whole box over ADB (and offers AntonOS or Projectivy as the home screen).
+The companion tool [android-tv-box-skill](https://github.com/antonretro/android-tv-box-skill) sets up a whole box over ADB (and offers RetroOS or Projectivy as the home screen).
 
 ## Known gaps in this preview
 
 - Tested on one MXQ Pro only (Android 7.1, 32-bit, Mali-450). Other boxes, resolutions and Android versions are untested.
 - Moving between the Home dock and the rows can stutter on slow GPUs (the full-screen wallpaper fade).
 - Leaving a game with only the TV remote keeps in-game saves but not the exact place (use the controller's Guide button for that).
-- The phone remote's arrows work inside AntonOS only; in other apps it does Back, Home, volume and play/pause.
+- The phone remote's arrows work inside RetroOS only; in other apps it does Back, Home, volume and play/pause.
 - Not yet built: the TV corner mini player, themes, the first-time welcome, the built-in Files/Browser/Store apps.
 
 ## Building
