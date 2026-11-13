@@ -812,12 +812,13 @@ class HomeActivity : Activity() {
     // ---------------------------------------------------------------- built-in games (our own, drawn on a Canvas)
     private val builtInGames: List<Item> by lazy { listOf(
         Item.Action("bi:tiki", "Totem Tide", "Swap the masks, stop the tide", "tiki") { openBuiltIn("tiki") },
-        Item.Action("bi:gear", "Gear & Ghost", "Route the energy, wake the portal", "gear") { openBuiltIn("gear") }) }
+        Item.Action("bi:gear", "Gear & Ghost", "Route the energy, wake the portal", "gear") { openBuiltIn("gear") },
+        Item.Action("bi:crate", "Crate Cascade", "Stack the cargo, clear the dock", "crate") { openBuiltIn("crate") }) }
     private var game: com.antonretro.launcher.games.PixelGame? = null
 
     private fun openBuiltIn(id: String) {
         if (game != null) return
-        val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); else -> com.antonretro.launcher.games.TotemTide(this) }
+        val g = when (id) { "gear" -> com.antonretro.launcher.games.GearGhost(this); "crate" -> com.antonretro.launcher.games.CrateCascade(this); else -> com.antonretro.launcher.games.TotemTide(this) }
         // the game draws its own title, pause and game-over screens in its own pixel style; Quit comes back here
         g.onQuit = { closeGame(); showTab("Games") }
         quietMusic()
@@ -853,6 +854,24 @@ class HomeActivity : Activity() {
     private fun builtInCover(key: String, w: Int, h: Int): android.graphics.Bitmap {
         val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
         val c = android.graphics.Canvas(b)
+        if (key == "bi:crate") {
+            // Crate Cascade: a sunset harbour sky, painted crates stacked like the game's pieces, the name on top
+            c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF5A2E58.toInt(), 0xFFE07A48.toInt(), android.graphics.Shader.TileMode.CLAMP) })
+            val p = android.graphics.Paint()
+            val s = h / 7f
+            val cols = intArrayOf(0xFF40A0BA.toInt(), 0xFFDEB240.toInt(), 0xFF9C60BA.toInt(), 0xFF62A852.toInt(), 0xFFD65640.toInt(), 0xFF466EC4.toInt())
+            val stack = listOf(0 to 0, 1 to 0, 2 to 0, 4 to 0, 5 to 0, 0 to 1, 1 to 1, 4 to 1, 5 to 1, 6 to 1, 1 to 2, 5 to 2)
+            val left = w / 2f - 3.5f * s
+            for ((i, xy) in stack.withIndex()) {
+                val x = left + xy.first * s; val y = h - (xy.second + 1) * s - s * .3f
+                p.color = 0xFF2B1408.toInt(); c.drawRect(x, y, x + s, y + s, p)
+                p.color = cols[i % cols.size]; c.drawRect(x + s * .1f, y + s * .1f, x + s * .9f, y + s * .9f, p)
+                p.color = 0x55000000; c.drawRect(x + s * .1f, y + s * .48f, x + s * .9f, y + s * .54f, p)
+            }
+            val tp = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFF4DC.toInt(); textSize = h * .17f; typeface = android.graphics.Typeface.DEFAULT_BOLD; textAlign = android.graphics.Paint.Align.CENTER; setShadowLayer(6f, 0f, 2f, 0xAA000000.toInt()) }
+            c.drawText("Crate Cascade", w / 2f, h * .32f, tp)
+            return b
+        }
         if (key == "bi:gear") {
             // Gear & Ghost: warm workshop dark, gears turning, Kiko floating, the name underneath
             c.drawPaint(android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF3A2416.toInt(), 0xFF0E0806.toInt(), android.graphics.Shader.TileMode.CLAMP) })

@@ -105,7 +105,15 @@ class NativeVisualizer(ctx: Context, private val ui: Handler, style: String) : V
             val l = bb.get(f * channels); val r = if (channels >= 2) bb.get(f * channels + 1) else l
             shorts[f * 2] = l; shorts[f * 2 + 1] = r
         }
-        try { engine.feedPcm(shorts, frames, rate) } catch (_: Exception) {}
+        // in pieces of at most 1024 frames: a bigger block (the player hands one over when a song changes) once
+        // overran a fixed buffer inside the native engine and crashed AntonOS ("stack corruption detected")
+        var at = 0
+        while (at < frames) {
+            val n = minOf(1024, frames - at)
+            val piece = if (at == 0 && n == frames) shorts else shorts.copyOfRange(at * 2, (at + n) * 2)
+            try { engine.feedPcm(piece, n, rate) } catch (_: Exception) {}
+            at += n
+        }
     }
     override fun setVisualizer(style: String, then: (List<String>) -> Unit) { engine.setVisualizer(kind(style)); then(names()) }
     override fun setPreset(index: Int) { indexes.getOrNull(index)?.let { engine.setPreset(it) } }
