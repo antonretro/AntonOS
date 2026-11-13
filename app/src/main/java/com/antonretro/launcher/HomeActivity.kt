@@ -244,7 +244,8 @@ class HomeActivity : Activity() {
     private fun buildScreens() {
         val art: (Item, CardCell) -> Unit = { item, cell -> bindArt(item, cell) }
         val open: (Item, CardCell) -> Unit = { item, cell -> open(item, cell) }
-        screens["Home"] = RowsScreen(this, 410f, true, art, open)
+        cinemaHome = RowsScreen(this, 410f, true, art, open)
+        screens["Home"] = cinemaHome
         screens["TV"] = RowsScreen(this, 150f, false, art, open, "Loading your channels…")
         screens["Radio"] = RowsScreen(this, 150f, false, art, open, "Loading radio stations…")
         screens["YouTube"] = RowsScreen(this, 150f, false, art, open)
@@ -256,6 +257,7 @@ class HomeActivity : Activity() {
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
         com.antonretro.launcher.kit.Pads.init(this); watchPads()
+        if (homeStyle != 0) applyHomeStyle(homeStyle, false)
         // just switched theme: come back to the Themes page, not Home
         getSharedPreferences("theme", MODE_PRIVATE).let { tp -> if (tp.getBoolean("reopen", false)) { tp.edit().putBoolean("reopen", false).apply(); ui.post { showTab("Settings", false); settingsScreen.open("Themes") } } }
         com.antonretro.launcher.kit.UiSound.init(this)
@@ -333,6 +335,8 @@ class HomeActivity : Activity() {
         ) },
         SPage("pad", "Controllers & Remotes") { controllerRows() },
         SPage("home", "Home screen") { listOf(
+            SRow("Style", { when (homeStyle) { 1 -> "Big tiles for TV, Radio, Games and more, favourites along the bottom"; 2 -> "Only your favourites, extra large"; else -> "Big picture at the top, your dock and rows" } },
+                value = { homeStyles[homeStyle] }, onClick = { homeStyle = (homeStyle + 1) % 3; applyHomeStyle(homeStyle, true); notice("Home style: " + homeStyles[homeStyle], "Press Home to see it") }),
             SRow("Box art corners", { "Game boxes and covers: slightly rounded, or sharp like the real box" }, value = { if (store.squareCovers) "Square" else "Rounded" },
                 onClick = { store.squareCovers = !store.squareCovers; Kit.coverRadius = if (store.squareCovers) 0f else Kit.R_XS; store.save(); rebuildGames() }),
             SRow("Clock", value = { if (store.clock24) "24-hour (17:30)" else "12-hour (5:30 PM)" }, onClick = { store.clock24 = !store.clock24; store.save(); tickClock() }),
@@ -1231,9 +1235,10 @@ class HomeActivity : Activity() {
     private val perfExp: String by lazy { try { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.perf-exp").readText() } catch (e: Exception) { "" } }
 
     private fun rebuildHome() {
+        classicHome?.rebuild(); simpleHome?.rebuild()
         val dock = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }
         val playing = store.recentGames.mapNotNull { itemFor(it) }.take(6)
-        (screens["Home"] as RowsScreen).setRows(if ("nokeep" in perfExp) listOf(Row(null, dock, glass = "noglass" !in perfExp)) else listOf(
+        cinemaHome.setRows(if ("nokeep" in perfExp) listOf(Row(null, dock, glass = "noglass" !in perfExp)) else listOf(
             Row(null, dock, glass = "noglass" !in perfExp),
             Row("Keep watching", homeExtra, alwaysLabel = true),
             Row("Keep playing", playing, alwaysLabel = true),
@@ -1242,13 +1247,13 @@ class HomeActivity : Activity() {
 
     /** Hold OK (or press Menu) on any card: plain choices in the one dialog. */
     private fun cardOptions(tab: String, item: Item) {
-        val inDock = tab == "Home" && store.dock.contains(item.key) && (screens["Home"] as RowsScreen).currentRowItems()?.any { it.key == item.key && it === (screens["Home"] as RowsScreen).currentItem() } == true
+        val inDock = tab == "Home" && store.dock.contains(item.key) && cinemaHome.currentRowItems()?.any { it.key == item.key && it === cinemaHome.currentItem() } == true
         val pinnable = item is Item.App || item is Item.Ch || item is Item.Game
         val choices = ArrayList<Pair<String, () -> Unit>>()
         if (inDock) {
             val i = store.dock.indexOf(item.key)
-            if (i > 0) choices.add("Move left" to { store.dock.removeAt(i); store.dock.add(i - 1, item.key); store.save(); rebuildHome(); (screens["Home"] as RowsScreen).jumpTo(0, i - 1) })
-            if (i < store.dock.size - 1) choices.add("Move right" to { store.dock.removeAt(i); store.dock.add(i + 1, item.key); store.save(); rebuildHome(); (screens["Home"] as RowsScreen).jumpTo(0, i + 1) })
+            if (i > 0) choices.add("Move left" to { store.dock.removeAt(i); store.dock.add(i - 1, item.key); store.save(); rebuildHome(); cinemaHome.jumpTo(0, i - 1) })
+            if (i < store.dock.size - 1) choices.add("Move right" to { store.dock.removeAt(i); store.dock.add(i + 1, item.key); store.save(); rebuildHome(); cinemaHome.jumpTo(0, i + 1) })
             choices.add("Remove from Home" to { store.dock.remove(item.key); store.save(); rebuildHome(); notice("Removed from Home", item.title) })
         } else if (pinnable) {
             if (store.dock.contains(item.key)) choices.add("Already on Home" to {})
@@ -1474,7 +1479,7 @@ class HomeActivity : Activity() {
         if (store.startupSound) try {
             android.media.MediaPlayer.create(this, R.raw.startup_chime)?.apply { setVolume(.8f, .8f); setOnCompletionListener { it.release() }; start() }
         } catch (_: Exception) {}
-        val home = screens["Home"] as RowsScreen
+        val home = cinemaHome
         val bar = tabBar.parent as View
         val parts = listOf(bar, clock) + home.introViews()
         val mark = LinearLayout(this).apply {
@@ -1759,6 +1764,52 @@ class HomeActivity : Activity() {
             }
             override fun onInputDeviceChanged(id: Int) {}
         }, ui)
+    }
+
+    // ---------------------------------------------------------------- home styles (ui/Tiles.kt)
+    private lateinit var cinemaHome: RowsScreen
+    private val homeStyles = listOf("Cinema", "Classic grid", "Simple")
+    private var homeStyle: Int
+        get() = getSharedPreferences("home", MODE_PRIVATE).getInt("style", 0)
+        set(v) { getSharedPreferences("home", MODE_PRIVATE).edit().putInt("style", v).apply() }
+    private var classicHome: TileScreen? = null
+    private var simpleHome: TileScreen? = null
+
+    /** What a tile opens: a tab, or a pinned app / channel / game. */
+    private fun openFromTile(item: Item) { if (item is Item.Action) item.run(this) else openKey(item.key) }
+    private fun favouriteTiles(): List<Tile> = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }.map { item ->
+        val icon = (item as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
+        val col = (item.key.hashCode() and 0x7fffffff) % 6
+        val pair = listOf(0xFF2E5B9A to 0xFF16294A, 0xFF8A2E48 to 0xFF3E1422, 0xFF2E7A5A to 0xFF143A2A, 0xFF7A5A2E to 0xFF3A2A14, 0xFF5A2E8A to 0xFF2A1442, 0xFF2E6E7A to 0xFF14343A)[col]
+        Tile(item.title, "", pair.first.toInt(), pair.second.toInt(), icon) { openFromTile(item) }
+    }
+    private fun placeTiles(): List<Tile> {
+        fun go(tab: String) = { inTabBar = false; showTab(tab); if (tab == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { openGuide(null); guide.focusBar() } else screens[tab]?.enter(); drawTabs() }
+        return listOf(
+            Tile("TV", "Live channels and the guide", 0xFFD84A3A.toInt(), 0xFF6A1A12.toInt(), run = go("TV")),
+            Tile("Radio", "Stations from around the world", 0xFF8A4AD8.toInt(), 0xFF35165E.toInt(), run = go("Radio")),
+            Tile("YouTube", "Your channels and search", 0xFFE0363C.toInt(), 0xFF5A0E12.toInt(), run = go("YouTube")),
+            Tile("Media", "Music and your videos", 0xFF2A9AA8.toInt(), 0xFF0E3E46.toInt(), run = go("Media")),
+            Tile("Games", "Retro and built-in games", 0xFF4AA84A.toInt(), 0xFF164A16.toInt(), run = go("Games")),
+            Tile("Apps", "Everything installed", 0xFF3A6AD8.toInt(), 0xFF142A5E.toInt(), run = go("Apps")),
+            Tile("Settings", "Wi-Fi, picture, sound, themes", 0xFF6A7484.toInt(), 0xFF262C36.toInt(), run = go("Settings")))
+    }
+    /** Swap the Home tab's arrangement; the content stays the same. */
+    private fun applyHomeStyle(style: Int, animate: Boolean) {
+        val next: Screen = when (style) {
+            1 -> classicHome ?: TileScreen(this, false, { placeTiles() }, { favouriteTiles() }).also { classicHome = it }
+            2 -> simpleHome ?: TileScreen(this, true, { placeTiles() }, { favouriteTiles() }).also { simpleHome = it }
+            else -> cinemaHome
+        }
+        val old = screens["Home"]
+        if (old === next) return
+        if (next.view.parent == null) { next.view.visibility = View.GONE; stage.addView(next.view, -1, -1); next.onFocusChanged = { updateShelf() } }
+        (next as? TileScreen)?.rebuild()
+        screens["Home"] = next
+        if (current == "Home") {
+            fun swap() { old?.view?.visibility = View.GONE; next.view.visibility = View.VISIBLE; next.view.alpha = 1f; updateShelf(); updateScrolled() }
+            if (animate) stage.animate().alpha(0f).setDuration(Kit.t(140)).withEndAction { swap(); stage.animate().alpha(1f).setDuration(Kit.t(200)).start() }.start() else swap()
+        }
     }
 
     // ---------------------------------------------------------------- themes (kit/Themes.kt)
