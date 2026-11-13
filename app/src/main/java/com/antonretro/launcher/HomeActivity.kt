@@ -1792,6 +1792,7 @@ class HomeActivity : Activity() {
     private fun builtInApps(): List<Item> = listOf(
         Item.Action("os:files", "Files", "Your box and USB drives", "folder") { openFiles() },
         Item.Action("os:web", "Web", "Browse the internet", "web") { openWeb(null) },
+        Item.Action("os:store", "Store", "Open-source apps from F-Droid", "store") { openStore() },
         Item.Action("os:cast", "Casting", "Phone to TV", "cast") { showTab("Settings"); settingsScreen.open("Casting") })
     private var files: FilesView? = null
     private fun openFiles() {
@@ -1804,6 +1805,60 @@ class HomeActivity : Activity() {
         }
         coverHome(true); f.show(); dialog.bringToFront()
     }
+    // ---------------------------------------------------------------- Store (data/Store.kt, ui/StoreView.kt)
+    private var store2: StoreView? = null
+    private fun installedVersion(pkg: String): Long = try {
+        val i = packageManager.getPackageInfo(pkg, 0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) i.longVersionCode else @Suppress("DEPRECATION") i.versionCode.toLong()
+    } catch (e: Exception) { -1L }
+    private fun refreshStore(force: Boolean) {
+        val v = store2 ?: return
+        if (!force && com.antonretro.launcher.data.StoreRepo.apps.isNotEmpty() && com.antonretro.launcher.data.StoreRepo.age(this) < 24 * HOUR) return
+        bg.execute {
+            val ok = com.antonretro.launcher.data.StoreRepo.refresh(this) { msg -> ui.post { v.setStatus(msg) } }
+            ui.post { v.setStatus(if (ok) "${com.antonretro.launcher.data.StoreRepo.apps.size} open-source apps that run on this box  ·  from F-Droid, signature checked  ·  Menu: check for new apps" else com.antonretro.launcher.data.StoreRepo.status); v.rebuild() }
+        }
+    }
+    private fun openStore() {
+        val v = store2 ?: StoreView(this).also { s ->
+            root.addView(s, -1, -1); store2 = s
+            s.installed = { installedVersion(it) }
+            s.onClose = { coverHome(false); calmKeys() }
+            s.onSearch = { keyboard.open("Search the Store", doneText = "Search") { q -> s.search(q) } }
+            s.onRefresh = { s.setStatus("Checking for new apps…"); refreshStore(true) }
+            s.onApp = { a -> storeApp(a) }
+        }
+        if (com.antonretro.launcher.data.StoreRepo.apps.isEmpty()) bg.execute { com.antonretro.launcher.data.StoreRepo.loadCache(this); ui.post { v.rebuild(); if (com.antonretro.launcher.data.StoreRepo.apps.isNotEmpty()) v.setStatus("${com.antonretro.launcher.data.StoreRepo.apps.size} open-source apps that run on this box  ·  from F-Droid  ·  Menu: check for new apps"); refreshStore(false) } }
+        coverHome(true); v.show(); dialog.bringToFront(); keyboard.bringToFront()
+    }
+    /** An app's page: what it is, and Install / Update / Open / Remove. */
+    private fun storeApp(a: com.antonretro.launcher.data.StoreApp) {
+        val inst = installedVersion(a.pkg)
+        val body = a.summary + "\n\n" + a.description.take(300) + "\n\nVersion ${a.versionName}  ·  %.1f MB  ·  open source, from F-Droid".format(a.size / 1048576.0)
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        if (inst < 0) choices.add("Install" to { installFromStore(a) })
+        else {
+            if (inst < a.versionCode) choices.add("Update" to { installFromStore(a) })
+            choices.add("Open" to { (packageManager.getLeanbackLaunchIntentForPackage(a.pkg) ?: packageManager.getLaunchIntentForPackage(a.pkg))?.let { safeStart(it) } ?: notice("It has no screen to open", a.name) })
+            choices.add("Remove" to { safeStart(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + a.pkg))) })
+        }
+        choices.add("Back" to {})
+        dialog.show(a.name, body, *choices.toTypedArray())
+    }
+    private fun installFromStore(a: com.antonretro.launcher.data.StoreApp) {
+        notice("Downloading ${a.name}", "%.1f MB".format(a.size / 1048576.0))
+        bg.execute {
+            val f = com.antonretro.launcher.data.StoreRepo.download(a) { pc -> if (pc % 20 == 0) ui.post { store2?.setStatus("Downloading ${a.name}: $pc%") } }
+            ui.post {
+                if (f == null) { notice("Download failed", "${a.name} didn't arrive whole, so it wasn't installed"); store2?.setStatus("") ; return@post }
+                store2?.setStatus("${a.name} checked against F-Droid's signed list. Installing…")
+                val i = Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(com.antonretro.launcher.kit.FileShare.uriFor(this, f), "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                if (!safeStart(i)) notice("Android's installer didn't open", "")
+            }
+        }
+    }
+
     private var web: WebView2? = null
     fun openWeb(url: String?) {
         val w = web ?: WebView2(this).also { v ->
@@ -1929,6 +1984,7 @@ class HomeActivity : Activity() {
             chipFocus >= 0 -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Stop", com.antonretro.launcher.kit.HintBar.Btn.LR to "Move")
             inTabBar -> listOf(com.antonretro.launcher.kit.HintBar.Btn.LR to "Tabs", com.antonretro.launcher.kit.HintBar.Btn.UD to "Into ${current}", com.antonretro.launcher.kit.HintBar.Btn.OK to "Open")
             web?.showing == true -> emptyList()
+            store2?.showing == true -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.MENU to "Check for new apps", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Close")
             files?.showing == true -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Open", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Delete", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Up a folder")
             current == "Settings" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Change", com.antonretro.launcher.kit.HintBar.Btn.UD to "Move", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Back")
             current == "TV" -> listOf(com.antonretro.launcher.kit.HintBar.Btn.OK to "Watch", com.antonretro.launcher.kit.HintBar.Btn.HOLD_OK to "Options", com.antonretro.launcher.kit.HintBar.Btn.BACK to "Tabs")
@@ -1975,6 +2031,7 @@ class HomeActivity : Activity() {
         if (e.keyCode == KeyEvent.KEYCODE_BUTTON_MODE) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) goHome(); return true }
         if (::dialog.isInitialized && dialog.showing) return dialog.onKey(e)
         welcome?.let { if (it.showing) return it.onKey(e) }
+        store2?.let { if (it.showing && !(::keyboard.isInitialized && keyboard.showing)) return it.onKey(e) }
         web?.let { if (it.showing && !(::keyboard.isInitialized && keyboard.showing)) return it.onKey(e) }
         files?.let { if (it.showing && !(::player.isInitialized && player.showing) && !(::nowPlayingView.isInitialized && nowPlayingView.showing)) return it.onKey(e) }
         if (waitingForPad > SystemClock.uptimeMillis() && e.keyCode == KeyEvent.KEYCODE_BUTTON_A && com.antonretro.launcher.kit.Pads.isPad(e.device)) {
@@ -2290,6 +2347,7 @@ class HomeActivity : Activity() {
     override fun onResume() {
         super.onResume()
         welcome?.let { w -> ui.postDelayed({ w.recheck() }, 600) }
+        store2?.let { s -> if (s.showing) ui.postDelayed({ s.rebuild() }, 500) }   // back from the installer: show Installed
         resumed = true; lastInput = SystemClock.uptimeMillis()
         RetroKeys.launcherShowing = true; RetroKeys.instance?.launcherChanged()
         game?.hostPause(false)
