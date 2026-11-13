@@ -921,7 +921,7 @@ class HomeActivity : Activity() {
         val entries = roms.map { r ->
             val played = recent.indexOf(r.key)
             com.antonretro.launcher.ui.GamePage.Entry(r.key, r.title, r.system.shelf, r.system.colour, r.system.boxAspect,
-                when { played == 0 -> "Played last"; played > 0 -> "Played recently"; else -> "" }, autoSave(r) != null)
+                when { played == 0 -> "Played last"; played > 0 -> "Played recently"; else -> "" }, autoSave(r) != null, badge = r.system.badge)
         }
         dialog.bringToFront()
         coverHome(true)

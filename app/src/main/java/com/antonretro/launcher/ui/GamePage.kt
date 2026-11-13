@@ -30,7 +30,8 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
 
     /** What the page shows for one game. [cover] may arrive later (downloaded box art). */
     class Entry(val key: String, val title: String, val system: String, val colour: Int, val aspect: Float,
-                val note: String, val hasSave: Boolean, var cover: Bitmap? = null)
+                val note: String, val hasSave: Boolean, var cover: Bitmap? = null,
+                /** the short console name printed on the spine ("NES", "GAME BOY") */ val badge: String = system)
 
     var onPlay: ((Entry, fresh: Boolean) -> Unit)? = null
     var onOptions: ((Entry) -> Unit)? = null
@@ -257,16 +258,48 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
             b
         }
 
-        /** The spine: the system colour fading to dark, the title written along it. */
+        /** The colours a printed box takes from its cover: the left edge strip (what the spine shows) and the
+         *  overall colour (the top). Worked out once per cover from a tiny copy. */
+        private val tones = HashMap<String, IntArray>()
+        private fun tonesOf(e: Entry): IntArray = tones.getOrPut(e.key + (if (e.cover != null) "+" else "")) {
+            val src = e.cover ?: standIn(e)
+            val small = Bitmap.createScaledBitmap(src, 24, 32, true)
+            fun avg(x0: Int, x1: Int): Int {
+                var r = 0L; var g = 0L; var b = 0L; var n = 0
+                for (y in 0 until small.height) for (x in x0 until x1) { val c = small.getPixel(x, y); r += Color.red(c); g += Color.green(c); b += Color.blue(c); n++ }
+                return Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
+            }
+            val edge = avg(0, 2); val main = avg(0, small.width)
+            if (small !== src) small.recycle()
+            intArrayOf(edge, main)
+        }
+        private fun contrast(c: Int): Int { val l = .299 * Color.red(c) + .587 * Color.green(c) + .114 * Color.blue(c); return if (l > 150) 0xFF111111.toInt() else Color.WHITE }
+
+        /** The spine as a printed box has it: one solid colour from the cover's edge, the console's name at the top and
+         *  the title along it in a crisp contrasting colour, thin light edges. */
         private fun spine(e: Entry, wPx: Int, hPx: Int): Bitmap = spines.getOrPut(e.key) {
             val w = 60; val h = (60f * hPx / wPx.coerceAtLeast(1)).toInt().coerceIn(120, 1200)
             val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); val c = Canvas(b)
+            val bg = tonesOf(e)[0]; val ink = contrast(bg)
             val p = Paint(Paint.ANTI_ALIAS_FLAG)
-            p.shader = LinearGradient(0f, 0f, w.toFloat(), 0f, e.colour, darker(e.colour), Shader.TileMode.CLAMP); c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
-            p.shader = null; p.color = Color.WHITE; p.textSize = 26f; p.typeface = Typeface.DEFAULT_BOLD; p.textAlign = Paint.Align.CENTER
+            c.drawColor(bg)
+            // thin edges: a light line where the spine meets the front and the back
+            p.color = Color.argb(70, 255, 255, 255); c.drawRect(0f, 0f, 2f, h.toFloat(), p); c.drawRect(w - 2f, 0f, w.toFloat(), h.toFloat(), p)
+            p.color = ink; p.typeface = Typeface.DEFAULT_BOLD; p.textAlign = Paint.Align.CENTER
             c.save(); c.rotate(90f, w / 2f, h / 2f)
-            val t = TextUtilsEllipsize(e.title, p, h - 30f)
-            c.drawText(t, w / 2f, h / 2f + 9f, p); c.restore()
+            // after the turn, the spine's length runs left to right through the middle
+            val left = w / 2f - h / 2f
+            p.textSize = 15f; p.alpha = 200
+            val badge = e.badge.uppercase()
+            val badgeW = p.measureText(badge) + 22f
+            c.drawText(badge, left + 14f + badgeW / 2f - 11f, h / 2f + 6f, p)
+            p.alpha = 255; p.strokeWidth = 1.5f
+            c.drawLine(left + 14f + badgeW, h / 2f - 12f, left + 14f + badgeW, h / 2f + 12f, p)
+            p.textSize = 25f
+            val room = h - badgeW - 44f
+            val t = TextUtilsEllipsize(e.title, p, room)
+            c.drawText(t, left + 14f + badgeW + 16f + room / 2f, h / 2f + 9f, p)
+            c.restore()
             b
         }
         private fun TextUtilsEllipsize(s: String, p: Paint, max: Float): String { if (p.measureText(s) <= max) return s; var t = s; while (t.length > 1 && p.measureText("$t…") > max) t = t.dropLast(1); return "$t…" }
@@ -339,8 +372,8 @@ class GamePage(ctx: Context) : FrameLayout(ctx) {
                 val sp = spine(e, D.toInt(), H.toInt())
                 if (facing(-1f, 0f, 0f)) quad(sp, 0, -hw, -hh, -hd, -hw, -hh, hd, -hw, hh, hd, -hw, hh, -hd, .28f)   // left spine
                 if (facing(1f, 0f, 0f)) quad(sp, 0, hw, -hh, hd, hw, -hh, -hd, hw, hh, -hd, hw, hh, hd, .28f)        // right spine
-                if (facing(0f, -1f, 0f)) quad(null, lighter(e.colour), -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, -hw, -hh, hd, 0f)  // top
-                if (facing(0f, 1f, 0f)) quad(null, 0xFF0E0E10.toInt(), -hw, hh, hd, hw, hh, hd, hw, hh, -hd, -hw, hh, -hd, 0f)      // bottom
+                if (facing(0f, -1f, 0f)) quad(null, tonesOf(e)[1], -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, -hw, -hh, hd, 0f)  // top
+                if (facing(0f, 1f, 0f)) quad(null, tonesOf(e)[1], -hw, hh, hd, hw, hh, hd, hw, hh, -hd, -hw, hh, -hd, 0f)      // bottom
             }
             if (facing(0f, 0f, 1f)) {
                 quad(cover, 0, -hw, -hh, hd, hw, -hh, hd, hw, hh, hd, -hw, hh, hd, .5f * a)
