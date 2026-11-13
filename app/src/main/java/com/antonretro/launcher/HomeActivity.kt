@@ -129,6 +129,7 @@ class HomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val t0 = SystemClock.uptimeMillis()
         super.onCreate(null)   // never restore old view state: Home always starts clean on the Home tab
+        com.antonretro.launcher.kit.Themes.apply(com.antonretro.launcher.kit.Themes.current(this))   // before any view is made: every colour comes from the theme
         Perf.file = getExternalFilesDir(null)?.let { java.io.File(it, "perf.log") }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { th, e -> Perf.note("CRASH " + e + " " + android.util.Log.getStackTraceString(e).replace("\n", " ")); Thread.sleep(150); previous?.uncaughtException(th, e) }
@@ -255,6 +256,8 @@ class HomeActivity : Activity() {
         for ((n, sc) in screens) (sc as? RowsScreen)?.onLong = { item, _ -> cardOptions(n, item) }
         PhoneRemote.handler = phoneBox; if (PhoneRemote.enabled(this)) PhoneRemote.start(this)
         com.antonretro.launcher.kit.Pads.init(this); watchPads()
+        // just switched theme: come back to the Themes page, not Home
+        getSharedPreferences("theme", MODE_PRIVATE).let { tp -> if (tp.getBoolean("reopen", false)) { tp.edit().putBoolean("reopen", false).apply(); ui.post { showTab("Settings", false); settingsScreen.open("Themes") } } }
         com.antonretro.launcher.kit.UiSound.init(this)
         com.antonretro.launcher.kit.UiSound.quiet = { (::player.isInitialized && player.showing) || (::music.isInitialized && music.playing) || game != null || !resumed }
         // the Guide button saves the game's place in RetroArch (it used to quit, and leaving then lost the place)
@@ -321,6 +324,7 @@ class HomeActivity : Activity() {
             SRow("Keep the box on when the TV turns off", { "When on, the TV remote can't control the box over HDMI" }, toggle = { hdmiControl() == 0 }, onClick = { setHdmiControl(if (hdmiControl() == 0) 1 else 0) }),
             SRow("Show the start-up animation", onClick = { playIntro() }),
         ) },
+        SPage("theme", "Themes") { themeRows() },
         SPage("sound", "Sound") { listOf(
             SRow("Start-up sound", { "The chime when the box starts" }, toggle = { store.startupSound }, onClick = { store.startupSound = !store.startupSound; store.save() }),
             SRow("Interface sounds", { "Soft sounds when you move, choose and go back" }, toggle = { com.antonretro.launcher.kit.UiSound.on }, onClick = { com.antonretro.launcher.kit.UiSound.on = !com.antonretro.launcher.kit.UiSound.on; com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.SELECT) }),
@@ -1755,6 +1759,21 @@ class HomeActivity : Activity() {
             }
             override fun onInputDeviceChanged(id: Int) {}
         }, ui)
+    }
+
+    // ---------------------------------------------------------------- themes (kit/Themes.kt)
+    private fun themeRows(): List<SRow> {
+        val now = com.antonretro.launcher.kit.Themes.current(this)
+        val out = ArrayList<SRow>()
+        for (t in com.antonretro.launcher.kit.Themes.all()) out.add(SRow(t.name, { t.about }, value = { if (t.id == now.id) "In use" else "" }, onClick = {
+            if (t.id != now.id) {
+                com.antonretro.launcher.kit.Themes.choose(this, t)
+                // a quick fade, then the whole launcher redraws itself in the new colours (back on this page)
+                root.animate().alpha(0f).setDuration(Kit.t(160)).withEndAction { getSharedPreferences("theme", MODE_PRIVATE).edit().putBoolean("reopen", true).apply(); recreate() }.start()
+            }
+        }))
+        out.add(SRow("Add your own theme", { "Put a theme file (.json) in RetroLauncher/Themes. The format is in docs/THEME-FORMAT.md on GitHub" }))
+        return out
     }
 
     // ---------------------------------------------------------------- the button-hint bar (kit/HintBar.kt)

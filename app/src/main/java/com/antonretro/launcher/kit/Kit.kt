@@ -14,17 +14,19 @@ import android.widget.TextView
  * the 1920x1080 mockup numbers divided by 1.5.
  */
 object Kit {
-    // colours
-    const val TEXT = Color.WHITE
-    val TEXT_DIM = Color.argb(158, 255, 255, 255)
-    val GLASS_TINT = Color.argb(118, 28, 30, 38)
-    val GLASS_STRONG = Color.argb(170, 24, 26, 34)
-    val GLASS_EDGE = Color.argb(36, 255, 255, 255)
+    // colours: set by the active theme (kit/Themes.kt); these are the Glass theme's
+    @JvmStatic var TEXT = Color.WHITE
+    @JvmStatic var TEXT_DIM = Color.argb(158, 255, 255, 255)
+    @JvmStatic var GLASS_TINT = Color.argb(118, 28, 30, 38)
+    @JvmStatic var GLASS_STRONG = Color.argb(170, 24, 26, 34)
+    @JvmStatic var GLASS_EDGE = Color.argb(36, 255, 255, 255)
     // 99.6% white: a fully solid fill makes Android 7 draw rounded backgrounds with square corners
-    val FOCUS_FILL = Color.argb(254, 255, 255, 255)
-    val FOCUS_TEXT = Color.rgb(17, 17, 17)
-    val ACCENT = Color.rgb(79, 140, 255)
-    val DIM_SCROLLED = Color.argb(140, 6, 8, 14)
+    @JvmStatic var FOCUS_FILL = Color.argb(254, 255, 255, 255)
+    @JvmStatic var FOCUS_TEXT = Color.rgb(17, 17, 17)
+    @JvmStatic var ACCENT = Color.rgb(79, 140, 255)
+    @JvmStatic var DIM_SCROLLED = Color.argb(140, 6, 8, 14)
+    /** bigger type for the high-contrast theme */
+    @JvmStatic var textScale = 1f
 
     // layout (dp)
     const val SAFE_X = 53f          // 80 px at 1080p
@@ -102,7 +104,7 @@ object Kit {
     fun dpi(ctx: Context, v: Float) = dp(ctx, v).toInt()
 
     fun text(ctx: Context, sizeSp: Float, bold: Boolean = false, color: Int = TEXT): TextView = TextView(ctx).apply {
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp * textScale)
         typeface = font(ctx, bold)
         setTextColor(color)
         includeFontPadding = false
