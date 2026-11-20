@@ -349,7 +349,7 @@ class HomeActivity : Activity() {
         ) + listOf("TV", "Radio", "YouTube", "Media", "Games").map { t ->
             SRow("Show the $t tab", toggle = { t !in store.hiddenTabs }, onClick = { if (!store.hiddenTabs.remove(t)) store.hiddenTabs.add(t); store.save(); applyHiddenTabs() })
         } + listOf(
-            SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your dock, hidden apps and tabs go back to how they started. Your channels and games stay.",
+            SRow("Reset the home screen", { "Put the dock and tabs back as they started" }, onClick = { dialog.show("Reset the home screen?", "Your pins, hidden apps and tabs go back to how they started. Your channels and games stay.",
                 "Reset" to { store.dock.clear(); store.hidden.clear(); store.hiddenTabs.clear(); store.save(); applyHiddenTabs(); loadApps(); notice("Home screen reset", "") }, "Cancel" to {}) }),
         ) },
         SPage("tv", "TV & Radio") { tvRows() },
@@ -1494,9 +1494,14 @@ class HomeActivity : Activity() {
     /** Speed experiments only: words in RetroLauncher/.perf-exp switch parts of Home off for measuring. */
     private val perfExp: String by lazy { try { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.perf-exp").readText() } catch (e: Exception) { "" } }
 
+    /** Home's top row: your pins in your order, then the apps you used last, five or more in all. */
+    private fun homeTop(): List<Item> {
+        val pins = store.dock.mapNotNull { itemFor(it) }
+        return pins + homeDock.filter { a -> pins.none { it.key == a.key } }.take(maxOf(0, 5 - pins.size))
+    }
     private fun rebuildHome() {
         classicHome?.rebuild(); simpleHome?.rebuild()
-        val dock = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }
+        val dock = homeTop()
         val playing = store.recentGames.mapNotNull { itemFor(it) }.take(6)
         cinemaHome.setRows(if ("nokeep" in perfExp) listOf(Row(null, dock, glass = "noglass" !in perfExp)) else listOf(
             Row(null, dock, glass = "noglass" !in perfExp),
@@ -1514,10 +1519,10 @@ class HomeActivity : Activity() {
             val i = store.dock.indexOf(item.key)
             if (i > 0) choices.add("Move left" to { store.dock.removeAt(i); store.dock.add(i - 1, item.key); store.save(); rebuildHome(); cinemaHome.jumpTo(0, i - 1) })
             if (i < store.dock.size - 1) choices.add("Move right" to { store.dock.removeAt(i); store.dock.add(i + 1, item.key); store.save(); rebuildHome(); cinemaHome.jumpTo(0, i + 1) })
-            choices.add("Remove from Home" to { store.dock.remove(item.key); store.save(); rebuildHome(); notice("Removed from Home", item.title) })
+            choices.add("Unpin" to { store.dock.remove(item.key); store.save(); rebuildHome(); notice("Unpinned", item.title) })
         } else if (pinnable) {
-            if (store.dock.contains(item.key)) choices.add("Already on Home" to {})
-            else choices.add("Pin to Home" to { store.dock.add(item.key); store.save(); rebuildHome(); notice("Pinned to Home", item.title) })
+            if (store.dock.contains(item.key)) choices.add("Already pinned to Home" to {})
+            else choices.add("Pin to Home" to { store.dock.add(item.key); store.save(); rebuildHome(); notice("Pinned to Home", "It stays at the front") })
         }
         if (item is Item.Ch && ChannelRepo.feedsOf(item.ch).size > 1) {
             val feeds = ChannelRepo.feedsOf(item.ch).sortedByDescending { it.height }
@@ -1785,16 +1790,15 @@ class HomeActivity : Activity() {
     private fun rebuildRows(all: List<Item.App>) {
         val byPkg = all.associateBy { it.component.packageName }
         val visible = all.filter { it.component.packageName !in store.hidden && it.component.packageName !in AppRepo.HIDDEN_DEFAULTS }
-        if (store.dock.isEmpty()) {
-            store.dock = AppRepo.DOCK_DEFAULTS.mapNotNull { byPkg[it]?.key }.distinct().take(5).toMutableList()
-            if (store.dock.size < 5) store.dock.addAll(visible.map { it.key }.filter { it !in store.dock }.take(5 - store.dock.size))
-            store.save()
-        }
+        // the top row used to be a fixed list chosen for you; now it's your pins, then what you used last.
+        // Once, the old automatic list is cleared so nothing stays there that you didn't pick.
+        val hp = getSharedPreferences("home", MODE_PRIVATE)
+        if (!hp.getBoolean("pinsV2", false)) { store.dock.clear(); store.save(); hp.edit().putBoolean("pinsV2", true).apply() }
         val byKey = all.associateBy { it.key }
-        val dock = store.dock.mapNotNull { byKey[it] }
-        val recent = store.recent.mapNotNull { byKey[it] }.filter { it !in dock }.take(8)
-        if (store.dock.isEmpty()) store.dock = dock.map { it.key }.toMutableList()
-        homeDock = dock; homeRecent = recent; rebuildHome()
+        val recent = store.recent.mapNotNull { byKey[it] }.filter { it in visible }
+        // what fills the row after your pins: recent apps first, then a few good defaults on a new box
+        homeDock = (recent + AppRepo.DOCK_DEFAULTS.mapNotNull { byPkg[it] } + visible).distinctBy { it.key }.take(12)
+        homeRecent = recent.take(10); rebuildHome()
         val ordered = visible.sortedWith(compareByDescending<Item.App> { store.launches[it.key] ?: 0 }.thenBy { it.title.lowercase() })
         (screens["Apps"] as RowsScreen).setRows(listOf(Row("Built in", builtInApps(), alwaysLabel = true)) + ordered.chunked(5).mapIndexed { i, c -> Row(if (i == 0) "All apps" else null, c, alwaysLabel = true) })
         androidGames = visible.filter { it.isGame }
@@ -2188,7 +2192,7 @@ class HomeActivity : Activity() {
 
     /** What a tile opens: a tab, or a pinned app / channel / game. */
     private fun openFromTile(item: Item) { if (item is Item.Action) item.run(this) else openKey(item.key) }
-    private fun favouriteTiles(): List<Tile> = store.dock.mapNotNull { itemFor(it) }.ifEmpty { homeDock }.map { item ->
+    private fun favouriteTiles(): List<Tile> = homeTop().map { item ->
         val icon = (item as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
         val col = (item.key.hashCode() and 0x7fffffff) % 6
         val pair = listOf(0xFF2E5B9A to 0xFF16294A, 0xFF8A2E48 to 0xFF3E1422, 0xFF2E7A5A to 0xFF143A2A, 0xFF7A5A2E to 0xFF3A2A14, 0xFF5A2E8A to 0xFF2A1442, 0xFF2E6E7A to 0xFF14343A)[col]
@@ -2468,7 +2472,7 @@ class HomeActivity : Activity() {
                 val i = Intent(Intent.ACTION_MAIN).setComponent(item.component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 // the card zooms into the app: no dead black pause
                 val opts = ActivityOptions.makeScaleUpAnimation(cell.card, 0, 0, cell.card.width, cell.card.height)
-                if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); if (item.isGame) store.noteGame(item.key); returning = true }
+                if (safeStart(i, opts.toBundle())) { store.noteLaunch(item.key); if (item.isGame) store.noteGame(item.key); returning = true; ui.postDelayed({ loadApps() }, 1500) }
             }
             is Item.Action -> item.run(this)
             is Item.Track -> {
