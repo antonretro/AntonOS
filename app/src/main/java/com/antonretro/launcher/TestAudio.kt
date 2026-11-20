@@ -17,7 +17,6 @@ import java.io.File
 class TestAudio : BroadcastReceiver() {
     // music = games, TV, radio, music, the start-up chime; system = navigation sounds. Not notification/ring:
     // changing those counts as Do Not Disturb and Android refuses (that crashed the launcher once).
-    private val streams = intArrayOf(AudioManager.STREAM_MUSIC, AudioManager.STREAM_SYSTEM)
     private inline fun safe(f: () -> Unit) { try { f() } catch (_: Exception) {} }
 
     override fun onReceive(c: Context, i: Intent) {
@@ -30,14 +29,30 @@ class TestAudio : BroadcastReceiver() {
             for (s in streams) safe { am.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, 0) }
             flag.createNewFile()
             resultData = "muted (was ${saved.readText()})"
-        } else {
+        } else resultData = restore(c)
+    }
+
+    companion object {
+        private val streams = intArrayOf(AudioManager.STREAM_MUSIC, AudioManager.STREAM_SYSTEM)
+        private val dir get() = File(Environment.getExternalStorageDirectory(), "RetroLauncher")
+        /** Puts the remembered volumes back and leaves test mode. */
+        fun restore(c: Context): String {
+            val am = c.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val saved = File(dir, ".test-volume"); val flag = File(dir, ".test-mute")
             if (saved.exists()) {
-                for (p in saved.readText().split(',')) safe { val (s, v) = p.split('='); am.adjustStreamVolume(s.toInt(), AudioManager.ADJUST_UNMUTE, 0); am.setStreamVolume(s.toInt(), v.toInt(), 0) }
+                for (p in saved.readText().split(',')) try { val (s, v) = p.split('='); am.adjustStreamVolume(s.toInt(), AudioManager.ADJUST_UNMUTE, 0); am.setStreamVolume(s.toInt(), v.toInt(), 0) } catch (_: Exception) {}
                 saved.delete()
             }
-            for (s in streams) safe { am.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, 0) }
+            for (s in streams) try { am.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
             flag.delete()
-            resultData = "sound back: music ${am.getStreamVolume(AudioManager.STREAM_MUSIC)}"
+            try { RetroConfig.file.takeIf { it.exists() }?.let { f -> val l = f.readLines(); if (l.any { it.startsWith("audio_mute_enable") }) f.writeText(l.filterNot { it.startsWith("audio_mute_enable") }.joinToString("\n") + "\n") } } catch (_: Exception) {}
+            return "sound back: music ${am.getStreamVolume(AudioManager.STREAM_MUSIC)}"
+        }
+        /** A test mute left behind (a script that didn't finish) never keeps the box silent: after 30 minutes the
+         *  sound comes back by itself. Test scripts re-mute at the start of every run, which renews the 30 minutes. */
+        fun expireIfStale(c: Context) {
+            val flag = File(dir, ".test-mute")
+            if (flag.exists() && System.currentTimeMillis() - flag.lastModified() > 30 * 60_000L) { val r = restore(c); Perf.note("test mute expired: $r") }
         }
     }
 }

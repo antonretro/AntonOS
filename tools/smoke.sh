@@ -17,6 +17,7 @@ focus() { a dumpsys window | grep mCurrentFocus | head -1; }
 crashed() { a "logcat -d -b crash 2>/dev/null; logcat -d" | grep -q "FATAL EXCEPTION" && echo yes || echo no; }
 
 # sound off for the whole run (games, chime, TV); it stays off until tools/unmute.sh at the end of the session
+trap 'bash "$(dirname "$0")/unmute.sh" "$DEV" >/dev/null 2>&1' EXIT   # sound always comes back, even if this stops early
 bash "$(dirname "$0")/mute.sh" "$DEV" || { echo "FAIL  could not mute the box: not testing with sound on"; exit 9; }
 a "logcat -c"
 bound() { a "dumpsys accessibility" | grep -q "services:{Service[label=(AntonOS|com.antonretro.launcher.RetroKeys)" && echo ok || echo "not running: the Xbox button can't get anyone out of a game"; }

@@ -25,6 +25,7 @@ print(sum(ImageChops.difference(a,b).getdata()))")
   if [ "${d:-0}" -gt 3000 ]; then echo "PASS  visualizer live after $1 (change $d)"; else echo "FAIL  visualizer frozen or blank after $1 (change $d)"; fails=$((fails+1)); fi
   key KEYCODE_BACK 1; key KEYCODE_HOME 2
 }
+trap 'bash "$(dirname "$0")/unmute.sh" "$DEV" >/dev/null 2>&1' EXIT   # sound always comes back, even if this stops early
 bash "$(dirname "$0")/mute.sh" "$DEV" >/dev/null
 for m in 0 1 2; do
   open "test:backmode:$m"; sleep 1

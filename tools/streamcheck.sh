@@ -12,6 +12,7 @@ LOG=/sdcard/Android/data/com.antonretro.launcher/files/perf.log
 open() { a "am start -n com.antonretro.launcher/.HomeActivity -a android.intent.action.MAIN --es rl_open '$1'" >/dev/null 2>&1; }
 sb() { a "grep 'stream bytes' $LOG | tail -n 1" | grep -oE "[0-9]+$"; }
 fails=0
+trap 'bash "$(dirname "$0")/unmute.sh" "$DEV" >/dev/null 2>&1' EXIT   # sound always comes back, even if this stops early
 bash "$(dirname "$0")/mute.sh" "$DEV" >/dev/null
 for m in 0 1 2; do
   for after in song video; do

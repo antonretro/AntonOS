@@ -38,6 +38,7 @@ a "cmd package compile -m speed-profile -f $PKG >/dev/null 2>&1; echo compiled" 
 a "pm grant $PKG android.permission.RECORD_AUDIO" 2>/dev/null
 
 # 2. installing is the start of a test session: sound off before anything can play (the chime plays on the next start)
+trap 'bash "$(dirname "$0")/unmute.sh" "$DEV" >/dev/null 2>&1' EXIT   # sound always comes back, even if this stops early
 bash "$HERE/mute.sh" "$DEV" | sed "s/^/  /"
 
 # 3. key helper: off, then on, so Android always makes a fresh connection (keep any other services that were on)

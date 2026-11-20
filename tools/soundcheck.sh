@@ -17,6 +17,7 @@ musicOn() { a "grep 'music playing=' $LOG | tail -n 1" | grep -q "playing=true" 
 open() { a "am start -n $ACT -a android.intent.action.MAIN --es rl_open '$1'" >/dev/null; }
 home() { a "input keyevent KEYCODE_HOME"; sleep 2; }
 
+trap 'bash "$(dirname "$0")/unmute.sh" "$DEV" >/dev/null 2>&1' EXIT   # sound always comes back, even if this stops early
 bash "$(dirname "$0")/mute.sh" "$DEV" >/dev/null || { echo "FAIL  could not mute"; exit 9; }
 
 song() { home; open test:song; sleep 4; a "input keyevent KEYCODE_BACK"; sleep 1.5; }
