@@ -180,6 +180,9 @@ class HomeActivity : Activity() {
         intent?.getStringExtra("rl_game")?.let { act -> val key = intent.getStringExtra("rl_rom"); ui.postDelayed({ safely("game action at start") { gameAction(act, key) } }, 500) }
         ui.postDelayed({ maybeRefreshGuide(12 * HOUR) }, 60_000)
         ui.postDelayed(guideTimer, 30_000)
+        ui.postDelayed(channelCheck, 3 * 60_000L)
+        ui.post(muteExpiry)
+        ui.postDelayed(workTick, 2000)   // first look a few minutes after start, then every 6 hours
         safely("keys helper") { reattachKeysHelper() }
         ui.postDelayed({ safely("player") { player.prepare() } }, 1500)   // the first channel doesn't pay for creating the player
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
@@ -271,6 +274,7 @@ class HomeActivity : Activity() {
             onStar = { c -> star(c) }
             numberOf = { c -> this@HomeActivity.numberOf(c) }
             onBroken = { c -> markBroken(c.url, true) }
+            altFeed = { c -> ChannelRepo.feedsOf(c).filter { it.url != c.url && !isBroken(it.url) }.maxByOrNull { it.height } }
             backMode = getSharedPreferences("tv", MODE_PRIVATE).getInt("backMode", 0)
             onMini = { c -> if (c != null) { bringToFront(); hintBar.bringToFront(); dialog.bringToFront(); notice("Still watching ${c.name}", "Menu: full screen  ·  Back on the tabs: stop") } ; ui.post { updateHints() } }
             onWorks = { c -> markBroken(c.url, false) }
@@ -357,7 +361,7 @@ class HomeActivity : Activity() {
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
             SRow("Show the welcome again", { "The short first-time setup" }, onClick = { showWelcome() }),
-            SRow("Music", { "Songs by AntonRetro, rendered with MuseScore General (MIT, from FluidR3 by Frank Wen) and GeneralUser GS by S. Christian Collins, plus the original MIDI" }),
+            SRow("Music", { "Songs by AntonRetro, rendered with MuseScore General (MIT, from FluidR3 by Frank Wen, adapted by S. Christian Collins), plus the original MIDI" }),
             SRow("Music visualizer", { "Retro Visualizer by AntonRetro (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
         ) },
@@ -535,6 +539,14 @@ class HomeActivity : Activity() {
         val out = ArrayList<SRow>()
         val qualities = listOf("Automatic", "Save data (720p)", "Best (1080p)")
         out.add(SRow("Channel list", { "${ChannelRepo.tv.size} TV channels, ${ChannelRepo.radio.size} radio stations" }, value = { "RetroLauncher/channels.m3u" }))
+        val fmtDay = java.text.SimpleDateFormat("EEE d MMM, " + if (store.clock24) "H:mm" else "h:mm a", java.util.Locale.getDefault())
+        out.add(SRow("Update channels now", { (if (com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this) > 0) "Last updated " + fmtDay.format(Date(com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this))) else "Never updated on this box") + ". Updates itself once a day from iptv-org (" + com.antonretro.launcher.data.ChannelUpdate.countries().joinToString(", ") + ")" },
+            onClick = { updateChannels(force = true, quiet = false) }))
+        if (com.antonretro.launcher.data.ChannelUpdate.canUndo()) out.add(SRow("Undo the last update", { "Back to the channel list before it (for a day after an update)" },
+            onClick = { if (com.antonretro.launcher.data.ChannelUpdate.undo()) { loadChannels(); notice("Previous channel list back", "") }; settingsScreen.refresh() }))
+        val badN = tvPrefs.getInt("badCount", -1)
+        out.add(SRow("Check which channels work", { if (checkingChannels) "Checking… (stops while you watch)" else if (badN < 0) "Not checked yet. Runs by itself once a day" else "$badN streams didn't work last time and are hidden (Working only). Checks again every day" },
+            onClick = { checkChannels(quiet = false) }))
         out.add(SRow("Reload the channel list", { "After putting a new list on the box" }, onClick = { loadChannels(); notice("Channel list reloaded", "") }))
         val backModes = listOf("Stop", "Keep the sound", "Small picture in the corner")
         out.add(SRow("Back while watching TV", { when (player.backMode) { 1 -> "The channel keeps playing as sound, its card by the clock"; 2 -> "Keeps playing in a corner while you browse (browsing stutters on this box)"; else -> "Stops the channel" } },
@@ -576,11 +588,24 @@ class HomeActivity : Activity() {
             SRow("Game volume", value = { when (RetroConfig.get("audio_volume")?.toFloatOrNull() ?: 0f) { in -100f..-3f -> "Quieter"; in 3f..100f -> "Louder"; else -> "Normal" } },
                 onClick = { val v = RetroConfig.get("audio_volume")?.toFloatOrNull() ?: 0f; RetroConfig.set("audio_volume", if (v < -3f) "0.000000" else if (v < 3f) "6.000000" else "-6.000000") }),
         ) + controllerGameRows() + GameRepo.SYSTEMS.distinctBy { it.shelf }.map { sys ->
-            SRow(sys.shelf, { "Engine: " + sys.core.substringBefore("_libretro").replace('_', ' ') }, value = { "${roms.count { it.system == sys }} games" })
+            val E = com.antonretro.launcher.data.Engines
+            SRow(sys.shelf, {
+                val n = roms.count { it.system == sys }
+                "${n} game${if (n == 1) "" else "s"} · engine: ${E.name(sys.core)}" + when {
+                    E.working == sys.core -> " · downloading…"
+                    E.ready(this, sys.core) -> ""
+                    else -> " · OK to download it"
+                } + if (E.tooSlow(this, sys)) ". Not recommended on this box: probably too slow for it" else "" },
+                value = { if (E.ready(this, sys.core)) "Ready" else if (E.tooSlow(this, sys)) "Not recommended" else "Not on the box" },
+                onClick = { if (E.working == null) getEngine(sys) })
         } + listOf(
             SRow("PlayStation BIOS", { "PlayStation games need a BIOS file in RetroLauncher/BIOS" }, value = {
                 val f = listOf("scph5501.bin", "scph1001.bin", "scph7001.bin", "scph5500.bin", "scph5502.bin").firstOrNull { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/BIOS/$it").exists() }
                 f?.let { "Found ($it)" } ?: "Not found" }),
+            SRow("System intro", { "The system's name and a short sound before a game starts" }, toggle = { systemIntroOn },
+                onClick = { gamePrefs.edit().putBoolean("systemIntro", !systemIntroOn).apply() }),
+            SRow("Get box art", { if (com.antonretro.launcher.data.Covers.working) "Looking…" else "Look up covers for games that don't have one" },
+                onClick = { getCovers(roms.filter { !com.antonretro.launcher.data.Covers.matched(it) }) }),
             SRow("Games folder", value = { "RetroLauncher/Games" }),
             SRow("Look for new games", onClick = { rebuildGames(); ui.postDelayed({ notice("Games updated", "${roms.size} games in your library") }, 1200) }),
         )
@@ -710,15 +735,16 @@ class HomeActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- music (Media tab)
-    /** which version of AntonRetro's songs plays by default (0 MuseScore, 1 GeneralUser, 2 MIDI), remembered */
+    /** which version of AntonRetro's songs plays by default (0 MuseScore, 1 MIDI), remembered. The GeneralUser
+     *  version was removed: a saved choice of it (old "version" 1) becomes MuseScore, MIDI (old 2) stays MIDI. */
     private var songVersion: Int
-        get() = getSharedPreferences("music", MODE_PRIVATE).getInt("version", 0)
-        set(v) { getSharedPreferences("music", MODE_PRIVATE).edit().putInt("version", v).apply() }
+        get() = getSharedPreferences("music", MODE_PRIVATE).let { p -> if (p.contains("version2")) p.getInt("version2", 0) else if (p.getInt("version", 0) == 2) 1 else 0 }
+        set(v) { getSharedPreferences("music", MODE_PRIVATE).edit().putInt("version2", v).apply() }
     /** Now Playing's Version control: the same song, same place, in another version; remembered as the choice */
     private fun switchSongVersion(d: Int) {
         val cur = music.current ?: return
         val from = MusicRepo.versionOf(cur.asset); if (from < 0) return
-        val to = ((from + d) % 3 + 3) % 3
+        val n = MusicRepo.VERSIONS.size; val to = ((from + d) % n + n) % n
         val list = MusicRepo.builtIn(to)
         val i = list.indexOfFirst { it.title == cur.title }.coerceAtLeast(0)
         val at = music.position
@@ -800,6 +826,7 @@ class HomeActivity : Activity() {
             val found = try { GameRepo.scan() } catch (e: Exception) { emptyList() }
             ui.post {
                 roms = found
+                askAboutCovers(found)
                 val byKey: Map<String, Item> = found.associate { it.key to Item.Game(it) } + androidGames.associateBy { it.key }
                 val rows = ArrayList<Row>()
                 rows.add(Row("Built-in games", builtInGames, alwaysLabel = true))
@@ -951,6 +978,11 @@ class HomeActivity : Activity() {
             key.startsWith("song:") || key == "test:song" -> { if (songs.isNotEmpty()) playSong(songs, songs.indexOfFirst { it.key == key }.coerceAtLeast(0)); return }
             key.startsWith("bi:") -> { openBuiltIn(key.removePrefix("bi:")); return }
             key == "test:tv" || key == "test:radio" -> { val l = byNumber(key == "test:radio"); if (l.isNotEmpty()) openPlayer(l, 0); return }
+            key == "test:chcheck" -> { checkChannels(quiet = false); return }
+            key == "test:guide" -> { maybeRefreshGuide(0); return }
+            key == "test:covers" -> { getCovers(roms.filter { !com.antonretro.launcher.data.Covers.matched(it) }); return }
+            key == "test:chupdate" -> { updateChannels(force = true, quiet = false); return }
+            key.startsWith("test:backmode:") -> { player.backMode = key.removePrefix("test:backmode:").toIntOrNull() ?: 0; tvPrefs.edit().putInt("backMode", player.backMode).apply(); return }
             key == "test:video" -> { videoGroups.firstOrNull()?.second?.firstOrNull()?.let { playVideo(it) }; return }
         }
         when (val item = itemFor(key)) {
@@ -1010,7 +1042,116 @@ class HomeActivity : Activity() {
         page.show(entries, index)
     }
 
+    // ---------------------------------------------------------------- system intro before a game
+    private val gamePrefs by lazy { getSharedPreferences("games", MODE_PRIVATE) }
+    private val systemIntroOn get() = gamePrefs.getBoolean("systemIntro", true)
+    private var sysIntro: FrameLayout? = null
+    private var sysIntroGo: (() -> Unit)? = null
+    private fun sysSound(sys: com.antonretro.launcher.data.GameSystem) = when (sys.id) {
+        "nes", "sms" -> R.raw.sys_8bit
+        "gb", "gbc" -> R.raw.sys_handheld
+        "gba", "gg" -> R.raw.sys_sparkle
+        "ps1" -> R.raw.sys_ps
+        else -> R.raw.sys_16bit
+    }
+    /** About 1.5 s before a game: the system's name in white on black with its own short sound, then a fade to
+     *  black and the game starts. Settings, Games turns it off; any key skips it. */
+    // ---------------------------------------------------------------- game engines (data/Engines.kt)
+    private fun getEngine(sys: com.antonretro.launcher.data.GameSystem, then: (Boolean) -> Unit = {}) {
+        val pkg = GameRepo.engine(this) ?: return
+        Perf.note("engine download ${sys.core}")
+        bg.execute {
+            val ok = com.antonretro.launcher.data.Engines.install(this, pkg, sys.core)
+            ui.post {
+                Perf.note("engine ${sys.core} ok=$ok")
+                if (ok) notice("${sys.shelf} engine ready", "Your ${sys.shelf} games can start now")
+                else notice("Couldn't get the ${sys.shelf} engine", "Check the internet connection and try again")
+                if (current == "Settings") settingsScreen.refresh()
+                then(ok)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- box art for new games
+    /** New games (not asked about before) whose file name isn't the catalogue's: offer to look their covers up. */
+    private fun askAboutCovers(found: List<Rom>) {
+        val asked = gamePrefs.getStringSet("coversAsked", null)
+        val fresh = found.filter { asked == null || it.key !in asked }
+        fun markAsked() { gamePrefs.edit().putStringSet("coversAsked", HashSet(asked ?: emptySet()) + found.map { it.key }).apply() }
+        if (fresh.isEmpty() || com.antonretro.launcher.data.Covers.working) return
+        if (!resumed || game != null || dialog.visibility == View.VISIBLE) return   // asked again at the next scan
+        val n = fresh.size
+        dialog.show("Get box art?", "$n new game${if (n > 1) "s" else ""}. AntonOS can look up the covers in the free libretro catalogue.",
+            "Get box art" to { markAsked(); getCovers(fresh) }, "Not now" to { markAsked() })
+    }
+    private fun getCovers(list: List<Rom>) {
+        Perf.note("covers: looking up ${list.size}")
+        bg.execute {
+            val found = com.antonretro.launcher.data.Covers.find(list)
+            ui.post {
+                Perf.note("covers: found $found of ${list.size}")
+                notice("Box art", "Found $found of ${list.size}")
+                rebuildGames()
+            }
+        }
+    }
+
+    private fun playSystemIntro(rom: Rom, then: () -> Unit) {
+        // above everything on the home screen, notices and button hints included
+        val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f; isClickable = true; translationZ = Kit.dp(this@HomeActivity, 500f) }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        val word = Kit.text(this, 44f, true, Color.WHITE).apply {
+            text = rom.system.shelf.uppercase(); letterSpacing = .28f; gravity = Gravity.CENTER
+            setShadowLayer(Kit.dp(this@HomeActivity, 18f), 0f, 0f, Color.argb(120, 255, 255, 255))
+        }
+        val line = View(this).apply { setBackgroundColor(Color.WHITE); pivotX = 0f; scaleX = 0f; alpha = .85f }
+        col.addView(word, LinearLayout.LayoutParams(-2, -2))
+        col.addView(line, LinearLayout.LayoutParams(Kit.dpi(this, 120f), Kit.dpi(this, 2f)).apply { topMargin = Kit.dpi(this@HomeActivity, 14f); gravity = Gravity.CENTER_HORIZONTAL })
+        col.alpha = 0f; col.scaleX = .94f; col.scaleY = .94f
+        ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        root.addView(ov, FrameLayout.LayoutParams(-1, -1))
+        ov.bringToFront()
+        sysIntro = ov
+        var gone = false
+        val go = {
+            if (!gone) {
+                gone = true; sysIntroGo = null
+                then()
+                // the game is in front by now; take the curtain away quietly
+                ui.postDelayed({ root.removeView(ov); if (sysIntro === ov) sysIntro = null }, 2500)
+            }
+        }
+        sysIntroGo = { col.animate().cancel(); col.alpha = 0f; go() }
+        if (com.antonretro.launcher.kit.UiSound.on) try {
+            android.media.MediaPlayer.create(this, sysSound(rom.system))?.apply { setVolume(.7f, .7f); setOnCompletionListener { it.release() }; start() }
+        } catch (_: Exception) {}
+        Perf.note("system intro ${rom.system.id}")
+        ov.animate().alpha(1f).setDuration(Kit.t(180)).start()
+        col.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(Kit.t(160)).setDuration(Kit.t(520)).setInterpolator(Kit.EASE).withEndAction {
+            col.animate().alpha(0f).setStartDelay(Kit.t(450)).setDuration(Kit.t(380)).setInterpolator(Kit.EASE).withEndAction { go() }.start()
+        }.start()
+        line.animate().scaleX(1f).setStartDelay(Kit.t(300)).setDuration(Kit.t(650)).setInterpolator(Kit.EASE).start()
+    }
+
     private fun playGame(rom: Rom, cell: CardCell?) {
+        // a console whose engine isn't on the box yet: offer to get it, then start the game
+        val pkg = GameRepo.engine(this)
+        if (pkg != null && !com.antonretro.launcher.data.Engines.ready(this, rom.system.core)) {
+            if (com.antonretro.launcher.data.Engines.working != null) { notice("Getting a game engine", "One moment"); return }
+            val slow = com.antonretro.launcher.data.Engines.tooSlow(this, rom.system)
+            dialog.show("Get the ${rom.system.shelf} engine?", "${rom.system.shelf} games need it to start (${com.antonretro.launcher.data.Engines.name(rom.system.core)}, a few MB, from libretro). Download it now?" +
+                if (slow) "\n\nNot recommended on this box: its processor is probably too slow for ${rom.system.shelf} games. They may run slowly or not start." else "",
+                "Download" to { getEngine(rom.system) { ok -> if (ok) playGame(rom, null) } }, "Not now" to {})
+            return
+        }
+        // the system intro, when starting a game afresh (not when going back to the one paused in the engine)
+        if (systemIntroOn && sysIntro == null && gameAway?.key != rom.key && GameRepo.launchIntent(this, rom) != null) {
+            playSystemIntro(rom) { startGameNow(rom, null) }; return
+        }
+        startGameNow(rom, cell)
+    }
+
+    private fun startGameNow(rom: Rom, cell: CardCell?) {
         val i = GameRepo.launchIntent(this, rom)
         if (i == null) {
             dialog.show("Games need one more piece", "The game engine (RetroArch) isn't installed on this box yet. It runs hidden: you'll only ever see your games.", "OK" to {})
@@ -1133,6 +1274,113 @@ class HomeActivity : Activity() {
     // ---------------------------------------------------------------- channel numbers
     /** Gives every channel a number once: favourites first, then country by country. Numbers are kept in the
      *  layout file, so they never shuffle; channels that appear later get the next free numbers. */
+    // ---------------------------------------------------------------- automatic channel-list updates (data/ChannelUpdate.kt)
+    /** every 5 minutes: a test mute older than 30 minutes is undone (TestAudio.expireIfStale) */
+    // ---------------------------------------------------------------- the work pill (long jobs in the background)
+    @Volatile private var checkDone = 0
+    @Volatile private var checkTotal = 0
+    private var workPill: com.antonretro.launcher.ui.WorkPill? = null
+    /** Twice a second: shows what the box is working on, with a bar; hidden while a channel or game is on screen. */
+    private val workTick = object : Runnable { override fun run() {
+        val onScreen = game != null || (::player.isInitialized && player.showing && !player.mini)
+        val job: Triple<String, String, Float?>? = when {
+            onScreen -> null
+            updatingChannels -> Triple("Updating channels", "", null)
+            com.antonretro.launcher.data.Engines.working != null -> Triple("Getting an engine", com.antonretro.launcher.data.Engines.name(com.antonretro.launcher.data.Engines.working ?: ""), com.antonretro.launcher.data.Engines.fraction)
+            com.antonretro.launcher.data.Covers.working -> com.antonretro.launcher.data.Covers.let { c -> Triple("Getting box art", "${c.done} of ${c.total}", if (c.total > 0) c.done.toFloat() / c.total else null) }
+            Guide.refreshing -> Triple("Updating the guide", Guide.progress, Guide.fraction)
+            checkingChannels && checkTotal > 0 && !checkBusy -> Triple("Checking channels", "$checkDone of $checkTotal", checkDone.toFloat() / checkTotal)
+            else -> null
+        }
+        if (job != null || workPill?.showing == true) {
+            val p = workPill ?: com.antonretro.launcher.ui.WorkPill(this@HomeActivity).also { w ->
+                root.addView(w, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply {
+                    rightMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_X); bottomMargin = Kit.dpi(this@HomeActivity, Kit.SAFE_Y) })
+                workPill = w
+            }
+            if (job == null) p.update(null) else p.update(job.first, job.second, job.third)
+        }
+        ui.postDelayed(this, 500)
+    } }
+    private val muteExpiry = object : Runnable { override fun run() { TestAudio.expireIfStale(this@HomeActivity); ui.postDelayed(this, 5 * 60_000L) } }
+    @Volatile private var updatingChannels = false
+    // ---------------------------------------------------------------- channel health check (data/ChannelCheck.kt)
+    @Volatile private var checkingChannels = false
+    private fun busyForCheck() = !resumed || game != null || (::player.isInitialized && (player.showing || player.playing)) || (::music.isInitialized && music.playing)
+    @Volatile private var checkBusy = false
+    private val checkBusyTick = object : Runnable { override fun run() { checkBusy = busyForCheck(); if (checkingChannels) ui.postDelayed(this, 500) } }
+    /** Tests every feed; the ones that fail are marked, so "Working only" hides channels with no working feed and each
+     *  channel uses a feed that works. Stops as soon as something starts playing (it carries on next time). */
+    private fun checkChannels(quiet: Boolean) {
+        if (checkingChannels) return
+        checkingChannels = true
+        checkBusy = busyForCheck(); ui.post(checkBusyTick); checkDone = 0
+        val urls = (ChannelRepo.allTv + ChannelRepo.allRadio).map { it.url }.distinct(); checkTotal = urls.size
+        if (!quiet) notice("Checking channels", "${urls.size} streams, a few at a time")
+        Perf.note("channel check start ${urls.size}")
+        bg.execute {
+            val bad = com.antonretro.launcher.data.ChannelCheck.run(urls, { checkBusy && !(!quiet && resumed) },
+                { u, ok -> ui.post { markBroken(u, !ok) } }, { d, t -> checkDone = d; checkTotal = t; Perf.note("channel check $d/$t") })
+            ui.post {
+                checkingChannels = false
+                tvPrefs.edit().putLong("checkedAll", System.currentTimeMillis()).putInt("badCount", bad).apply()
+                Perf.note("channel check done: $bad of ${urls.size} not working")
+                rebuildChannelRows()
+                if (!quiet) notice("Channels checked", "$bad of ${urls.size} streams aren't working, so they're hidden")
+                if (current == "Settings") settingsScreen.refresh()
+            }
+        }
+    }
+    /** Daily, quietly: never while something plays, a game runs or another app is in front. */
+    private val channelCheck = object : Runnable { override fun run() {
+        ui.postDelayed(this, 6 * HOUR)
+        val busy = !resumed || game != null || (::player.isInitialized && (player.showing || player.playing)) || (::music.isInitialized && music.playing)
+        if (!busy && System.currentTimeMillis() - com.antonretro.launcher.data.ChannelUpdate.lastChecked(this@HomeActivity) > 24 * HOUR) updateChannels(force = false, quiet = true)
+        else if (!busy && System.currentTimeMillis() - tvPrefs.getLong("checkedAll", 0L) > 24 * HOUR) checkChannels(quiet = true)
+    } }
+    private fun updateChannels(force: Boolean, quiet: Boolean) {
+        if (updatingChannels) return
+        updatingChannels = true
+        val before = ChannelRepo.tv + ChannelRepo.radio
+        bg.execute {
+            Perf.note("channel update start force=$force")
+            val r = try { com.antonretro.launcher.data.ChannelUpdate.run(this, force) { m -> Perf.note("channel update: $m"); if (!quiet) ui.post { notice("Updating channels", m) } } } catch (e: Throwable) { Perf.note("channel update failed: $e"); com.antonretro.launcher.data.ChannelUpdate.Result(false, 0, 0, 0, "Couldn't update: " + (e.message ?: e.javaClass.simpleName)) }
+            Perf.note("channel update done changed=${r.changed} +${r.added} -${r.removed} total=${r.total} ${r.note}")
+            if (r.changed) ChannelRepo.load()
+            ui.post {
+                updatingChannels = false
+                if (r.changed) { carryOver(before, ChannelRepo.tv + ChannelRepo.radio); rebuildChannelRows(); maybeRefreshGuide(0); ui.postDelayed({ checkChannels(quiet = true) }, 60_000) }
+                if (r.changed) notice("Channels updated", "${r.added} new, ${r.removed} removed  ·  ${r.total} in all")
+                else if (!quiet) notice("Channels", r.note)
+                if (current == "Settings") settingsScreen.refresh()
+            }
+        }
+    }
+    /** A channel whose stream address changed keeps its number, favourite, hidden, recent and not-working marks
+     *  (matched by iptv-org id, else by name and country). Channels that are gone simply drop out. */
+    private fun carryOver(old: List<Channel>, now: List<Channel>) {
+        val nowUrls = now.map { it.url }.toSet()
+        val byId = now.filter { it.tvgId.isNotEmpty() }.associateBy { it.tvgId }
+        val byKey = now.associateBy { it.feedKey }
+        val byName = now.associateBy { it.name.lowercase() + "|" + it.group }
+        val moved = HashMap<String, String>()
+        for (c in old) if (c.url !in nowUrls) {
+            val n = byKey[c.feedKey] ?: (if (c.tvgId.isNotEmpty()) byId[c.tvgId] else null) ?: byName[c.name.lowercase() + "|" + c.group]
+            if (n != null && n.url !in moved.values) moved[c.url] = n.url
+        }
+        if (moved.isEmpty()) { store.save(); return }
+        for ((o, n) in moved) {
+            store.numbers.remove(o)?.let { if (!store.numbers.containsKey(n)) store.numbers[n] = it }
+            store.favourites.replaceAll { if (it == o) n else it }
+            store.recentChannels.replaceAll { if (it == o) n else it }
+            if (store.hiddenChannels.remove(o)) store.hiddenChannels.add(n)
+            if (store.lastTv == o) store.lastTv = n
+            broken.remove(o)?.let { broken[n] = it }
+        }
+        tvPrefs.edit().putStringSet("broken", broken.map { (u, t) -> "$t $u" }.toSet()).apply()
+        store.save()
+    }
+
     private fun assignNumbers() {
         val all = ChannelRepo.tv + ChannelRepo.radio
         if (all.isEmpty()) return
@@ -1196,7 +1444,16 @@ class HomeActivity : Activity() {
         }
     }
 
+    /** Re-chooses each channel's feed (hand pick, else the best working picture) and carries numbers and marks over
+     *  to a newly chosen feed. Cheap: runs before every channel-row rebuild. */
+    private fun regroup() {
+        val before = ChannelRepo.tv + ChannelRepo.radio
+        ChannelRepo.choose({ u -> isBroken(u) }, { k -> tvPrefs.getString("feed:$k", null) })
+        val now = ChannelRepo.tv + ChannelRepo.radio
+        if (before.isNotEmpty() && before.map { it.url } != now.map { it.url }) carryOver(before, now)
+    }
     private fun rebuildChannelRows() {
+        regroup()
         assignNumbers()
         val tv = ChannelRepo.tv; val radio = ChannelRepo.radio
         val byUrl = (tv + radio).associateBy { it.url }
@@ -1212,7 +1469,7 @@ class HomeActivity : Activity() {
             if (recent.isNotEmpty()) out.add(Row("Recent", recent.map { Item.Ch(it) }, alwaysLabel = true))
             for ((g, all) in ChannelRepo.groups(list)) {
                 if (g in store.hiddenGroups) continue
-                val chans = all.filter { it.url !in store.hiddenChannels }
+                val chans = all.filter { it.url !in store.hiddenChannels && !(workingOnly() && isBroken(it.url)) }
                 if (chans.isNotEmpty()) out.add(Row("$g  ·  ${chans.size}", chans.map { Item.Ch(it) }, alwaysLabel = true))
             }
             return out
@@ -1261,6 +1518,12 @@ class HomeActivity : Activity() {
         } else if (pinnable) {
             if (store.dock.contains(item.key)) choices.add("Already on Home" to {})
             else choices.add("Pin to Home" to { store.dock.add(item.key); store.save(); rebuildHome(); notice("Pinned to Home", item.title) })
+        }
+        if (item is Item.Ch && ChannelRepo.feedsOf(item.ch).size > 1) {
+            val feeds = ChannelRepo.feedsOf(item.ch).sortedByDescending { it.height }
+            val next = feeds[(feeds.indexOfFirst { it.url == item.ch.url } + 1) % feeds.size]
+            fun label(c: Channel) = if (c.height > 0) "${c.height}p" else if (c.hd) "HD" else "SD"
+            choices.add("Picture: ${label(item.ch)} → ${label(next)}" to { tvPrefs.edit().putString("feed:${item.ch.feedKey}", next.url).apply(); rebuildChannelRows(); notice(item.ch.name, "Now ${label(next)}") })
         }
         if (item is Item.Ch) {
             choices.add((if (item.ch.url in store.favourites) "Remove from Favourites" else "Add to Favourites") to { star(item.ch) })
@@ -1336,6 +1599,7 @@ class HomeActivity : Activity() {
         if (bad) broken[url] = System.currentTimeMillis() else if (broken.remove(url) == null) return
         tvPrefs.edit().putStringSet("broken", broken.map { (u, t) -> "$t $u" }.toSet()).apply()
     }
+    private fun workingOnly() = tvPrefs.getBoolean("workingOnly", true)
     private fun isBroken(url: String) = broken[url]?.let { System.currentTimeMillis() - it < 7 * 24 * 3600_000L } == true
     /** the Guide opens by itself when you go down into the TV tab, unless Cards was chosen (remembered) */
     private var tvGuideFirst: Boolean
@@ -1611,7 +1875,7 @@ class HomeActivity : Activity() {
         val star = c.url in store.favourites
         val hue = ((c.name.hashCode() and 0x7fffffff) % 360).toFloat()
         val top = Color.HSVToColor(floatArrayOf(hue, .55f, .48f)); val bottom = Color.HSVToColor(floatArrayOf((hue + 20) % 360, .7f, .18f))
-        val badge = numberOf(c).toString() + (if (c.radio) "  RADIO" else "  LIVE"); val bc = if (c.radio) 0xFF5E60CE.toInt() else 0xFFE5383B.toInt()
+        val badge = numberOf(c).toString() + (if (c.radio) "  RADIO" else if (c.hd) "  HD" else "  LIVE"); val bc = if (c.radio) 0xFF5E60CE.toInt() else 0xFFE5383B.toInt()
         cell.card.art = Art(null, top, bottom, null, null, bigText = c.name, badge = badge, badgeColor = bc, star = star)
         val logo = c.logo ?: return
         val w = Kit.dpi(this, cell.wDp); val h = Kit.dpi(this, cell.hDp)
@@ -2017,6 +2281,7 @@ class HomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
+        if (sysIntro != null) { if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) sysIntroGo?.invoke(); return true }
         if (e.action == KeyEvent.ACTION_DOWN) {
             hintBar.pad = e.isFromSource(android.view.InputDevice.SOURCE_GAMEPAD) || e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK)
             ui.post { updateHints() }
@@ -2427,7 +2692,15 @@ object Perf {
     @Volatile var file: java.io.File? = null
     private val lines = java.util.concurrent.LinkedBlockingQueue<String>()
     private val writer = Thread {
-        while (true) { val l = lines.take(); try { file?.appendText(l + "\n") } catch (_: Exception) {} }
+        var n = 0
+        while (true) {
+            val l = lines.take()
+            try {
+                file?.appendText(l + "\n")
+                // keep the log small: past 2 MB, keep the last 1 MB
+                if (++n % 500 == 0) file?.let { f -> if (f.length() > 2_000_000) { val t = f.readText(); f.writeText(t.substring(t.length - 1_000_000).substringAfter('\n')) } }
+            } catch (_: Exception) {}
+        }
     }.apply { isDaemon = true; start() }
     fun log(what: String, ms: Long) { Log.i("RLPerf", "$what=$ms"); lines.offer("RLPerf $what=$ms") }
     fun note(t: String) { lines.offer("RLNote $t") }

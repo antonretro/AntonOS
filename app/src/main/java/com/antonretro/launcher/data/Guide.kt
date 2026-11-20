@@ -31,23 +31,26 @@ object Guide {
     private const val KEEP_AFTER = 48 * 3600_000L
     private const val DESC_MAX = 300
 
-    /** Guide files from i.mjh.nz (free, updated several times a day). Country names match the playlist groups. */
+    /** Free guide files, downloaded once a day and read as a stream. i.mjh.nz has the free streaming services
+     *  (Pluto TV); epgshare01.online collects ordinary broadcasters' schedules by country. Measured on the list
+     *  in November 2026: the i.mjh.nz files alone covered 479 of 2,194 channels, with epgshare01 about 930.
+     *  Samsung TV Plus, Plex and Roku from i.mjh.nz matched none of the list's channels, so they're left out. */
     private val DEFAULT_SOURCES = """
         # One source per line: the playlist country it is for, then the address of an XMLTV file (.xml or .xml.gz).
         # "*" means any country. Earlier lines win when two sources have the same channel.
+        # sources v2
         Canada          https://i.mjh.nz/PlutoTV/ca.xml.gz
-        Canada          https://i.mjh.nz/SamsungTVPlus/ca.xml.gz
-        Canada          https://i.mjh.nz/Plex/ca.xml.gz
         United States   https://i.mjh.nz/PlutoTV/us.xml.gz
-        United States   https://i.mjh.nz/SamsungTVPlus/us.xml.gz
-        United States   https://i.mjh.nz/Plex/us.xml.gz
-        United States   https://i.mjh.nz/Roku/all.xml.gz
         United Kingdom  https://i.mjh.nz/PlutoTV/gb.xml.gz
-        United Kingdom  https://i.mjh.nz/SamsungTVPlus/gb.xml.gz
-        United Kingdom  https://i.mjh.nz/Plex/gb.xml.gz
         Italy           https://i.mjh.nz/PlutoTV/it.xml.gz
-        Italy           https://i.mjh.nz/SamsungTVPlus/it.xml.gz
-        Australia       https://i.mjh.nz/Plex/au.xml.gz
+        Canada          https://epgshare01.online/epgshare01/epg_ripper_CA2.xml.gz
+        United States   https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz
+        United States   https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz
+        United Kingdom  https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz
+        Italy           https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz
+        Australia       https://epgshare01.online/epgshare01/epg_ripper_AU1.xml.gz
+        Malta           https://epgshare01.online/epgshare01/epg_ripper_MT1.xml.gz
+        *               https://epgshare01.online/epgshare01/epg_ripper_PLEX1.xml.gz
     """.trimIndent() + "\n"
 
     private var db: SQLiteDatabase? = null
@@ -56,6 +59,8 @@ object Guide {
     @Volatile private var ids: Map<String, Int> = emptyMap()
     @Volatile var refreshing = false; private set
     @Volatile var progress = ""; private set
+    /** how far the update is, 0..1 (by source) */
+    @Volatile var fraction = 0f; private set
     @Volatile var reminders: List<Reminder> = emptyList(); private set
 
     val sourcesFile: File get() = File(ChannelRepo.dir, "guide-sources.txt")
@@ -89,7 +94,11 @@ object Guide {
 
     fun sources(): List<Pair<String, String>> {
         val f = sourcesFile
-        val text = try { if (!f.exists()) { f.parentFile?.mkdirs(); f.writeText(DEFAULT_SOURCES) }; f.readText() } catch (e: Exception) { DEFAULT_SOURCES }
+        val text = try {
+            val old = f.exists() && f.readText().let { t -> "# sources v" !in t && t.lines().filter { it.contains("http") }.all { it.contains("i.mjh.nz/") } }
+            if (!f.exists() || old) { f.parentFile?.mkdirs(); f.writeText(DEFAULT_SOURCES) }
+            f.readText()
+        } catch (e: Exception) { DEFAULT_SOURCES }
         return text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.mapNotNull { line ->
             val i = line.indexOf("http"); if (i <= 0) null else line.substring(0, i).trim() to line.substring(i).trim()
         }
@@ -151,7 +160,7 @@ object Guide {
     fun refresh(tv: List<Channel>, onDone: (String) -> Unit) {
         val d = db ?: return
         if (refreshing) return
-        refreshing = true; progress = "Starting…"
+        refreshing = true; progress = "Starting…"; fraction = 0f
         Thread {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             var result: String
@@ -173,7 +182,7 @@ object Guide {
         val srcs = sources()
         var failed = 0
         for ((n, src) in srcs.withIndex()) {
-            progress = "Source ${n + 1} of ${srcs.size}"
+            progress = "Source ${n + 1} of ${srcs.size}"; fraction = n.toFloat() / srcs.size
             val (country, url) = src
             val cands = tv.filter { country == "*" || it.country == country || it.country == "Weather" || PLUTO.containsMatchIn(it.url) }
                 .filter { chanIndex[it.url]!! !in done }

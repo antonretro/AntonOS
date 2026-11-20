@@ -74,6 +74,8 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     /** a channel really showed a picture (or a station sound) / a channel failed: feeds "Working only" in the Guide */
     var onWorks: ((Channel) -> Unit)? = null
     var onBroken: ((Channel) -> Unit)? = null
+    /** another feed of the same channel to try when one fails (HD broken: SD) */
+    var altFeed: ((Channel) -> Channel?)? = null
     /** "Now: News at Nine, until 9:30 PM" from the guide, or null. */
     var nowLine: ((Channel) -> String?)? = null
 
@@ -87,7 +89,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     fun playVideo(path: String, title: String, startMs: Long, onExit: (Long, Long) -> Unit) {
         Perf.log("playVideo", 0)
-        prepare()
+        prepare(); needSurface()
         video = VideoSession(path, title, onExit); list = emptyList()
         visibility = View.VISIBLE; alpha = 0f; animate().alpha(1f).setDuration(Kit.t(220)).start()
         radioPanel.visibility = View.GONE; error.visibility = View.GONE
@@ -110,7 +112,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         val pos = if (finished) 0L else p?.currentPosition ?: 0L; val dur = p?.duration?.coerceAtLeast(0) ?: 0L
         video = null; ui.removeCallbacks(tick); ui.removeCallbacks(fadeBanner)
         p?.stop()
-        animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
+        animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE; dropSurface() }.start()
         v.onExit(pos, dur)
     }
     // ------------------------------------------------------------------ the control row (OK or the mouse shows it)
@@ -252,7 +254,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         player?.stop()
         setBackgroundColor(Color.BLACK)
         layoutParams = (layoutParams as FrameLayout.LayoutParams).apply { width = -1; height = -1; rightMargin = 0; bottomMargin = 0; gravity = Gravity.NO_GRAVITY }
-        visibility = View.GONE
+        visibility = View.GONE; dropSurface()
         onMini?.invoke(null)
         current?.let { onClosed?.invoke(it, false) }
     }
@@ -350,7 +352,14 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         val tracks = DefaultTrackSelector(context).apply {
             setParameters(buildUponParameters().setMaxVideoSize(maxHeight * 16 / 9, maxHeight).setMaxVideoFrameRate(60).setExceedRendererCapabilitiesIfNecessary(false))
         }
-        val http = DefaultHttpDataSource.Factory().setUserAgent("RetroLauncher/1 (Android TV)")
+        // counts every byte the player downloads (tools/streamcheck.sh reads "stream bytes" from the log in test mode)
+        val counter = object : androidx.media3.datasource.TransferListener {
+            override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+            override fun onTransferStart(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+            override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, n: Int) { if (isNetwork) streamBytes += n }
+            override fun onTransferEnd(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+        }
+        val http = DefaultHttpDataSource.Factory().setUserAgent("RetroLauncher/1 (Android TV)").setTransferListener(counter)
             .setConnectTimeoutMs(6000).setReadTimeoutMs(8000).setAllowCrossProtocolRedirects(true)
         // start on a modest stream quality so the first picture comes fast, then step up
         val meter = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context).setInitialBitrateEstimate(1_500_000).build()
@@ -370,8 +379,17 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             }
     }
 
+    /** The video picture lives on its own layer that keeps its last frame and, on this Android, sits above any
+     *  video layer made before it (the music visualizer's): drop it whenever the player is hidden, make a fresh one
+     *  when something plays. Without this, music after TV showed a frozen TV frame instead of the visualizer. */
+    @Volatile var streamBytes = 0L
+    private val byteLog = object : Runnable { override fun run() { if (testMuted()) Perf.note("stream bytes $streamBytes"); ui.postDelayed(this, 5000) } }
+    init { ui.postDelayed(byteLog, 5000) }
+    private fun dropSurface() { if (!mini) { player?.clearVideoSurface(); surface.visibility = View.GONE } }
+    private fun needSurface() { if (surface.visibility != View.VISIBLE) { surface.visibility = View.VISIBLE; player?.setVideoSurfaceView(surface) } }
+
     fun play(channels: List<Channel>, index: Int) {
-        prepare()
+        prepare(); needSurface()
         list = channels; visibility = View.VISIBLE; alpha = 0f
         animate().alpha(1f).setDuration(Kit.t(220)).start()
         firstTune = true
@@ -444,8 +462,11 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             ui.postDelayed({ error.text = "This channel isn't working right now"; endVideo(false) }, 2500); return
         }
         if (!showing && !playing) return
-        list.getOrNull(idx)?.let { onBroken?.invoke(it) }
+        val failedCh = list.getOrNull(idx)
+        failedCh?.let { onBroken?.invoke(it) }
         player?.stop()
+        // the same channel in another quality first; only then the next channel
+        failedCh?.let { c -> altFeed?.invoke(c)?.let { alt -> list = list.toMutableList().also { it[idx] = alt }; Perf.note("feed fallback ${c.name}: ${alt.height}p"); tune(idx, zapDir); return } }
         error.visibility = View.VISIBLE; error.alpha = 0f; error.animate().alpha(1f).setDuration(Kit.t(200)).start()
         val failedIdx = idx
         ui.postDelayed({ if (idx == failedIdx && showing && !stripOn) tune(idx + zapDir, zapDir) }, 2000)
@@ -539,11 +560,11 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         if (!keep) player?.stop()
         if (stripOn) { stripOn = false; stripBox.visibility = View.GONE }
         controlsOn = false; controls.visibility = View.GONE; ui.removeCallbacks(hideControls)
-        animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE }.start()
+        animate().alpha(0f).setDuration(Kit.t(200)).withEndAction { visibility = View.GONE; dropSurface() }.start()
         if (c != null) onClosed?.invoke(c, keep)
     }
 
-    fun stopBackground() { if (mini) closeMini(); player?.stop() }
+    fun stopBackground() { if (mini) closeMini(); player?.stop(); if (visibility != View.VISIBLE) dropSurface() }
     fun resumeView() { if (current != null) { visibility = View.VISIBLE; alpha = 1f } }
     fun release() { player?.release(); player = null }
 }
