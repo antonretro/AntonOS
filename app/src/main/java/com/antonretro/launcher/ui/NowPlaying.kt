@@ -158,7 +158,7 @@ class NowPlaying(ctx: Context, private val music: MusicPlayer) : FrameLayout(ctx
     val showing get() = visibility == View.VISIBLE
     var onClose: (() -> Unit)? = null
     private val rowScroll = android.widget.HorizontalScrollView(ctx)
-    /** the built-in songs' version (MuseScore / GeneralUser / MIDI): +1 or -1 to switch */
+    /** the built-in songs' version (MuseScore / MIDI): +1 or -1 to switch */
     var onVersion: ((Int) -> Unit)? = null
     private var versionBtn: TextView? = null
     /** the Version control shows only for AntonRetro's own songs */

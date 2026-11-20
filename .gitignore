@@ -10,3 +10,4 @@ keystore.properties
 tools/last-screen.png
 *.log
 tools/box.env
+.kotlin/

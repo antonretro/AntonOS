@@ -1,14 +1,15 @@
 # Credits
 
 - **AntonOS**: AntonRetro (MIT).
-- **Built-in music**: "Jetpack Postcard", "Lemonade Satellite" and "Slap Happy Forklift" by AntonRetro (MIT), in three versions: rendered with the **MuseScore General** SoundFont (MIT; FluidR3 by Frank Wen, FluidR3Mono by Michael Cowgill, adaptation by S. Christian Collins, Temple Blocks by Ethan Winer, Drumline Cymbals by Michael Schorsch; notices in `app/src/main/assets/music/LICENSE-MuseScore-General.md`), rendered with the **GeneralUser GS** SoundFont by S. Christian Collins (`app/src/main/assets/music/LICENSE-GeneralUser-GS.txt`), and the original MIDI files played by the box's own synthesiser.
+- **Built-in music**: "Jetpack Postcard", "Lemonade Satellite" and "Slap Happy Forklift" by AntonRetro (MIT), in two versions: rendered with the **MuseScore General** SoundFont (MIT; FluidR3 by Frank Wen, FluidR3Mono by Michael Cowgill, adaptation by S. Christian Collins, Temple Blocks by Ethan Winer, Drumline Cymbals by Michael Schorsch; notices in `app/src/main/assets/music/LICENSE-MuseScore-General.md`), and the original MIDI files played by the box's own synthesiser.
 - **Music visualizer**: Retro Visualizer by AntonRetro (MIT, `app/src/main/assets/visualizer/LICENSE`). It contains maths lookup tables from **AMD LibM** (aocl-libm-ose), BSD 3-Clause (`app/src/main/assets/visualizer/THIRD_PARTY_AMD_LIBM.txt`). No Microsoft code or data is included.
 - **Totem Tide** (built-in game): original game, pixel art and sounds by this project, made by the scripts in `games/`.
 - **Media playback**: AndroidX Media3 / ExoPlayer (Apache 2.0).
-- **TV channel list** (fetched by the user's setup, not bundled): the [iptv-org](https://github.com/iptv-org/iptv) public playlists.
-- **TV guide data** (fetched at runtime, not bundled): public XMLTV feeds from [i.mjh.nz](https://i.mjh.nz).
-- **Game box art** (fetched at runtime, not bundled): [libretro-thumbnails](https://github.com/libretro-thumbnails/libretro-thumbnails).
-- **Game engine**: RetroArch / libretro (installed separately, GPL-3.0).
+- **TV channel list** (fetched at runtime, not bundled): the [iptv-org](https://github.com/iptv-org/iptv) public playlists and channel database.
+- **TV guide data** (fetched at runtime, not bundled): public XMLTV feeds from [i.mjh.nz](https://i.mjh.nz) and [epgshare01](https://epgshare01.online).
+- **Game box art** (fetched at runtime when the user says yes, not bundled): [libretro-thumbnails](https://github.com/libretro-thumbnails/libretro-thumbnails).
+- **Game engine**: RetroArch / libretro (installed separately, GPL-3.0). Extra libretro cores are downloaded at runtime from libretro's build server when the user asks (each under its own licence), not bundled.
+- **System intro sounds**: original, synthesised by `tools/make_system_sounds.py` (no console's real start-up sound).
 
 ## World photo wallpapers
 
