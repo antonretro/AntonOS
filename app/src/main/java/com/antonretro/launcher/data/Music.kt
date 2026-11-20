@@ -20,13 +20,19 @@ class Song(val title: String, val artist: String, val album: String, val file: F
 object MusicRepo {
     private val EXT = setOf("mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "mid", "midi")
 
-    /** AntonRetro's three songs (his own, MIT) in two versions: rendered with the MuseScore General SoundFont (the
+    /** AntonRetro's five songs (his own, MIT; Dial-up Daydream and CD-ROM Lounge made with Claude) in two versions: rendered with the MuseScore General SoundFont (the
      *  default; licence in assets/music), or the original MIDI played by the box's own synth. */
     val VERSIONS = listOf("MuseScore", "MIDI")
-    private val SONGS = listOf("Jetpack Postcard" to "jetpack-postcard", "Lemonade Satellite" to "lemonade-satellite", "Slap Happy Forklift" to "slap-happy-forklift")
-    fun builtIn(version: Int): List<Song> = SONGS.map { (title, file) ->
+    /** title, file name, artist; in playlist order */
+    private val SONGS = listOf(
+        Triple("Dial-up Daydream", "dial-up-daydream", "AntonRetro & Claude"),
+        Triple("CD-ROM Lounge", "cd-rom-lounge", "AntonRetro & Claude"),
+        Triple("Jetpack Postcard", "jetpack-postcard", "AntonRetro"),
+        Triple("Slap Happy Forklift", "slap-happy-forklift", "AntonRetro"),
+        Triple("Lemonade Satellite", "lemonade-satellite", "AntonRetro"))
+    fun builtIn(version: Int): List<Song> = SONGS.map { (title, file, artist) ->
         val asset = if (version == 1) "music/midi/$file.mid" else "music/musescore/$file.mp3"
-        Song(title, "AntonRetro", "AntonOS · " + VERSIONS[version], null, asset)
+        Song(title, artist, "AntonOS · " + VERSIONS[version], null, asset)
     }
     /** which version of a built-in song an asset path is (-1: not one of them) */
     fun versionOf(asset: String?): Int = when {

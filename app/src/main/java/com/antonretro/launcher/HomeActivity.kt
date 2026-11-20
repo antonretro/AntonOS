@@ -361,7 +361,7 @@ class HomeActivity : Activity() {
             SRow(getString(R.string.app_name), value = { BuildConfig.VERSION_NAME }),
             SRow("Classic launcher", { "The box's original menu" }, onClick = { openClassic() }),
             SRow("Show the welcome again", { "The short first-time setup" }, onClick = { showWelcome() }),
-            SRow("Music", { "Songs by AntonRetro, rendered with MuseScore General (MIT, from FluidR3 by Frank Wen, adapted by S. Christian Collins), plus the original MIDI" }),
+            SRow("Music", { "Songs by AntonRetro (Dial-up Daydream and CD-ROM Lounge by AntonRetro & Claude), rendered with MuseScore General (MIT, from FluidR3 by Frank Wen, adapted by S. Christian Collins), plus the original MIDI" }),
             SRow("Music visualizer", { "Retro Visualizer by AntonRetro (MIT). Includes maths tables from AMD LibM (BSD 3-Clause)" }),
             SRow("Advanced Android settings", onClick = go(Settings.ACTION_SETTINGS)),
         ) },
