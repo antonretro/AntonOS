@@ -979,6 +979,7 @@ class HomeActivity : Activity() {
             key.startsWith("bi:") -> { openBuiltIn(key.removePrefix("bi:")); return }
             key == "test:tv" || key == "test:radio" -> { val l = byNumber(key == "test:radio"); if (l.isNotEmpty()) openPlayer(l, 0); return }
             key == "test:chcheck" -> { checkChannels(quiet = false); return }
+            key.startsWith("test:cover:") -> { roms.firstOrNull { it.file.name == key.removePrefix("test:cover:") }?.let { chooseCover(it) }; return }
             key == "test:guide" -> { maybeRefreshGuide(0); return }
             key == "test:covers" -> { getCovers(roms.filter { !com.antonretro.launcher.data.Covers.matched(it) }); return }
             key == "test:chupdate" -> { updateChannels(force = true, quiet = false); return }
@@ -1060,7 +1061,7 @@ class HomeActivity : Activity() {
     private fun getEngine(sys: com.antonretro.launcher.data.GameSystem, then: (Boolean) -> Unit = {}) {
         val pkg = GameRepo.engine(this) ?: return
         Perf.note("engine download ${sys.core}")
-        bg.execute {
+        side {
             val ok = com.antonretro.launcher.data.Engines.install(this, pkg, sys.core)
             ui.post {
                 Perf.note("engine ${sys.core} ok=$ok")
@@ -1078,20 +1079,44 @@ class HomeActivity : Activity() {
         val asked = gamePrefs.getStringSet("coversAsked", null)
         val fresh = found.filter { asked == null || it.key !in asked }
         fun markAsked() { gamePrefs.edit().putStringSet("coversAsked", HashSet(asked ?: emptySet()) + found.map { it.key }).apply() }
+        // games that found no cover are looked for again once a week, quietly (the catalogue grows)
+        val missing = found.filter { asked != null && it.key in asked && !com.antonretro.launcher.data.Covers.matched(it) }
+        if (fresh.isEmpty() && missing.isNotEmpty() && !com.antonretro.launcher.data.Covers.working &&
+            System.currentTimeMillis() - gamePrefs.getLong("coversRetry", 0L) > 7 * 24 * HOUR) {
+            gamePrefs.edit().putLong("coversRetry", System.currentTimeMillis()).apply(); getCovers(missing, quiet = true)
+        }
         if (fresh.isEmpty() || com.antonretro.launcher.data.Covers.working) return
         if (!resumed || game != null || dialog.visibility == View.VISIBLE) return   // asked again at the next scan
         val n = fresh.size
         dialog.show("Get box art?", "$n new game${if (n > 1) "s" else ""}. AntonOS can look up the covers in the free libretro catalogue.",
             "Get box art" to { markAsked(); getCovers(fresh) }, "Not now" to { markAsked() })
     }
-    private fun getCovers(list: List<Rom>) {
+    /** Hold OK on a game, Choose cover: the closest covers in the catalogue, or the drawn title card. Your own picture
+     *  always wins: RetroLauncher/Covers/<game file name>.png or .jpg. */
+    private fun chooseCover(rom: Rom) {
+        notice("Looking for covers", rom.title)
+        side {
+            val cands = try { com.antonretro.launcher.data.Covers.candidates(rom) } catch (e: Exception) { Perf.note("choose cover failed: $e"); emptyList() }
+            Perf.note("choose cover ${rom.title}: ${cands.size} close matches")
+            ui.post {
+                val choices = ArrayList<Pair<String, () -> Unit>>()
+                for (c in cands) choices.add(c.second to { com.antonretro.launcher.data.Covers.set(rom, c); rebuildGames(); notice("Cover chosen", c.second) })
+                choices.add("No box art (title card)" to { com.antonretro.launcher.data.Covers.set(rom, null); rebuildGames() })
+                choices.add("Cancel" to {})
+                dialog.show("Cover for ${rom.title}", if (cands.isEmpty()) "No close matches in the catalogue. For your own picture, put it in RetroLauncher/Covers named like the game file."
+                    else "The closest covers in the catalogue. Your own picture in RetroLauncher/Covers always wins.", *choices.toTypedArray())
+            }
+        }
+    }
+
+    private fun getCovers(list: List<Rom>, quiet: Boolean = false) {
         Perf.note("covers: looking up ${list.size}")
-        bg.execute {
+        side {
             val found = com.antonretro.launcher.data.Covers.find(list)
             ui.post {
                 Perf.note("covers: found $found of ${list.size}")
-                notice("Box art", "Found $found of ${list.size}")
-                rebuildGames()
+                if (!quiet || found > 0) notice("Box art", "Found $found of ${list.size}")
+                if (found > 0 || !quiet) rebuildGames()
             }
         }
     }
@@ -1253,7 +1278,7 @@ class HomeActivity : Activity() {
     private var channelsAsked = false
 
     private fun loadChannels() {
-        bg.execute {
+        side {
             val ok = ChannelRepo.load()
             ui.post {
                 if (!ok) {
@@ -1318,7 +1343,7 @@ class HomeActivity : Activity() {
         val urls = (ChannelRepo.allTv + ChannelRepo.allRadio).map { it.url }.distinct(); checkTotal = urls.size
         if (!quiet) notice("Checking channels", "${urls.size} streams, a few at a time")
         Perf.note("channel check start ${urls.size}")
-        bg.execute {
+        side {
             val bad = com.antonretro.launcher.data.ChannelCheck.run(urls, { checkBusy && !(!quiet && resumed) },
                 { u, ok -> ui.post { markBroken(u, !ok) } }, { d, t -> checkDone = d; checkTotal = t; Perf.note("channel check $d/$t") })
             ui.post {
@@ -1342,7 +1367,7 @@ class HomeActivity : Activity() {
         if (updatingChannels) return
         updatingChannels = true
         val before = ChannelRepo.tv + ChannelRepo.radio
-        bg.execute {
+        side {
             Perf.note("channel update start force=$force")
             val r = try { com.antonretro.launcher.data.ChannelUpdate.run(this, force) { m -> Perf.note("channel update: $m"); if (!quiet) ui.post { notice("Updating channels", m) } } } catch (e: Throwable) { Perf.note("channel update failed: $e"); com.antonretro.launcher.data.ChannelUpdate.Result(false, 0, 0, 0, "Couldn't update: " + (e.message ?: e.javaClass.simpleName)) }
             Perf.note("channel update done changed=${r.changed} +${r.added} -${r.removed} total=${r.total} ${r.note}")
@@ -1446,6 +1471,9 @@ class HomeActivity : Activity() {
 
     /** Re-chooses each channel's feed (hand pick, else the best working picture) and carries numbers and marks over
      *  to a newly chosen feed. Cheap: runs before every channel-row rebuild. */
+    /** Long or user-started work gets its own thread: the shared background thread runs small jobs (covers, thumbnails,
+     *  the game scan), and an hour-long channel check on it used to hold all of those up, engine downloads included */
+    private fun side(block: () -> Unit) = Thread(block).apply { isDaemon = true }.start()
     private fun regroup() {
         val before = ChannelRepo.tv + ChannelRepo.radio
         ChannelRepo.choose({ u -> isBroken(u) }, { k -> tvPrefs.getString("feed:$k", null) })
@@ -1535,6 +1563,7 @@ class HomeActivity : Activity() {
             choices.add("Change channel number (${numberOf(item.ch)})" to { renumber(item.ch) })
             choices.add("Hide this channel" to { store.hiddenChannels.add(item.ch.url); store.favourites.remove(item.ch.url); store.save(); rebuildChannelRows(); notice("Channel hidden", "Show it again in Settings, TV") })
         }
+        if (item is Item.Game) choices.add("Choose cover" to { chooseCover(item.rom) })
         if (item is Item.App) {
             choices.add("Hide" to { store.hidden.add(item.component.packageName); store.save(); loadApps(); notice("Hidden from Apps", "Show it again in Settings, Apps") })
             choices.add("Uninstall" to { safeStart(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + item.component.packageName))) })
@@ -2291,6 +2320,7 @@ class HomeActivity : Activity() {
             ui.post { updateHints() }
         }
         RetroKeys.launcherKeyAt = e.eventTime   // the helper's watchdog checks keys really arrive here
+        if (e.action == KeyEvent.ACTION_DOWN && e.keyCode in 19..22 && keyLog) Perf.note("key ${e.keyCode} dev=${e.deviceId} src=${e.source} rep=${e.repeatCount} t=${e.eventTime} flags=${e.flags}")
         // test mode (file RetroLauncher/.test-mute, used by tools/hometest.sh): note the state after every key
         if (e.action == KeyEvent.ACTION_UP && testMode) ui.postDelayed({ noteState("key${e.keyCode}") }, 600)
         if (::saver.isInitialized && saver.showing) { if (e.action == KeyEvent.ACTION_UP) stopSaver(); return true }   // any key just wakes it
@@ -2347,8 +2377,8 @@ class HomeActivity : Activity() {
         when (code) {
             KeyEvent.KEYCODE_DPAD_UP -> { Perf.afterFrame("key2focus", e.eventTime); move(-1, 0); return true }
             KeyEvent.KEYCODE_DPAD_DOWN -> { Perf.afterFrame("key2focus", e.eventTime); move(1, 0); return true }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { Perf.afterFrame("key2focus", e.eventTime); move(0, -1); return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { Perf.afterFrame("key2focus", e.eventTime); move(0, 1); return true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> { tabKeyRepeat = e.repeatCount > 0; Perf.afterFrame("key2focus", e.eventTime); move(0, -1); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { tabKeyRepeat = e.repeatCount > 0; Perf.afterFrame("key2focus", e.eventTime); move(0, 1); return true }
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_PAGE_UP -> { switchTab(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_PAGE_DOWN -> { switchTab(1); return true }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> { com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BACK); onBackKey(); return true }
@@ -2357,9 +2387,15 @@ class HomeActivity : Activity() {
         return super.dispatchKeyEvent(e)
     }
 
+    /** test runs only: every arrow key goes in perf.log with the device it came from (finding doubled presses) */
+    private var tabKeyRepeat = false
+    private val keyLog by lazy { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists() }
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
             if (dc > 0 && nextVisibleTab(tabIdx, dc) == tabIdx && playingChips().isNotEmpty()) { chipFocus = 0; paintChips(); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.MOVE2); ui.post { updateHints() }; return }
+            // one tab per press: a press that lasts a little long (a busy box, or the remote sending "held")
+            // arrives as repeats, which skipped past the tab you wanted
+            if (dc != 0 && tabKeyRepeat) return
             if (dc != 0) { val n = nextVisibleTab(tabIdx, dc); if (n != tabIdx) { tabIdx = n; showTab(tabs[n]); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.TAB) } else com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.BUMP) }
             if (dr > 0) {
                 if (current == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { inTabBar = false; drawTabs(); openGuide(null); guide.focusBar(); return }

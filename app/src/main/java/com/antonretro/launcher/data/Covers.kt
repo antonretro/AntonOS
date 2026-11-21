@@ -25,14 +25,32 @@ object Covers {
         file.readLines().mapNotNull { l -> l.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
     } catch (e: Exception) { emptyMap() }.also { map = it }
 
+    /** a match is stored as "catalogue name", or "Other catalogue|name" when it came from a sister console's folder
+     *  (a Game Boy game named .gbc), or [NONE] when you chose the drawn card */
+    private const val NONE = "-"
+    private val SISTERS = mapOf("gb" to "gbc", "gbc" to "gb")
     /** the catalogue name for this game: the match found earlier, else the file's own name */
-    fun nameFor(r: Rom): String = names()[id(r)] ?: r.file.nameWithoutExtension
+    fun nameFor(r: Rom): String = (names()[id(r)] ?: r.file.nameWithoutExtension).substringAfter('|')
     fun matched(r: Rom) = names().containsKey(id(r))
 
     fun url(r: Rom): String {
+        val v = names()[id(r)]
+        if (v == NONE) return ""          // the drawn title card, chosen by you
+        val folder = if (v != null && '|' in v) v.substringBefore('|') else r.system.thumbs
         val n = nameFor(r).map { if (it in BAD) '_' else it }.joinToString("")
-        return "https://raw.githubusercontent.com/libretro-thumbnails/" + r.system.thumbs.replace(' ', '_') +
+        return "https://raw.githubusercontent.com/libretro-thumbnails/" + folder.replace(' ', '_') +
             "/master/Named_Boxarts/" + android.net.Uri.encode(n) + ".png"
+    }
+
+    private fun save(m: Map<String, String>) {
+        map = m
+        try { file.writeText(m.entries.joinToString("") { "${it.key}\t${it.value}\n" }) } catch (_: Exception) {}
+    }
+    /** Sets one game's cover by hand ([choice] from [candidates], or null for the drawn title card). */
+    fun set(r: Rom, choice: Pair<String, String>?) {
+        val m = HashMap(names())
+        m[id(r)] = if (choice == null) NONE else if (choice.first == r.system.thumbs) choice.second else choice.first + "|" + choice.second
+        save(m)
     }
 
     /** "Super_Mario_Kart (U) [!]" -> "supermariokart" */
@@ -52,7 +70,10 @@ object Covers {
 
     /** Every cover name in one console's folder of the catalogue: two small requests to GitHub per console (the
      *  folder list, then just the box-art folder; the whole repository's list is up to 20 MB). */
-    private fun catalogue(sys: GameSystem): List<String> {
+    private val cache = HashMap<String, List<String>>()
+    private fun catalogue(sys: GameSystem): List<String> = synchronized(cache) { cache[sys.thumbs] } ?: fetchCatalogue(sys).also { l ->
+        if (l.isNotEmpty()) synchronized(cache) { cache[sys.thumbs] = l } }
+    private fun fetchCatalogue(sys: GameSystem): List<String> {
         val repo = "https://api.github.com/repos/libretro-thumbnails/" + sys.thumbs.replace(' ', '_') + "/git/trees/"
         var sha: String? = null
         val dirRe = Regex(""""path":\s*"Named_Boxarts",\s*"mode":\s*"040000",\s*"type":\s*"tree",\s*"sha":\s*"([0-9a-f]+)"""")
@@ -65,6 +86,35 @@ object Covers {
         return out
     }
 
+    private fun sister(sys: GameSystem) = SISTERS[sys.id]?.let { sid -> GameRepo.SYSTEMS.firstOrNull { it.id == sid } }
+
+    /** The best catalogue entry for a game: its own name, else the same title in any region or revision (the most
+     *  common region first); for Game Boy and Game Boy Color, the sister console's folder too. (folder, name) */
+    private fun best(r: Rom): Pair<String, String>? {
+        val own = r.file.nameWithoutExtension
+        for (sys in listOfNotNull(r.system, sister(r.system))) {
+            val all = try { catalogue(sys) } catch (e: Exception) { emptyList() }
+            if (own in all) return sys.thumbs to own
+            all.filter { key(it) == key(own) }.minByOrNull { rank(it) }?.let { return sys.thumbs to it }
+        }
+        return null
+    }
+
+    /** Close matches for "Choose cover": titles sharing the most of the game's name, best first. (folder, name) */
+    fun candidates(r: Rom, max: Int = 6): List<Pair<String, String>> {
+        val k = key(r.file.nameWithoutExtension)
+        val words = r.title.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length > 1 }.toSet()
+        return listOfNotNull(r.system, sister(r.system)).flatMap { sys ->
+            (try { catalogue(sys) } catch (e: Exception) { emptyList() }).map { sys.thumbs to it }
+        }.map { c ->
+            val ck = key(c.second)
+            val prefix = ck.commonPrefixWith(k).length
+            val shared = c.second.lowercase().split(Regex("[^a-z0-9]+")).count { it in words }
+            c to (prefix * 2 + shared * 5 + (if (ck.contains(k) || k.contains(ck)) 20 else 0) - rank(c.second) / 10)
+        }.filter { it.second > 10 }.sortedByDescending { it.second }.map { it.first }
+            .distinctBy { key(it.second) }.take(max)
+    }
+
     /** Finds covers for these games and returns how many it found. Runs on the caller's (background) thread. */
     fun find(roms: List<Rom>): Int {
         if (working) return 0
@@ -72,19 +122,11 @@ object Covers {
         var found = 0
         try {
             val m = HashMap(names())
-            for ((sys, list) in roms.groupBy { it.system }) {
-                val all = try { catalogue(sys) } catch (e: Exception) { emptyList() }
-                val exact = all.toHashSet()
-                val byKey = all.groupBy { key(it) }
-                for (r in list) {
-                    val own = r.file.nameWithoutExtension
-                    val pick = if (own in exact) own else byKey[key(own)]?.minByOrNull { rank(it) }
-                    if (pick != null) { m[id(r)] = pick; found++ }
-                    done++
-                }
+            for (r in roms) {
+                best(r)?.let { (folder, name) -> m[id(r)] = if (folder == r.system.thumbs) name else "$folder|$name"; found++ }
+                done++
             }
-            map = m
-            try { file.writeText(m.entries.joinToString("") { "${it.key}\t${it.value}\n" }) } catch (_: Exception) {}
+            save(m)
         } finally { working = false }
         return found
     }

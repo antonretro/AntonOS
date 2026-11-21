@@ -34,7 +34,12 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
     private val catBox = LinearLayout(ctx)
     private val catViews = ArrayList<TextView>()
     private val pageTitle = Kit.text(ctx, 30f, true)
-    private val pageClip = FrameLayout(ctx)
+    /** shows a window of the page's rows; the list inside is measured at its full height (not cut to the window)
+     *  and slides up and down behind the window as the focus moves */
+    private val pageClip = object : FrameLayout(ctx) {
+        override fun measureChildWithMargins(child: View, wSpec: Int, wUsed: Int, hSpec: Int, hUsed: Int) =
+            super.measureChildWithMargins(child, wSpec, wUsed, View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), hUsed)
+    }
     private val pageList = LinearLayout(ctx)
     private val rowViews = ArrayList<RowView>()
     private var rows: List<SRow> = emptyList()
@@ -62,7 +67,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
         pageList.clipToPadding = false; pageList.clipChildren = false   // the padding is there to be drawn into
         pageClip.addView(pageList, FrameLayout.LayoutParams(-1, -2))
         root.addView(pageClip, FrameLayout.LayoutParams(Kit.dpi(ctx, 848f), Kit.dpi(ctx, 530f)).apply { leftMargin = Kit.dpi(ctx, 386f); topMargin = Kit.dpi(ctx, 164f) })
-        pageClip.clipChildren = true
+        pageClip.clipChildren = true   // rows scrolled up past the page title are hidden (a focused row unclips only its list)
         showPage(); paint()
     }
 
@@ -167,7 +172,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
             if (f == on && painted) return
             painted = true
             on = f; update()
-            Kit.unclip(this); animate().scaleX(if (f) 1.02f else 1f).scaleY(if (f) 1.02f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
+            Kit.unclip(this, levels = 1); animate().scaleX(if (f) 1.02f else 1f).scaleY(if (f) 1.02f else 1f).setDuration(Kit.t(Kit.T_FOCUS)).setInterpolator(Kit.EASE).start()
         }
 
         private fun paintBg() {

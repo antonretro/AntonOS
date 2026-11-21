@@ -44,6 +44,8 @@ class Dialog(ctx: Context) : FrameLayout(ctx) {
     }
 
     fun show(t: String, b: String, vararg choices: Pair<String, () -> Unit>) {
+        // a closing fade still running (the dialog before this one) would hide this one when it ends: stop it first
+        animate().cancel()
         title.text = t; body.text = b
         pic.visibility = View.GONE; pic.setImageDrawable(null)
         buttons.removeAllViews(); btns.clear(); actions = choices.map { it.second }

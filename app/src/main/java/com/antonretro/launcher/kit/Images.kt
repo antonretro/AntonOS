@@ -56,6 +56,7 @@ object Images {
 
     fun cached(url: String): Bitmap? = mem.get(url)
 
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private fun fileFor(url: String) = File(dir, Integer.toHexString(url.hashCode()) + "_" + url.length)
 
     /** Downloads following redirects, including http to https (HttpURLConnection won't cross protocols itself). */
@@ -69,8 +70,18 @@ object Images {
                 val code = c.responseCode
                 if (code in 300..399) { u = URL(URL(u), c.getHeaderField("Location") ?: return false).toString(); return@repeat }
                 if (code !in 200..299) return false
-                val t = File(to.path + ".tmp")
+                val t = File(to.path + ".tmp" + Thread.currentThread().id)   // never two downloads into one file
                 c.inputStream.use { inp -> t.outputStream().use { inp.copyTo(it) } }
+                // the box-art catalogue on GitHub keeps one picture for several names: the others are links, which
+                // arrive as a few bytes of text naming the real file ("Super Mario Land (World).png"). Follow it.
+                if (t.length() in 1..300) {
+                    val head = t.readBytes()
+                    val picture = head.size > 3 && ((head[0] == 0x89.toByte() && head[1] == 'P'.code.toByte()) || (head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte()))
+                    val target = String(head, Charsets.UTF_8).trim()
+                    if (!picture && Regex("""(?i)^[^\n<>]+\.(png|jpe?g)$""").matches(target)) {
+                        t.delete(); u = URL(URL(u), android.net.Uri.encode(target, "/")).toString(); return@repeat
+                    }
+                }
                 return t.length() > 0 && t.renameTo(to)
             } finally { c.disconnect() }
         }
@@ -85,11 +96,18 @@ object Images {
             var bmp: Bitmap? = null; var unreadable = false
             try {
                 val f = fileFor(url)
-                if (!f.exists() || f.length() == 0L) download(url, f)
+                // tiny files are catalogue links saved before links were followed: fetch those again
+                // one download per picture at a time: the same cover on two cards used to be fetched twice at once,
+                // one copy read while the other was still writing, and marked unreadable for a day
+                synchronized(locks.getOrPut(url) { Any() }) { if (!f.exists() || f.length() <= 300L) download(url, f) }
                 if (f.exists()) {
                     val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeFile(f.path, o)
-                    if (o.outWidth <= 0) unreadable = true
+                    if (o.outWidth <= 0) {
+                        // an SVG and the like can't be shown: try once a day. A broken download is thrown away and fetched again soon
+                        unreadable = url.substringBefore('?').lowercase().endsWith(".svg")
+                        if (!unreadable) f.delete()
+                    }
                     else {
                         var s = 1; while (o.outWidth / (s * 2) >= maxW && o.outHeight / (s * 2) >= maxH) s *= 2
                         val raw = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = s })
