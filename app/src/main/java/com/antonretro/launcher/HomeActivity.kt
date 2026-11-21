@@ -304,7 +304,8 @@ class HomeActivity : Activity() {
         player.nowLine = { c -> Guide.nowNext(c.url).first?.let { "Now: ${it.title}, until ${timeFmt.format(Date(it.stop))}" } }
         for ((name, s) in screens) {
             s.view.visibility = View.GONE
-            stage.addView(s.view, -1, -1)
+            // a home style chosen earlier (applyHomeStyle above) has already put its screen on the stage
+            if (s.view.parent == null) stage.addView(s.view, -1, -1)
             s.onFocusChanged = { if (name == current) { updateShelf(); updateScrolled() } }
             s.onHoverFocus = { if (name == current) { inTabBar = false; drawTabs() } }
         }
