@@ -131,7 +131,7 @@ class BoxHome(ctx: Context, private val tiles: () -> List<BoxTile>, private val 
         sel = best; paint(); return true
     }
     override fun ok() { runs.getOrNull(sel)?.invoke() }
-    override fun enter() { focused = true; paint() }
+    override fun enter() { focused = true; sel = 0; paint() }   // coming down from the tabs: start on TV & Guide
     override fun leave() { focused = false; paint() }
     override fun reset() { sel = 0; paint() }
 }

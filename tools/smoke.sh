@@ -36,6 +36,13 @@ check "AntonOS is the Home app" "$([ "$home" = "$ACT" ] && echo ok || echo "Home
 a "am start -n com.android.settings/.Settings" >/dev/null; sleep 2; a "am kill $PKG"; sleep 1
 a "am start -W -n $ACT" >/dev/null; sleep 3
 check "cold start shows AntonOS" "$(focus | grep -q $PKG && echo ok || echo "$(focus)")"
+# every home style must survive a start-up with it already chosen (Box classic once crashed AntonOS on every start).
+# "test:recreate" runs AntonOS's start-up again in the same process, so the key helper stays on.
+for style in 1 2 3 0; do
+  a "am start -n $PKG/.HomeActivity -a android.intent.action.MAIN --es rl_open test:style:$style" >/dev/null; sleep 2
+  a "am start -n $PKG/.HomeActivity -a android.intent.action.MAIN --es rl_open test:recreate" >/dev/null; sleep 6
+  check "start-up with home style $style" "$([ "$(crashed)" = no ] && focus | grep -q "$PKG.HomeActivity" && echo ok || echo "$(focus)")"
+done
 check "no crash at start" "$([ "$(crashed)" = no ] && echo ok || echo crashed)"
 
 # killed behind another app, then Home (what happens when memory is short during a game)

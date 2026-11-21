@@ -1036,6 +1036,7 @@ class HomeActivity : Activity() {
             key == "test:chcheck" -> { checkChannels(quiet = false); return }
             key.startsWith("test:cover:") -> { roms.firstOrNull { it.file.name == key.removePrefix("test:cover:") }?.let { chooseCover(it) }; return }
             key == "test:guide" -> { maybeRefreshGuide(0); return }
+            key == "test:recreate" -> { ui.post { recreate() }; return }   // runs onCreate again, as at start-up (tools/smoke.sh)
             key.startsWith("test:style:") -> { key.removePrefix("test:style:").toIntOrNull()?.takeIf { it in homeStyles.indices }?.let { homeStyle = it; applyHomeStyle(it, false); showTab("Home") }; return }
             key == "test:covers" -> { getCovers(roms.filter { !com.antonretro.launcher.data.Covers.matched(it) }); return }
             key == "test:chupdate" -> { updateChannels(force = true, quiet = false); return }
