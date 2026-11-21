@@ -2295,20 +2295,21 @@ class HomeActivity : Activity() {
         val lastIcon = (last as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
         val photo = try { assets.open("wallpapers/world_0${(System.currentTimeMillis() / 86_400_000L % 10).toInt()}.jpg").use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) } } catch (e: Exception) { null }
         return listOf(
-            com.antonretro.launcher.ui.BoxHome.BoxTile(last?.title ?: "TV", 0xFF0B6E62.toInt(), lastIcon ?: g("tv"), big = true) { if (last != null) openFromTile(last) else go("TV")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("TV & Guide", 0xFF1F5FA8.toInt(), null, photo) { go("TV")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("YouTube", 0xFFE8890C.toInt(), g("play")) { go("YouTube")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("Games", 0xFF3FA02E.toInt(), g("games")) { go("Games")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("My Apps", 0xFF0E8FB0.toInt(), g("apps")) { go("Apps")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("Media", 0xFFD9650A.toInt(), g("music")) { go("Media")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("Settings", 0xFF1588B0.toInt(), g("settings")) { go("Settings")() },
-            com.antonretro.launcher.ui.BoxHome.BoxTile("Radio", 0xFF0B7A70.toInt(), g("radio")) { go("Radio")() })
+            // TV is the main thing: the big tile; what you used last is the wide one next to it
+            com.antonretro.launcher.ui.BoxHome.BoxTile("TV & Guide", 0xFF1F5FA8.toInt(), null, photo, big = true, color2 = 0xFF0E2340.toInt()) { go("TV")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile(if (last != null) "Continue: ${last.title}" else "Apps", 0xFF2A8A9A.toInt(), lastIcon ?: g("apps"), color2 = 0xFF10243E.toInt()) { if (last != null) openFromTile(last) else go("Apps")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("YouTube", 0xFFE0453A.toInt(), g("play"), color2 = 0xFF5A0E22.toInt()) { go("YouTube")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Games", 0xFF3FB27A.toInt(), g("games"), color2 = 0xFF0E3E3A.toInt()) { go("Games")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("My Apps", 0xFF4A7AE0.toInt(), g("apps"), color2 = 0xFF1A1E5A.toInt()) { go("Apps")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Media", 0xFFE07A3A.toInt(), g("music"), color2 = 0xFF6A1A3A.toInt()) { go("Media")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Settings", 0xFF5E6A80.toInt(), g("settings"), color2 = 0xFF1E222E.toInt()) { go("Settings")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Radio", 0xFF9A5AE0.toInt(), g("radio"), color2 = 0xFF2E1460.toInt()) { go("Radio")() })
     }
     private fun boxSmall(): List<com.antonretro.launcher.ui.BoxHome.BoxTile> =
         homeTop().drop(1).take(6).map { item ->
             val icon = (item as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
-            com.antonretro.launcher.ui.BoxHome.BoxTile(item.title, 0xFF0E6E78.toInt(), icon ?: com.antonretro.launcher.ui.GlyphIcon("tv")) { openFromTile(item) }
-        } + com.antonretro.launcher.ui.BoxHome.BoxTile("All apps", 0xFF0E8FB0.toInt(), com.antonretro.launcher.ui.GlyphIcon("plus")) { inTabBar = false; showTab("Apps"); screens["Apps"]?.enter(); drawTabs() }
+            com.antonretro.launcher.ui.BoxHome.BoxTile(item.title, 0xFF34415A.toInt(), icon ?: com.antonretro.launcher.ui.GlyphIcon("tv"), color2 = 0xFF161B28.toInt()) { openFromTile(item) }
+        } + com.antonretro.launcher.ui.BoxHome.BoxTile("All apps", 0xFF4A7AE0.toInt(), com.antonretro.launcher.ui.GlyphIcon("plus"), color2 = 0xFF1A1E5A.toInt()) { inTabBar = false; showTab("Apps"); screens["Apps"]?.enter(); drawTabs() }
 
     /** What a tile opens: a tab, or a pinned app / channel / game. */
     private fun openFromTile(item: Item) { if (item is Item.Action) item.run(this) else openKey(item.key) }
