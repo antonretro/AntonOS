@@ -539,3 +539,17 @@ The skill's scripts are the engine (one source of truth). Google's platform-tool
 - **Mirror to phone** (Wii U style): the TV picture on the phone page. Needs Android's screen-capture permission (one OK on the TV each time) and a picture stream to the phone; fine for menus, too delayed for action games.
 - **Phone-as-controller games:** a bowling/darts/air-hockey demo where you swipe on the phone. Tilt controls need https (later hosted mode).
 - **DS emulator with the phone as the bottom screen:** very hard (RetroArch can't send one screen to a browser); not promised.
+
+## Later: films from a home server (planned, AntonRetro's request)
+Media gets a "Servers" section in AntonOS's style:
+1. **Jellyfin** first (free, open-source, open API): sign in with server address and user; Movies and Shows with posters and descriptions; resume points; play in AntonOS's own player (direct play when the box can decode it, else ask the server to transcode to H.264 720p/1080p).
+2. **Shared folders (SMB)** and **DLNA/UPnP** servers on the home network, browsed like Files.
+3. **Plex** only later, and only if its API terms allow a third-party client.
+Servers are found automatically on the home network; nothing is installed on the PC without asking. Check the box's decoder first (HEVC 10-bit at 1080p is likely not possible on the S905W) to set the transcode limits.
+
+## Later: discs from a USB CD/DVD drive (planned, AntonRetro's request; home-made DVDs first)
+1. Detect a USB DVD drive (does the firmware mount it: `/storage`, vold, `sr`? If not, talk to it through Android's USB host API with SCSI/MMC commands, no root).
+2. Home-made and unprotected video DVDs: show what's on the disc (volume label matched to an open film database for a poster and title, else a clean card with the label); play straight from the disc (VIDEO_TS/VOB, and DVD-VR/VRO from DVD recorders if feasible); "Copy to the box / USB drive" with progress, saved as a playable file in Media, Videos.
+3. Music CDs: play in Now Playing; album, artist, tracks and cover from MusicBrainz / Cover Art Archive; "Copy to Music" (FLAC or MP3), to a USB drive when the box is short of space.
+4. Data discs: browse like Files.
+5. Copy-protected commercial DVDs and Blu-rays are never decrypted, played or copied. Decide "protected" ONLY from the disc itself (the drive's copyright fields via MMC READ DVD STRUCTURE, or reads that come back scrambled), never from its name, publisher, region or the presence of VIDEO_TS. A home-made disc must never be refused: when unsure, try to play it, and only say it can't be played after real reads come back scrambled.

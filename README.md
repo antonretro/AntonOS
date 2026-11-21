@@ -19,7 +19,7 @@
 - **Radio:** stations by country; keeps playing in the background.
 - **YouTube:** your favourite channels as shelves and search, played in SmartTube.
 - **Media:** your music with a built-in visualizer, and your videos.
-- **Games:** your retro games with a 3D game page (RetroArch runs hidden as the engine), your Android games, and built-in pixel games. The controller's Guide button saves your place. Missing game engines download from libretro when a game needs one (heavy consoles marked "Not recommended" on slow boxes), new games get box art from the libretro catalogue if you say yes, and a short system intro plays before a game (can be turned off).
+- **Games:** your retro games with a 3D game page (RetroArch runs hidden as the engine), your Android games, and built-in pixel games. The controller's Guide button saves your place. Missing game engines download from libretro when a game needs one (heavy consoles marked "Not recommended" on slow boxes), new games get box art from the libretro catalogue if you say yes, and a short system intro plays before a game (can be turned off). To show a console's logo in that intro, put your own picture in `/sdcard/RetroLauncher/Logos/<console>.png` (or `<console>-white.png`, preferred, as the intro is on black). Console names: `nes`, `snes`, `gb`, `gbc`, `gba`, `n64`, `md`, `sms`, `gg`, `pce`, `ps1`. No logos are included: they belong to the console makers.
 - **Phone remote:** scan a QR code on the TV and your phone (iPhone or Android, no app) becomes a remote with a keyboard, voice typing and a number pad.
 - **Never stuck:** Home or the Xbox button always gets you out.
 

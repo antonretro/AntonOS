@@ -1184,7 +1184,19 @@ class HomeActivity : Activity() {
             setShadowLayer(Kit.dp(this@HomeActivity, 18f), 0f, 0f, Color.argb(120, 255, 255, 255))
         }
         val line = View(this).apply { setBackgroundColor(Color.WHITE); pivotX = 0f; scaleX = 0f; alpha = .85f }
-        col.addView(word, LinearLayout.LayoutParams(-2, -2))
+        // your own logo for the console, if you put one in RetroLauncher/Logos (<id>-white.png first: it's on black);
+        // none ship with AntonOS (they're the console makers' trademarks), so the clean text name is the default
+        val logoDir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/Logos")
+        val logoFile = listOf("${rom.system.id}-white.png", "${rom.system.id}.png").map { java.io.File(logoDir, it) }.firstOrNull { it.isFile }
+        val logo = logoFile?.let { f -> try { android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply {
+            inJustDecodeBounds = true; android.graphics.BitmapFactory.decodeFile(f.path, this); inJustDecodeBounds = false
+            var sample = 1; while (outWidth / (sample * 2) >= 900) sample *= 2; inSampleSize = sample }) } catch (e: Exception) { null } }
+        if (logo != null) {
+            val img = android.widget.ImageView(this).apply { setImageBitmap(logo); scaleType = android.widget.ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true }
+            val maxW = Kit.dpi(this, 560f); val maxH = Kit.dpi(this, 220f)
+            val k = minOf(maxW.toFloat() / logo.width, maxH.toFloat() / logo.height)
+            col.addView(img, LinearLayout.LayoutParams((logo.width * k).toInt(), (logo.height * k).toInt()))
+        } else col.addView(word, LinearLayout.LayoutParams(-2, -2))
         col.addView(line, LinearLayout.LayoutParams(Kit.dpi(this, 120f), Kit.dpi(this, 2f)).apply { topMargin = Kit.dpi(this@HomeActivity, 14f); gravity = Gravity.CENTER_HORIZONTAL })
         col.alpha = 0f; col.scaleX = .94f; col.scaleY = .94f
         ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
