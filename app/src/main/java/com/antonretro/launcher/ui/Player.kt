@@ -72,6 +72,23 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val bTrack = FrameLayout(ctx)
     private val bFill = View(ctx)
     private val bClock = Kit.text(ctx, 24f, true)
+    /** what is really on screen, from the decoded picture (not the playlist's label): SD, HD, Full HD, 4K, Audio only */
+    private val bQuality = Kit.text(ctx, 14f, true).apply {
+        gravity = Gravity.CENTER; setPadding(Kit.dpi(ctx, 10f), Kit.dpi(ctx, 3f), Kit.dpi(ctx, 10f), Kit.dpi(ctx, 3f)); visibility = View.GONE
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 6f); setColor(0x33FFFFFF) }
+    }
+    private var picW = 0; private var picH = 0
+    private fun qualityName(h: Int) = when { h <= 0 -> ""; h < 700 -> "SD"; h < 1000 -> "HD"; h < 2000 -> "Full HD"; else -> "4K" }
+    private fun rank(h: Int) = when { h <= 0 -> 0; h < 700 -> 1; h < 1000 -> 2; h < 2000 -> 3; else -> 4 }
+    /** short in the banner; with the exact size and frame rate while the controls are open */
+    private fun showQuality() {
+        val radio = list.getOrNull(idx)?.radio == true && video == null
+        val name = if (radio) "Audio only" else qualityName(picH)
+        if (name.isEmpty()) { bQuality.visibility = View.GONE; return }
+        val fps = player?.videoFormat?.frameRate?.takeIf { it > 0f }?.let { "  ·  ${Math.round(it)} fps" } ?: ""
+        bQuality.text = if (controlsOn && !radio) "$name  ·  ${picW}×${picH}$fps" else name
+        bQuality.visibility = View.VISIBLE
+    }
     /** Now and next from the guide (either can be null). */
     var nowNext: ((Channel) -> Pair<Prog?, Prog?>)? = null
     private val error = Kit.text(ctx, 26f, true)
@@ -181,7 +198,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private fun setControls(on: Boolean) {
         if (testMuted()) Perf.note("player controls $on (was $controlsOn)")
         if (on == controlsOn && on) { poke(); return }
-        controlsOn = on
+        controlsOn = on; showQuality()
         ui.removeCallbacks(hideControls)
         if (on) {
             ctlSel = 0; buildControls()
@@ -320,7 +337,10 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         texts.addView(bTrack, LinearLayout.LayoutParams(Kit.dpi(ctx, 460f), Kit.dpi(ctx, 4f)).apply { topMargin = Kit.dpi(ctx, 8f) })
         texts.addView(bSub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Kit.dpi(ctx, 8f) })
         banner.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        banner.addView(bClock, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, 24f) })
+        val right = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
+        right.addView(bClock, LinearLayout.LayoutParams(-2, -2))
+        right.addView(bQuality, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Kit.dpi(ctx, 6f) })
+        banner.addView(right, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = Kit.dpi(ctx, 24f) })
         addView(banner, LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); rightMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
 
         controls.visibility = View.GONE
@@ -393,6 +413,15 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                 addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) { Perf.note("error " + error.errorCodeName + " " + (error.cause?.toString() ?: "")); fail() }
                     override fun onRenderedFirstFrame() = started()
+                    override fun onVideoSizeChanged(v: androidx.media3.common.VideoSize) {
+                        if (v.width <= 0 || v.height <= 0) return
+                        val better = rank(v.height) > rank(picH) && picH > 0
+                        picW = v.width; picH = v.height
+                        Perf.note("picture ${v.width}x${v.height}")
+                        showQuality()
+                        // the stream stepped up (SD to HD): show it for a moment
+                        if (better && !mini) showBannerNow()
+                    }
                     override fun onTracksChanged(t: androidx.media3.common.Tracks) {
                         val had = hasText
                         hasText = t.groups.any { it.type == C.TRACK_TYPE_TEXT }
@@ -401,6 +430,8 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                     override fun onCues(cues: androidx.media3.common.text.CueGroup) {
                         val text = cues.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
                         caption.text = text
+                        // above the banner and the control row while they show, never on top of them
+                        caption.translationY = -(if (controlsOn) Kit.dp(context, 210f) else if (banner.alpha > .1f) banner.height + Kit.dp(context, 4f) else 0f)
                         caption.visibility = if (subtitles && text.isNotEmpty() && !mini) View.VISIBLE else View.GONE
                     }
                     override fun onPlaybackStateChanged(state: Int) {
@@ -432,6 +463,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val fadeBanner = Runnable { banner.animate().alpha(0f).setDuration(Kit.t(400)).start() }
 
     private fun tune(i: Int, dir: Int) {
+        picW = 0; picH = 0; bQuality.visibility = View.GONE
         if (list.isEmpty()) return
         idx = ((i % list.size) + list.size) % list.size; zapDir = if (dir == 0) 1 else dir
         val c = list[idx]
@@ -463,6 +495,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
 
     private fun started() {
         ui.removeCallbacks(watchdog)
+        showQuality()
         if (video != null) return
         val c = list.getOrNull(idx) ?: return
         onWorks?.invoke(c)

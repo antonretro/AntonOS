@@ -66,9 +66,9 @@ else echo "FAIL  remote keys are NOT reaching the helper: switching it off so th
 
 # 6. ...and on into AntonOS itself (once a key went through the helper but never arrived, and the box looked frozen)
 # Up arrow (a navigation key always reaches the app; Android sometimes keeps the volume keys for itself)
-# AntonOS is cold-starting after the install: give it time, and try twice before deciding keys don't arrive
+# AntonOS is cold-starting after the install: give it time, and try three times before deciding keys don't arrive
 reached=no
-for attempt in 1 2; do
+for attempt in 1 2 3; do   # a third try: a controller with a drifting stick can hold input up for a few seconds at start-up
   a "sendevent /dev/input/event0 1 102 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 102 0; sendevent /dev/input/event0 0 0 0"; sleep 7
   n=$(a "cat $LOG | wc -l" | tr -d '\r ')
   a "sendevent /dev/input/event0 1 103 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 103 0; sendevent /dev/input/event0 0 0 0"; sleep 3

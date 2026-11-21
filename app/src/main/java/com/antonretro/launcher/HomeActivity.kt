@@ -1030,6 +1030,7 @@ class HomeActivity : Activity() {
             key == "phone" -> { if (!PhoneRemote.enabled(this)) PhoneRemote.setEnabled(this, true); showPhoneCode(); return }
             key.startsWith("song:") || key == "test:song" -> { if (songs.isNotEmpty()) playSong(songs, songs.indexOfFirst { it.key == key }.coerceAtLeast(0)); return }
             key.startsWith("bi:") -> { openBuiltIn(key.removePrefix("bi:")); return }
+            key.startsWith("test:play:") -> { val n = key.removePrefix("test:play:").lowercase(); val l = byNumber(false); val i = l.indexOfFirst { it.name.lowercase().contains(n) }; if (i >= 0) openPlayer(l, i); return }
             key == "test:tv" || key == "test:radio" -> { val l = byNumber(key == "test:radio"); if (l.isNotEmpty()) openPlayer(l, 0); return }
             key == "test:chcheck" -> { checkChannels(quiet = false); return }
             key.startsWith("test:cover:") -> { roms.firstOrNull { it.file.name == key.removePrefix("test:cover:") }?.let { chooseCover(it) }; return }
@@ -2536,6 +2537,33 @@ class HomeActivity : Activity() {
         return super.onGenericMotionEvent(e)
     }
 
+    /**
+     * Android 7 hands a controller's movements to the app once per frame, in batches. After a pause and resume that
+     * hand-over can be lost for good: the batches never arrive, Android waits for them, and every later press (the
+     * remote's too) queues behind and is dropped as stale. Seen on the MXQ with a drifting Xbox pad: 143 pad events
+     * stuck for minutes, the box deaf. While a controller is connected, deliver any waiting batch once a second.
+     */
+    private var padPump: (() -> Unit)? = null
+    private var pumps = 0
+    private val padTick = object : Runnable { override fun run() { padPump?.invoke(); ui.postDelayed(this, 1000) } }
+    private fun startPadPump() {
+        ui.removeCallbacks(padTick)
+        if (padPump == null) padPump = try {
+            val vri = window.decorView.parent
+            val cls = vri.javaClass
+            val flag = cls.getDeclaredField("mConsumeBatchedInputScheduled").apply { isAccessible = true }
+            val consume = cls.getDeclaredMethod("doConsumeBatchedInput", java.lang.Long.TYPE).apply { isAccessible = true }
+            ({
+                if (InputDevice.getDeviceIds().any { id -> InputDevice.getDevice(id)?.let { it.sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK } == true }) {
+                    val was = flag.getBoolean(vri)
+                    flag.setBoolean(vri, true); consume.invoke(vri, -1L)
+                    if (keyLog && ++pumps % 30 == 1) Perf.note("pad pump #$pumps (scheduled was $was)")
+                }
+            })
+        } catch (e: Throwable) { Perf.note("pad pump unavailable: $e"); null }
+        if (padPump != null) ui.postDelayed(padTick, 1000)
+    }
+
     /** Controller hat / left stick act like the D-pad (repeat handled by the stick timer); triggers page the guide.
      *  Android groups a frame's worth of samples into one event: a quick D-pad tap (press and release) can sit
      *  entirely in that group's history, so every sample is looked at, not just the last one. */
@@ -2731,10 +2759,11 @@ class HomeActivity : Activity() {
         Perf.afterFrame("home", t0)
     }
 
-    override fun onPause() { super.onPause(); resumed = false; if (::player.isInitialized && player.mini) player.closeMini(); drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
+    override fun onPause() { super.onPause(); resumed = false; ui.removeCallbacks(padTick); if (::player.isInitialized && player.mini) player.closeMini(); drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
 
     override fun onResume() {
         readKeyLog()
+        ui.post { startPadPump() }
         super.onResume()
         welcome?.let { w -> ui.postDelayed({ w.recheck() }, 600) }
         store2?.let { s -> if (s.showing) ui.postDelayed({ s.rebuild() }, 500) }   // back from the installer: show Installed
