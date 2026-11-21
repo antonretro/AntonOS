@@ -341,8 +341,8 @@ class HomeActivity : Activity() {
         SPage("pad", "Controllers & Remotes") { controllerRows() },
         SPage("cast", "Casting") { castRows() },
         SPage("home", "Home screen") { listOf(
-            SRow("Style", { when (homeStyle) { 1 -> "Big tiles for TV, Radio, Games and more, favourites along the bottom"; 2 -> "Only your favourites, extra large"; else -> "Big picture at the top, your dock and rows" } },
-                value = { homeStyles[homeStyle] }, onClick = { homeStyle = (homeStyle + 1) % 3; applyHomeStyle(homeStyle, true); notice("Home style: " + homeStyles[homeStyle], "Press Home to see it") }),
+            SRow("Style", { when (homeStyle) { 1 -> "Big tiles for TV, Radio, Games and more, favourites along the bottom"; 2 -> "Only your favourites, extra large"; 3 -> "Laid out like the box's original menu, in AntonOS's look"; else -> "Big picture at the top, your dock and rows" } },
+                value = { homeStyles[homeStyle] }, onClick = { homeStyle = (homeStyle + 1) % homeStyles.size; applyHomeStyle(homeStyle, true); notice("Home style: " + homeStyles[homeStyle], "Press Home to see it") }),
             SRow("Box art corners", { "Game boxes and covers: slightly rounded, or sharp like the real box" }, value = { if (store.squareCovers) "Square" else "Rounded" },
                 onClick = { store.squareCovers = !store.squareCovers; Kit.coverRadius = if (store.squareCovers) 0f else Kit.R_XS; store.save(); rebuildGames() }),
             SRow("Clock", value = { if (store.clock24) "24-hour (17:30)" else "12-hour (5:30 PM)" }, onClick = { store.clock24 = !store.clock24; store.save(); tickClock() }),
@@ -1035,6 +1035,7 @@ class HomeActivity : Activity() {
             key == "test:chcheck" -> { checkChannels(quiet = false); return }
             key.startsWith("test:cover:") -> { roms.firstOrNull { it.file.name == key.removePrefix("test:cover:") }?.let { chooseCover(it) }; return }
             key == "test:guide" -> { maybeRefreshGuide(0); return }
+            key.startsWith("test:style:") -> { key.removePrefix("test:style:").toIntOrNull()?.takeIf { it in homeStyles.indices }?.let { homeStyle = it; applyHomeStyle(it, false); showTab("Home") }; return }
             key == "test:covers" -> { getCovers(roms.filter { !com.antonretro.launcher.data.Covers.matched(it) }); return }
             key == "test:chupdate" -> { updateChannels(force = true, quiet = false); return }
             key.startsWith("test:backmode:") -> { player.backMode = key.removePrefix("test:backmode:").toIntOrNull() ?: 0; tvPrefs.edit().putInt("backMode", player.backMode).apply(); return }
@@ -1594,7 +1595,7 @@ class HomeActivity : Activity() {
         return pins + homeDock.filter { a -> pins.none { it.key == a.key } }.take(maxOf(0, 5 - pins.size))
     }
     private fun rebuildHome() {
-        classicHome?.rebuild(); simpleHome?.rebuild()
+        classicHome?.rebuild(); simpleHome?.rebuild(); boxHome?.rebuild()
         val dock = homeTop()
         val playing = store.recentGames.mapNotNull { itemFor(it) }.take(6)
         cinemaHome.setRows(if ("nokeep" in perfExp) listOf(Row(null, dock, glass = "noglass" !in perfExp)) else listOf(
@@ -2279,12 +2280,35 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- home styles (ui/Tiles.kt)
     private lateinit var cinemaHome: RowsScreen
-    private val homeStyles = listOf("Cinema", "Classic grid", "Simple")
+    private val homeStyles = listOf("Cinema", "Classic grid", "Simple", "Box classic")
     private var homeStyle: Int
         get() = getSharedPreferences("home", MODE_PRIVATE).getInt("style", 0)
         set(v) { getSharedPreferences("home", MODE_PRIVATE).edit().putInt("style", v).apply() }
     private var classicHome: TileScreen? = null
     private var simpleHome: TileScreen? = null
+    private var boxHome: com.antonretro.launcher.ui.BoxHome? = null
+    /** Box classic: the box's original menu layout in AntonOS's look (ui/BoxHome.kt) */
+    private fun boxTiles(): List<com.antonretro.launcher.ui.BoxHome.BoxTile> {
+        fun go(tab: String) = { inTabBar = false; showTab(tab); if (tab == "TV" && tvGuideFirst && ChannelRepo.tv.isNotEmpty()) { openGuide(null); guide.focusBar() } else screens[tab]?.enter(); drawTabs() }
+        fun g(k: String) = com.antonretro.launcher.ui.GlyphIcon(k)
+        val last = homeTop().firstOrNull()
+        val lastIcon = (last as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
+        val photo = try { assets.open("wallpapers/world_0${(System.currentTimeMillis() / 86_400_000L % 10).toInt()}.jpg").use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) } } catch (e: Exception) { null }
+        return listOf(
+            com.antonretro.launcher.ui.BoxHome.BoxTile(last?.title ?: "TV", 0xFF0B6E62.toInt(), lastIcon ?: g("tv"), big = true) { if (last != null) openFromTile(last) else go("TV")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("TV & Guide", 0xFF1F5FA8.toInt(), null, photo) { go("TV")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("YouTube", 0xFFE8890C.toInt(), g("play")) { go("YouTube")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Games", 0xFF3FA02E.toInt(), g("games")) { go("Games")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("My Apps", 0xFF0E8FB0.toInt(), g("apps")) { go("Apps")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Media", 0xFFD9650A.toInt(), g("music")) { go("Media")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Settings", 0xFF1588B0.toInt(), g("settings")) { go("Settings")() },
+            com.antonretro.launcher.ui.BoxHome.BoxTile("Radio", 0xFF0B7A70.toInt(), g("radio")) { go("Radio")() })
+    }
+    private fun boxSmall(): List<com.antonretro.launcher.ui.BoxHome.BoxTile> =
+        homeTop().drop(1).take(6).map { item ->
+            val icon = (item as? Item.App)?.let { a -> try { packageManager.getActivityIcon(a.component) } catch (e: Exception) { null } }
+            com.antonretro.launcher.ui.BoxHome.BoxTile(item.title, 0xFF0E6E78.toInt(), icon ?: com.antonretro.launcher.ui.GlyphIcon("tv")) { openFromTile(item) }
+        } + com.antonretro.launcher.ui.BoxHome.BoxTile("All apps", 0xFF0E8FB0.toInt(), com.antonretro.launcher.ui.GlyphIcon("plus")) { inTabBar = false; showTab("Apps"); screens["Apps"]?.enter(); drawTabs() }
 
     /** What a tile opens: a tab, or a pinned app / channel / game. */
     private fun openFromTile(item: Item) { if (item is Item.Action) item.run(this) else openKey(item.key) }
@@ -2310,12 +2334,13 @@ class HomeActivity : Activity() {
         val next: Screen = when (style) {
             1 -> classicHome ?: TileScreen(this, false, { placeTiles() }, { favouriteTiles() }).also { classicHome = it }
             2 -> simpleHome ?: TileScreen(this, true, { placeTiles() }, { favouriteTiles() }).also { simpleHome = it }
+            3 -> boxHome ?: com.antonretro.launcher.ui.BoxHome(this, { boxTiles() }, { boxSmall() }).also { boxHome = it }
             else -> cinemaHome
         }
         val old = screens["Home"]
         if (old === next) return
         if (next.view.parent == null) { next.view.visibility = View.GONE; stage.addView(next.view, -1, -1); next.onFocusChanged = { updateShelf() } }
-        (next as? TileScreen)?.rebuild()
+        (next as? TileScreen)?.rebuild(); (next as? com.antonretro.launcher.ui.BoxHome)?.rebuild()
         screens["Home"] = next
         if (current == "Home") {
             fun swap() { old?.view?.visibility = View.GONE; next.view.visibility = View.VISIBLE; next.view.alpha = 1f; updateShelf(); updateScrolled() }
