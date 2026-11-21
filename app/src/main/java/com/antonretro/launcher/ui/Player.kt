@@ -49,6 +49,21 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
     private val radioName = Kit.text(ctx, 30f, true)
     private val radioSub = Kit.text(ctx, Kit.BODY_TEXT, false, Kit.TEXT_DIM)
     private val banner = LinearLayout(ctx)
+    // ------------------------------------------------------------------ subtitles (captions carried in the stream)
+    /** on or off for every channel and video, remembered; the button only shows when the stream has captions */
+    private var subtitles = ctx.getSharedPreferences("tv", Context.MODE_PRIVATE).getBoolean("subs", false)
+    private var hasText = false
+    private var selector: DefaultTrackSelector? = null
+    private val caption = TextView(ctx).apply {
+        setTextColor(Color.WHITE); textSize = 22f; gravity = Gravity.CENTER; visibility = View.GONE
+        typeface = Kit.font(ctx, true); setPadding(Kit.dpi(ctx, 14f), Kit.dpi(ctx, 6f), Kit.dpi(ctx, 14f), Kit.dpi(ctx, 6f))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = Kit.dp(ctx, 8f); setColor(0xB0000000.toInt()) }
+    }
+    private fun applySubtitles() {
+        selector?.let { s -> s.setParameters(s.buildUponParameters().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitles)
+            .setSelectUndeterminedTextLanguage(true).setPreferredTextLanguage(java.util.Locale.getDefault().language)) }
+        if (!subtitles) caption.visibility = View.GONE
+    }
     private val bNum = Kit.text(ctx, 20f, true, Kit.TEXT_DIM)
     private val bName = Kit.text(ctx, 30f, true)
     private val bSub = Kit.text(ctx, 17f, false, Kit.TEXT_DIM)
@@ -132,6 +147,11 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
             items.add("☰  Channels" to { setControls(false); showStrip() })
             items.add("▦  Guide" to { setControls(false); onGuide?.invoke(c) })
         }
+        if (hasText) items.add((if (subtitles) "CC  Subtitles on" else "CC  Subtitles off") to {
+            subtitles = !subtitles
+            context.getSharedPreferences("tv", Context.MODE_PRIVATE).edit().putBoolean("subs", subtitles).apply()
+            applySubtitles(); buildControls(); poke()
+        })
         items.add("★  Favourite" to { onStar?.invoke(c); poke() })
         items.add("‹  Back" to { setControls(false); close(keepRadio = true) })
         controls.removeAllViews(); ctlBtns.clear(); ctlActs = items.map { it.second }
@@ -304,6 +324,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         addView(banner, LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); rightMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y) })
 
         controls.visibility = View.GONE
+        addView(caption, LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = Kit.dpi(ctx, 70f); leftMargin = Kit.dpi(ctx, 120f); rightMargin = Kit.dpi(ctx, 120f) })
         addView(controls, LayoutParams(-2, Kit.dpi(ctx, 56f), Gravity.BOTTOM).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); bottomMargin = Kit.dpi(ctx, Kit.SAFE_Y + 150f) })
 
         error.gravity = Gravity.CENTER; error.text = "This channel isn't working right now"
@@ -352,6 +373,7 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
         val tracks = DefaultTrackSelector(context).apply {
             setParameters(buildUponParameters().setMaxVideoSize(maxHeight * 16 / 9, maxHeight).setMaxVideoFrameRate(60).setExceedRendererCapabilitiesIfNecessary(false))
         }
+        selector = tracks; applySubtitles()
         // counts every byte the player downloads (tools/streamcheck.sh reads "stream bytes" from the log in test mode)
         val counter = object : androidx.media3.datasource.TransferListener {
             override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
@@ -371,6 +393,16 @@ class PlayerOverlay(ctx: Context, private val artFor: (Item, CardCell) -> Unit) 
                 addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) { Perf.note("error " + error.errorCodeName + " " + (error.cause?.toString() ?: "")); fail() }
                     override fun onRenderedFirstFrame() = started()
+                    override fun onTracksChanged(t: androidx.media3.common.Tracks) {
+                        val had = hasText
+                        hasText = t.groups.any { it.type == C.TRACK_TYPE_TEXT }
+                        if (had != hasText && controlsOn) buildControls()
+                    }
+                    override fun onCues(cues: androidx.media3.common.text.CueGroup) {
+                        val text = cues.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+                        caption.text = text
+                        caption.visibility = if (subtitles && text.isNotEmpty() && !mini) View.VISIBLE else View.GONE
+                    }
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_ENDED && video != null) endVideo(finished = true)
                         if (state == Player.STATE_READY && list.getOrNull(idx)?.radio == true) started()

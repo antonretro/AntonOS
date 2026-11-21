@@ -28,7 +28,20 @@ object ChannelUpdate {
         "IN" to "India", "PH" to "Philippines", "BR" to "Brazil", "PT" to "Portugal", "NL" to "Netherlands", "JP" to "Japan")
 
     /** iptv-org's playlist for a country code (it names the United Kingdom "uk", not "gb") */
-    private fun listUrl(cc: String) = if (cc == "weather") "$IPTV/iptv/categories/weather.m3u" else "$IPTV/iptv/countries/${if (cc == "GB") "uk" else cc.lowercase()}.m3u"
+    private fun listUrl(cc: String) = when {
+        cc == "weather" -> "$IPTV/iptv/categories/weather.m3u"
+        cc.startsWith("list:") -> cc.removePrefix("list:")
+        else -> "$IPTV/iptv/countries/${if (cc == "GB") "uk" else cc.lowercase()}.m3u"
+    }
+    /** the group a list's channels go in: the country's name, Weather, or "My list: <site>" for a playlist added by link */
+    private fun groupOf(cc: String) = when {
+        cc == "weather" -> "Weather"
+        cc.startsWith("list:") -> "My list: " + (try { URL(cc.removePrefix("list:")).host.removePrefix("www.") } catch (e: Exception) { "link" })
+        else -> Countries.name(cc)
+    }
+    /** Playlists added by link (Settings > TV & Radio): fetched with the countries, each shown as its own group. */
+    fun links(ctx: Context): Set<String> = prefs(ctx).getStringSet("links", emptySet())!!.toSet()
+    fun setLinks(ctx: Context, l: Set<String>) { prefs(ctx).edit().putStringSet("links", l).apply() }
 
     class Result(val changed: Boolean, val added: Int, val removed: Int, val total: Int, val note: String)
 
@@ -106,14 +119,16 @@ object ChannelUpdate {
     /** Builds the new list and swaps it in if it changed. [force] skips the "nothing changed upstream" shortcut. */
     fun run(ctx: Context, force: Boolean, progress: (String) -> Unit): Result {
         val p = prefs(ctx)
-        val codes = countries()
+        if (Countries.all().isEmpty()) Countries.load()   // country names for new groups (cached files; weekly refresh)
+        val codes = Countries.chosen(ctx).toList()
+        val lists = codes + "weather" + links(ctx).map { "list:$it" }
         progress("Checking the channel lists…")
         // 1. playlists, with their ETags
         var anyNew = force || !ChannelRepo.file.exists()
         val bodies = LinkedHashMap<String, String>()
         val failed = HashSet<String>()   // couldn't be fetched: these keep their current channels
         val tags = HashMap<String, String?>()
-        for (cc in codes + "weather") {
+        for (cc in lists) {
             val url = listUrl(cc)
             val key = "etag:$cc"
             val (code, got) = get(url, if (force) null else p.getString(key, null))
@@ -127,16 +142,16 @@ object ChannelUpdate {
         val radioDue = force || System.currentTimeMillis() - p.getLong("radio", 0L) > 7 * 24 * 3600_000L
         if (!anyNew && !radioDue) { p.edit().putLong("checked", System.currentTimeMillis()).apply(); return Result(false, 0, 0, ChannelRepo.tv.size + ChannelRepo.radio.size, "Already up to date") }
         // anything not downloaded this time (304): fetch it plainly so the full list can be rebuilt
-        for (cc in codes + "weather") if (cc !in bodies && cc !in failed) {
+        for (cc in lists) if (cc !in bodies && cc !in failed) {
             val (_, got) = get(listUrl(cc), null)
             if (got == null) failed.add(cc) else { bodies[cc] = got.second; tags["etag:$cc"] = got.first }
         }
         if (bodies.isEmpty()) return Result(false, 0, 0, 0, "Couldn't reach the channel lists")
         // 2. TV entries, then the database's closed / adult flags
         val tv = ArrayList<Triple<String, String, String>>()   // (country or "Weather", EXTINF, url)
-        for ((cc, body) in bodies) for ((info, url) in entries(body)) tv.add(Triple(if (cc == "weather") "Weather" else COUNTRIES[cc] ?: cc, info, url))
+        for ((cc, body) in bodies) for ((info, url) in entries(body)) tv.add(Triple(groupOf(cc), info, url))
         // a country whose list couldn't be fetched keeps the channels it has now
-        for (cc in failed) { val g = if (cc == "weather") "Weather" else COUNTRIES[cc] ?: cc
+        for (cc in failed) { val g = groupOf(cc)
             for (c in ChannelRepo.tv.filter { it.group == g }) tv.add(Triple(g, "#EXTINF:-1 tvg-id=\"${c.tvgId}\" tvg-logo=\"${c.logo ?: ""}\" group-title=\"${c.category}\",${c.name}", c.url)) }
         progress("Checking for closed channels…")
         val drop = try { excluded(tv.mapNotNull { cid(attr(it.second, "tvg-id")) }.toSet()) } catch (e: Exception) { emptySet() }
@@ -154,7 +169,7 @@ object ChannelUpdate {
                     val name = s.optString("name").trim().replace(",", " ")
                     if (u.isEmpty() || name.isEmpty() || !seen.add(name.lowercase())) continue
                     if (s.optString("codec").uppercase() !in setOf("MP3", "AAC", "AAC+", "OGG", "")) continue
-                    radioLines.add("#EXTINF:-1 radio=\"true\" tvg-logo=\"${s.optString("favicon").replace("\"", "")}\" group-title=\"Radio - ${COUNTRIES[cc] ?: cc}\",$name"); radioLines.add(u)
+                    radioLines.add("#EXTINF:-1 radio=\"true\" tvg-logo=\"${s.optString("favicon").replace("\"", "")}\" group-title=\"Radio - ${Countries.name(cc)}\",$name"); radioLines.add(u)
                     if (++n >= RADIO_PER_COUNTRY) break
                 }
             } catch (_: Exception) {}

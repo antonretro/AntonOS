@@ -535,12 +535,65 @@ class HomeActivity : Activity() {
 
     private fun applyPlayerSettings() { if (::player.isInitialized) player.reconfigure(store.playerSmooth, if (store.quality == 1) 720 else 1080) }
 
+    // ---------------------------------------------------------------- countries (data/Countries.kt)
+    /** Settings > TV & Radio > Countries: every country iptv-org has, ticked ones in the list; regions at the top. */
+    private fun openCountries() {
+        val C = com.antonretro.launcher.data.Countries
+        if (C.all().isEmpty()) {
+            notice("Getting the list of countries", "One moment")
+            side { C.load(); ui.post { if (C.all().isEmpty()) notice("Couldn't get the list of countries", "Check the internet connection") else openCountries() } }
+            return
+        }
+        if (current != "Settings") showTab("Settings")
+        settingsScreen.openSub(com.antonretro.launcher.ui.SPage("tv", "Countries") {
+            val chosen = C.chosen(this)
+            val rows = ArrayList<com.antonretro.launcher.ui.SRow>()
+            rows.add(com.antonretro.launcher.ui.SRow("Your countries", { chosen.sortedBy { C.name(it) }.joinToString(", ") { C.flag(it) + " " + C.name(it) } + ". Tick more below; new channels get numbers after yours" }))
+            for (r in C.allRegions()) {
+                val missing = r.codes.filter { it !in chosen && C.all().any { c -> c.code == it && c.count > 0 } }
+                if (missing.isNotEmpty() && r.codes.size <= 30) rows.add(com.antonretro.launcher.ui.SRow("Add all of ${r.name}", { "${missing.size} more countries" }, onClick = {
+                    dialog.show("Add all of ${r.name}?", "${missing.size} countries, about ${missing.sumOf { m -> C.all().firstOrNull { it.code == m }?.count ?: 0 }} channels. A big list makes the guide slower on this box.",
+                        "Add them" to { setCountries(chosen + missing, "Adding ${r.name}") }, "Cancel" to {}) }))
+            }
+            for (c in C.all().filter { it.count > 0 }) rows.add(com.antonretro.launcher.ui.SRow(c.flag + "  " + c.name, { "about ${c.count} channels" },
+                toggle = { c.code in C.chosen(this) }, onClick = {
+                    val now = C.chosen(this)
+                    if (c.code in now) setCountries(now - c.code, "Removing ${c.name}") else setCountries(now + c.code, "Adding about ${c.count} channels from ${c.name}")
+                }))
+            rows
+        })
+    }
+    /** Saves the ticked countries and updates the channel list a few seconds later (several ticks make one update). */
+    private val countriesUpdate = Runnable { updateChannels(force = true, quiet = false) }
+    private fun setCountries(codes: Set<String>, what: String) {
+        if (codes.isEmpty()) { notice("Keep at least one country", ""); return }
+        com.antonretro.launcher.data.Countries.setChosen(this, codes)
+        notice(what, "The channel list updates in a moment")
+        ui.removeCallbacks(countriesUpdate); ui.postDelayed(countriesUpdate, 4000)
+        settingsScreen.refresh()
+    }
+    private fun addPlaylistLink() {
+        keyboard.open("Playlist address (.m3u)", doneText = "Add") { t ->
+            val u = t.trim()
+            if (!u.startsWith("http://") && !u.startsWith("https://")) { notice("That isn't a web address", "It starts with http:// or https://"); return@open }
+            com.antonretro.launcher.data.ChannelUpdate.setLinks(this, com.antonretro.launcher.data.ChannelUpdate.links(this) + u)
+            notice("Adding your list", "Updating channels"); updateChannels(force = true, quiet = false)
+            if (current == "Settings") settingsScreen.refresh()
+        }
+    }
+
     private fun tvRows(): List<SRow> {
         val out = ArrayList<SRow>()
         val qualities = listOf("Automatic", "Save data (720p)", "Best (1080p)")
         out.add(SRow("Channel list", { "${ChannelRepo.tv.size} TV channels, ${ChannelRepo.radio.size} radio stations" }, value = { "RetroLauncher/channels.m3u" }))
         val fmtDay = java.text.SimpleDateFormat("EEE d MMM, " + if (store.clock24) "H:mm" else "h:mm a", java.util.Locale.getDefault())
-        out.add(SRow("Update channels now", { (if (com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this) > 0) "Last updated " + fmtDay.format(Date(com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this))) else "Never updated on this box") + ". Updates itself once a day from iptv-org (" + com.antonretro.launcher.data.ChannelUpdate.countries().joinToString(", ") + ")" },
+        val C = com.antonretro.launcher.data.Countries
+        out.add(SRow("Countries", { C.chosen(this).joinToString(", ") { C.name(it) } + ". Choose which countries' channels you get" }, value = { "${C.chosen(this).size}" }, onClick = { openCountries() }))
+        val links = com.antonretro.launcher.data.ChannelUpdate.links(this)
+        out.add(SRow("Add a playlist by link", { "An .m3u address, typed here or on your phone (Phone remote). Shown as its own group" }, onClick = { addPlaylistLink() }))
+        for (l in links) out.add(SRow("My list: " + (try { java.net.URL(l).host } catch (e: Exception) { l }), { l }, value = { "Remove" },
+            onClick = { com.antonretro.launcher.data.ChannelUpdate.setLinks(this, links - l); notice("Removing the list", "Updating channels"); updateChannels(force = true, quiet = true); settingsScreen.refresh() }))
+        out.add(SRow("Update channels now", { (if (com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this) > 0) "Last updated " + fmtDay.format(Date(com.antonretro.launcher.data.ChannelUpdate.lastUpdated(this))) else "Never updated on this box") + ". Updates itself once a day from iptv-org" },
             onClick = { updateChannels(force = true, quiet = false) }))
         if (com.antonretro.launcher.data.ChannelUpdate.canUndo()) out.add(SRow("Undo the last update", { "Back to the channel list before it (for a day after an update)" },
             onClick = { if (com.antonretro.launcher.data.ChannelUpdate.undo()) { loadChannels(); notice("Previous channel list back", "") }; settingsScreen.refresh() }))
@@ -1656,6 +1709,7 @@ class HomeActivity : Activity() {
         guide.workingOnly = tvPrefs.getBoolean("workingOnly", true)
         guide.onWorkingOnly = { on -> tvPrefs.edit().putBoolean("workingOnly", on).apply() }
         guide.onSearch = { keyboard.open("Find a channel", doneText = "Find") { q -> guide.search(q) } }
+        guide.onAddCountry = { guide.hide(); openCountries() }
         guide.onCards = { tvGuideFirst = false; guide.hide(); inTabBar = false; screens[current]?.enter(); drawTabs(); notice("Cards view", "The Guide is still the first card") }
         guide.onTop = { guide.hide(); inTabBar = true; tabIdx = tabs.indexOf(current); drawTabs() }
         val watching = player.showing && player.current?.radio == false
@@ -2387,9 +2441,10 @@ class HomeActivity : Activity() {
         return super.dispatchKeyEvent(e)
     }
 
-    /** test runs only: every arrow key goes in perf.log with the device it came from (finding doubled presses) */
+    /** test runs only (RetroLauncher/.keylog exists): arrow keys and pad moves go in perf.log with their device */
     private var tabKeyRepeat = false
-    private val keyLog by lazy { java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.test-mute").exists() }
+    @Volatile private var keyLog = false   // read at each resume, never per event
+    private fun readKeyLog() { keyLog = java.io.File(android.os.Environment.getExternalStorageDirectory(), "RetroLauncher/.keylog").exists() }
     private fun move(dr: Int, dc: Int) {
         if (inTabBar) {
             if (dc > 0 && nextVisibleTab(tabIdx, dc) == tabIdx && playingChips().isNotEmpty()) { chipFocus = 0; paintChips(); com.antonretro.launcher.kit.UiSound.play(com.antonretro.launcher.kit.UiSound.Kind.MOVE2); ui.post { updateHints() }; return }
@@ -2453,6 +2508,13 @@ class HomeActivity : Activity() {
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        // a controller's stick and D-pad: handled here directly, never sent through every view on screen. A pad whose
+        // stick drifts sends a small move every ~20 ms; walking the whole screen for each one put AntonOS so far behind
+        // that Android dropped real presses as stale (the pad seemed dead in the guide, remote keys went missing)
+        if (ev.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && game == null && gamePageView?.showing != true) {
+            if (ev.action == MotionEvent.ACTION_MOVE) joystick(ev)
+            return true
+        }
         lastInput = SystemClock.uptimeMillis()
         if (ev.isFromSource(InputDevice.SOURCE_MOUSE) && (ev.action == MotionEvent.ACTION_HOVER_MOVE || ev.action == MotionEvent.ACTION_SCROLL)) RetroKeys.lastMouse = lastInput
         if (::saver.isInitialized && saver.showing && ev.action != MotionEvent.ACTION_HOVER_MOVE) { stopSaver(); return true }
@@ -2470,15 +2532,37 @@ class HomeActivity : Activity() {
             if (h != 0f || (shift && v != 0f)) { screens[current]?.move(0, if ((if (h != 0f) h else v) < 0) 1 else -1); return true }
             if (v != 0f) { screens[current]?.move(if (v < 0) 1 else -1, 0); return true }
         }
-        // controller hat / left stick act like the D-pad (with repeat handled by the stick timer)
-        if (e.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
-            val x = e.getAxisValue(MotionEvent.AXIS_HAT_X).let { if (it != 0f) it else e.getAxisValue(MotionEvent.AXIS_X) }
-            val y = e.getAxisValue(MotionEvent.AXIS_HAT_Y).let { if (it != 0f) it else e.getAxisValue(MotionEvent.AXIS_Y) }
-            stick(if (x > .5f) 1 else if (x < -.5f) -1 else 0, if (y > .5f) 1 else if (y < -.5f) -1 else 0)
-            return true
-        }
+        if (e.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) { joystick(e); return true }
         return super.onGenericMotionEvent(e)
     }
+
+    /** Controller hat / left stick act like the D-pad (repeat handled by the stick timer); triggers page the guide.
+     *  Android groups a frame's worth of samples into one event: a quick D-pad tap (press and release) can sit
+     *  entirely in that group's history, so every sample is looked at, not just the last one. */
+    private fun joystick(e: MotionEvent) {
+        for (i in 0..e.historySize) {
+            fun v(axis: Int) = if (i < e.historySize) e.getHistoricalAxisValue(axis, i) else e.getAxisValue(axis)
+            val hx = v(MotionEvent.AXIS_HAT_X); val hy = v(MotionEvent.AXIS_HAT_Y)
+            val x = if (hx != 0f) hx else v(MotionEvent.AXIS_X)
+            val y = if (hy != 0f) hy else v(MotionEvent.AXIS_Y)
+            val d = (if (x > .5f) 1 else if (x < -.5f) -1 else 0) to (if (y > .5f) 1 else if (y < -.5f) -1 else 0)
+            if (d != stickDir) {   // something new (the usual drift of a stick changes nothing, so costs nothing)
+                if (keyLog) Perf.note("pad move ${d.first},${d.second} dev=${e.deviceId}")
+                lastInput = SystemClock.uptimeMillis()
+                stick(d.first, d.second)
+            }
+            trigger(maxOf(v(MotionEvent.AXIS_LTRIGGER), v(MotionEvent.AXIS_BRAKE)), maxOf(v(MotionEvent.AXIS_RTRIGGER), v(MotionEvent.AXIS_GAS)))
+        }
+    }
+    /** LT / RT pressed past half way, as keys (the guide pages with them); once per press */
+    private var lt = false; private var rt = false
+    private fun trigger(lv: Float, rv: Float) {
+        val l = lv > .5f; val r = rv > .5f
+        if (l && !lt) key(KeyEvent.KEYCODE_BUTTON_L2)
+        if (r && !rt) key(KeyEvent.KEYCODE_BUTTON_R2)
+        lt = l; rt = r
+    }
+    private fun key(code: Int) { val t = SystemClock.uptimeMillis(); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0)) }
 
     private var stickDir = 0 to 0
     private val stickRepeat = object : Runnable { override fun run() { if (stickDir != (0 to 0)) { arrow(stickDir.second, stickDir.first); ui.postDelayed(this, 140) } } }
@@ -2650,6 +2734,7 @@ class HomeActivity : Activity() {
     override fun onPause() { super.onPause(); resumed = false; if (::player.isInitialized && player.mini) player.closeMini(); drift.stop(); game?.let { if (it.screen == com.antonretro.launcher.games.PixelGame.Screen.PLAY) { it.pauseGame(); gamePausedAt = SystemClock.uptimeMillis() }; it.hostPause(true) }; RetroKeys.launcherShowing = false; RetroKeys.instance?.launcherChanged() }
 
     override fun onResume() {
+        readKeyLog()
         super.onResume()
         welcome?.let { w -> ui.postDelayed({ w.recheck() }, 600) }
         store2?.let { s -> if (s.showing) ui.postDelayed({ s.rebuild() }, 500) }   // back from the installer: show Installed

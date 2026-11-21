@@ -47,6 +47,8 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     var onWorkingOnly: ((Boolean) -> Unit)? = null
     /** Search chip: the launcher opens its keyboard and calls [search] with the words */
     var onSearch: (() -> Unit)? = null
+    /** the "+ Add a country" chip at the end of the filter bar (Settings > TV & Radio > Countries) */
+    var onAddCountry: (() -> Unit)? = null
     /** "Cards" chip: back to the card view of the TV tab (remembered by the launcher) */
     var onCards: (() -> Unit)? = null
     /** the Guide closed (any way) */
@@ -92,6 +94,7 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     private var bgBitmap: android.graphics.Bitmap? = null
 
     private var chans: List<Channel> = emptyList()
+    private val HINT = "LB RB  filters   ·   Y  search   ·   Back  close"
     private var all: List<Channel> = emptyList()
     private var filterIdx = 0
     private var query = ""
@@ -122,9 +125,9 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         addView(bg, -1, -1)
         // fixed sizes everywhere: new text then only redraws itself instead of re-measuring the whole screen
         fun put(v: View, top: Float, h: Float, w: Float = 900f) = addView(v, LayoutParams(Kit.dpi(ctx, w), Kit.dpi(ctx, h)).apply { leftMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, top) })
-        put(meta, 34f, 26f); put(title, 64f, 44f); put(desc, 112f, 52f)
-        hint.text = "OK  watch or remind   ·   Up  filters   ·   Back  close"; hint.gravity = android.view.Gravity.END
-        addView(hint, LayoutParams(Kit.dpi(ctx, 520f), Kit.dpi(ctx, 24f), android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 40f) })
+        put(meta, 34f, 26f, 760f); put(title, 64f, 44f); put(desc, 112f, 52f)
+        hint.text = HINT; hint.gravity = android.view.Gravity.END
+        addView(hint, LayoutParams(Kit.dpi(ctx, 400f), Kit.dpi(ctx, 24f), android.view.Gravity.END).apply { rightMargin = Kit.dpi(ctx, Kit.SAFE_X); topMargin = Kit.dpi(ctx, 40f) })
         barScroll.addView(bar)
         barScroll.setPadding(Kit.dpi(ctx, Kit.SAFE_X), 0, Kit.dpi(ctx, Kit.SAFE_X), 0)
         addView(barScroll, LayoutParams(-1, Kit.dpi(ctx, 52f)).apply { topMargin = Kit.dpi(ctx, 168f) })
@@ -211,7 +214,7 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
 
     private fun refilter() {
         val keep = chans.getOrNull(fRow)?.url
-        chans = applyFilter(); cache.clear(); loading.clear()
+        chans = applyFilter(); cache.clear(); loading.clear(); hint.text = HINT
         fRow = chans.indexOfFirst { it.url == keep }.coerceAtLeast(0)
         targetTop = (fRow - 2).coerceAtLeast(0); topRow = targetTop.toFloat(); fProg = null
         pickProg(); grid.invalidate(); updateInfo()
@@ -229,6 +232,7 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         for ((i, f) in filters.withIndex()) chip(f.label, i == filterIdx) { filterIdx = i; refilter(); buildBar(); paintBar() }
         chip(if (workingOnly) "✓  Working only" else "Working only", workingOnly) { workingOnly = !workingOnly; onWorkingOnly?.invoke(workingOnly); refilter(); buildBar(); paintBar() }
         chip("▦  Cards", false) { onCards?.invoke() }
+        if (onAddCountry != null) chip("+  Add a country", false) { onAddCountry?.invoke() }
         chipSel = chipSel.coerceIn(0, chips.size - 1)
         paintBar()
     }
@@ -243,7 +247,26 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
     }
 
     // ------------------------------------------------------------------ moving
+    /** Next or previous filter (All, Recent, the countries...) from anywhere in the guide. */
+    private fun stepFilter(d: Int) {
+        if (filters.isEmpty()) return
+        filterIdx = ((filterIdx + d) % filters.size + filters.size) % filters.size
+        refilter(); buildBar()
+        if (inBar) chipSel = filterIdx + 1
+        paintBar()
+        barScroll.post { chips.getOrNull(filterIdx + 1)?.let { c -> barScroll.smoothScrollTo((c.left - Kit.dpi(context, 120f)).coerceAtLeast(0), 0) } }
+    }
+
     fun onKey(e: KeyEvent): Boolean {
+        // shortcuts that work anywhere in the guide: LB/RB, Ch+/Ch- and [ ] change the filter; LT/RT page the
+        // channels; Y, Menu or Search open Search
+        if (e.action == KeyEvent.ACTION_DOWN) when (e.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_LEFT_BRACKET -> { if (e.repeatCount == 0) stepFilter(-1); return true }
+            KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_RIGHT_BRACKET -> { if (e.repeatCount == 0) stepFilter(1); return true }
+            KeyEvent.KEYCODE_BUTTON_L2 -> { if (!inBar) moveRow(-rowsVisible()); return true }
+            KeyEvent.KEYCODE_BUTTON_R2 -> { if (!inBar) moveRow(rowsVisible()); return true }
+            KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SEARCH -> { if (e.repeatCount == 0) onSearch?.invoke(); return true }
+        }
         if (e.action != KeyEvent.ACTION_DOWN) return true
         if (inBar) {
             when (e.keyCode) {
@@ -259,12 +282,12 @@ class GuideView(ctx: Context, private val numberOf: (Channel) -> Int, private va
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> if (fRow == 0) { if (e.repeatCount == 0) { inBar = true; chipSel = (filterIdx + 1).coerceIn(0, chips.size - 1); paintBar(); grid.invalidate() } } else moveRow(-1)
             KeyEvent.KEYCODE_DPAD_DOWN -> moveRow(1)
-            KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_BUTTON_L1 -> moveRow(-rowsVisible())
-            KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_BUTTON_R1 -> moveRow(rowsVisible())
+            KeyEvent.KEYCODE_PAGE_UP -> moveRow(-rowsVisible())
+            KeyEvent.KEYCODE_PAGE_DOWN -> moveRow(rowsVisible())
             KeyEvent.KEYCODE_DPAD_LEFT -> moveTime(-1)
             KeyEvent.KEYCODE_DPAD_RIGHT -> moveTime(1)
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_NUMPAD_ENTER -> if (e.repeatCount == 0) ok()
-            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_GUIDE -> if (e.repeatCount == 0) hide()
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_GUIDE -> if (e.repeatCount == 0) hide()
         }
         return true
     }

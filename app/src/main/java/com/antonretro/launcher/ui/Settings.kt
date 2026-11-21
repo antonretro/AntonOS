@@ -45,6 +45,12 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
     private var rows: List<SRow> = emptyList()
     private var cat = 0; private var row = 0
     private var inPage = false; private var active = false
+    /** a page opened from a row (Countries from TV & Radio): shown in place of its category until Back or Left */
+    private var sub: SPage? = null
+    /** Opens [p] from a row of the current page; Back goes back to the row it came from. */
+    fun openSub(p: SPage) { subFrom = row; sub = p; active = true; inPage = true; showPage(); row = 0; paint() }
+    private var subFrom = 0
+    private fun closeSub() { sub = null; showPage(); row = subFrom.coerceIn(0, (rows.size - 1).coerceAtLeast(0)); paint() }
 
     init {
         val catPanel = FrameLayout(ctx)
@@ -75,7 +81,7 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
     fun refresh() { val keep = row; showPage(); row = keep.coerceIn(0, (rows.size - 1).coerceAtLeast(0)); paint() }
 
     private fun showPage() {
-        val p = pages[cat]
+        val p = sub ?: pages[cat]
         pageTitle.text = p.title
         rows = p.rows(); row = 0
         pageList.removeAllViews(); rowViews.clear(); pageList.translationY = 0f
@@ -109,10 +115,10 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
     override fun move(dRow: Int, dCol: Int): Boolean {
         if (!inPage) {
             if (dRow < 0 && cat == 0) return false
-            if (dRow != 0) { cat = (cat + dRow).coerceIn(0, pages.size - 1); showPage() }
+            if (dRow != 0) { sub = null; cat = (cat + dRow).coerceIn(0, pages.size - 1); showPage() }
             if (dCol > 0 && rows.isNotEmpty()) { inPage = true; row = 0 }
         } else {
-            if (dCol < 0) inPage = false
+            if (dCol < 0) { if (sub != null) { closeSub(); return true }; inPage = false }
             if (dRow < 0 && row == 0) { inPage = false; paint(); return false }   // up from the top row: tab bar
             if (dRow != 0) row = (row + dRow).coerceIn(0, rows.size - 1)
         }
@@ -127,12 +133,12 @@ class SettingsScreen(ctx: Context, private val pages: List<SPage>) : Screen(ctx)
         refresh()
     }
 
-    override fun back(): Boolean { if (inPage) { inPage = false; paint(); return true }; return false }
+    override fun back(): Boolean { if (sub != null) { closeSub(); return true }; if (inPage) { inPage = false; paint(); return true }; return false }
     override fun enter() { active = true; paint() }
     override fun leave() { active = false; inPage = false; paint() }
-    override fun reset() { cat = 0; inPage = false; showPage(); paint() }
+    override fun reset() { cat = 0; sub = null; inPage = false; showPage(); paint() }
     override fun scrolled() = true
-    fun open(title: String) { val i = pages.indexOfFirst { it.title == title }; if (i >= 0) { cat = i; inPage = false; showPage(); paint() } }
+    fun open(title: String) { val i = pages.indexOfFirst { it.title == title }; if (i >= 0) { cat = i; sub = null; inPage = false; showPage(); paint() } }
 
     /** A rounded row: title, optional small line under it, and a value or an On/Off switch on the right. */
     @SuppressLint("ViewConstructor")
