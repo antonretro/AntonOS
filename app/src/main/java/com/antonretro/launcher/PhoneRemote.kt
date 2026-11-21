@@ -82,7 +82,21 @@ object PhoneRemote {
                 thread(isDaemon = true) { try { serve(app, c) } catch (_: Exception) {} finally { try { c.close() } catch (_: Exception) {} } }
             }
         }
-        Perf.note("phone remote on at ${address()}:$PORT")
+        // at boot the server can start before Wi-Fi has an address: it listens on every network anyway, so it works as
+        // soon as the box is online; note the real address then (the QR screen reads it fresh each time it opens)
+        val now = address()
+        if (now != null) Perf.note("phone remote on at $now:$PORT")
+        else {
+            Perf.note("phone remote on, waiting for the network")
+            try {
+                val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(n: android.net.Network) {
+                        address()?.let { Perf.note("phone remote on at $it:$PORT"); try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {} }
+                    }
+                })
+            } catch (_: Exception) {}
+        }
     }
     fun stop() { try { server?.close() } catch (_: Exception) {}; server = null }
 
